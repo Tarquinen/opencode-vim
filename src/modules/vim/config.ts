@@ -42,6 +42,7 @@ const DEFAULT_KEYMAPS: Record<VimMode, Record<string, VimAction>> = {
         "0": "lineStart",
         $: "lineEnd",
         w: "wordNext",
+        e: "wordEnd",
         b: "wordPrev",
         x: "deleteChar",
         dd: "clear",
@@ -150,6 +151,7 @@ function isAction(value: unknown): value is VimAction {
         value === "lineStart" ||
         value === "lineEnd" ||
         value === "wordNext" ||
+        value === "wordEnd" ||
         value === "wordPrev" ||
         value === "deleteChar" ||
         value === "clear" ||

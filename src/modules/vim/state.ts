@@ -14,6 +14,7 @@ export type VimAction =
     | "lineStart"
     | "lineEnd"
     | "wordNext"
+    | "wordEnd"
     | "wordPrev"
     | "deleteChar"
     | "clear"

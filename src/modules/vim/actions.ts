@@ -105,13 +105,16 @@ export function runVimAction(action: VimAction, state: VimState, ctx: PromptCont
         case "wordNext":
             movePromptCursor(ctx, "wordNext")
             return true
+        case "wordEnd":
+            movePromptCursor(ctx, "wordEnd")
+            return true
         case "wordPrev":
             movePromptCursor(ctx, "wordPrev")
             return true
     }
 }
 
-function movePromptCursor(ctx: PromptContext, action: "left" | "right" | "up" | "down" | "lineStart" | "lineEnd" | "wordNext" | "wordPrev") {
+function movePromptCursor(ctx: PromptContext, action: "left" | "right" | "up" | "down" | "lineStart" | "lineEnd" | "wordNext" | "wordEnd" | "wordPrev") {
     const input = focusedInput(ctx)
     if (!input) return false
 
@@ -131,6 +134,8 @@ function movePromptCursor(ctx: PromptContext, action: "left" | "right" | "up" | 
             return moveToNormalLineEnd(input)
         case "wordNext":
             return input.moveWordForward?.() ?? false
+        case "wordEnd":
+            return moveWordEnd(input)
         case "wordPrev":
             return input.moveWordBackward?.() ?? false
     }
@@ -165,6 +170,32 @@ function moveToAppendLineEnd(ctx: PromptContext) {
     const input = focusedInput(ctx)
     if (!input) return false
     return input.gotoVisualLineEnd?.() ?? false
+}
+
+function moveWordEnd(input: EditBufferLike) {
+    const text = input.plainText
+    const offset = input.cursorOffset
+    if (!text || offset === undefined) return false
+
+    let index = Math.min(offset, text.length - 1)
+    if (index < 0) return false
+
+    if (isWordChar(text[index]) && index < text.length - 1 && isWordChar(text[index + 1])) {
+        while (index < text.length - 1 && isWordChar(text[index + 1])) index++
+        input.cursorOffset = index
+        return true
+    }
+
+    index++
+    while (index < text.length && !isWordChar(text[index])) index++
+    if (index >= text.length) return false
+    while (index < text.length - 1 && isWordChar(text[index + 1])) index++
+    input.cursorOffset = index
+    return true
+}
+
+function isWordChar(value: string | undefined) {
+    return !!value && /\S/.test(value)
 }
 
 function moveToNormalLineEnd(input: EditBufferLike) {
