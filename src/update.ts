@@ -1,11 +1,12 @@
 import { rm } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { TuiPluginMeta } from "@opencode-ai/plugin/tui"
 
 type PackageJson = {
     name?: string
     version?: string
+    dependencies?: Record<string, string>
 }
 
 type UpdateResult =
@@ -25,8 +26,9 @@ export async function checkAutoUpdate(meta: TuiPluginMeta, signal: AbortSignal):
     const latest = await fetchLatestVersion(pkg.name, signal)
     if (!latest || !isVersionNewer(latest, pkg.version)) return { updated: false }
 
+    const removeDir = await updateRemoveDir(packageDir, pkg.name)
     try {
-        await rm(packageDir, { recursive: true, force: true })
+        await rm(removeDir, { recursive: true, force: true })
     } catch {
         return { updated: false, error: "remove_failed", name: pkg.name, current: pkg.version, latest }
     }
@@ -45,6 +47,15 @@ async function findPackageDir() {
         if (parent === dir) return undefined
         dir = parent
     }
+}
+
+async function updateRemoveDir(packageDir: string, name: string) {
+    const nodeModulesDir = dirname(packageDir)
+    if (basename(nodeModulesDir) !== "node_modules") return packageDir
+
+    const wrapperDir = dirname(nodeModulesDir)
+    const wrapperPkg = await readPackageJson(join(wrapperDir, "package.json"))
+    return wrapperPkg?.dependencies?.[name] ? wrapperDir : packageDir
 }
 
 async function readPackageJson(path: string): Promise<PackageJson | undefined> {
