@@ -28,6 +28,8 @@ const DEFAULT_KEYMAPS: Record<VimMode, Record<string, VimAction>> = {
         a: "append",
         A: "appendEnd",
         h: "left",
+        j: "down",
+        k: "up",
         l: "right",
         "0": "lineStart",
         $: "lineEnd",
@@ -100,6 +102,8 @@ function isAction(value: unknown): value is VimAction {
         value === "appendEnd" ||
         value === "left" ||
         value === "right" ||
+        value === "up" ||
+        value === "down" ||
         value === "lineStart" ||
         value === "lineEnd" ||
         value === "wordNext" ||

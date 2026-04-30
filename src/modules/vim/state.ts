@@ -9,6 +9,8 @@ export type VimAction =
     | "appendEnd"
     | "left"
     | "right"
+    | "up"
+    | "down"
     | "lineStart"
     | "lineEnd"
     | "wordNext"
