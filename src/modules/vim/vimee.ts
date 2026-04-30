@@ -10,6 +10,9 @@ import type { createVimState } from "./state"
 
 type VimState = ReturnType<typeof createVimState>
 type HostAction = VimeeAction | { type: "submit" }
+type HostRange = { start: number; end: number }
+
+const YANK_FLASH_MS = 250
 
 export type VimeeAdapter = ReturnType<typeof createVimeeAdapter>
 
@@ -20,6 +23,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     let vim = createInitialContext({ line: 0, col: 0 })
     const keybinds = createKeybinds(config, log)
     let timer: ReturnType<typeof setTimeout> | undefined
+    let yankTimer: ReturnType<typeof setTimeout> | undefined
+    let yankFlashActive = false
     let pendingInsert = ""
     let nativeInsertUndoSaved = false
 
@@ -63,10 +68,13 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             }
 
             const hostEnd = vimeeKey === "e" ? endMotionOffset(map.hostText, offset, vim.count || 1) : undefined
+            const shouldFlashYank = shouldFlashYankFor(vimeeKey)
+            const visualYankRange = visualYankRangeFor(map)
             const result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false, keybinds)
             vim = result.newCtx
             if (hostEnd !== undefined && result.actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
             applyActions(result.actions as HostAction[], ctx, map)
+            if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(result.actions), visualYankRange)
             syncMode(state, vim.mode)
             const keybindPending = keybinds?.isPending() ?? false
             if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, offset)
@@ -78,6 +86,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         },
         cleanup() {
             if (timer) clearTimeout(timer)
+            if (yankTimer) clearTimeout(yankTimer)
         },
     }
 
@@ -275,10 +284,11 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     function syncVisualSelection(input: EditBufferLike | undefined, map: PromptMap, ctx: PromptContext) {
         if (!input) return
         if (!isVisualMode(vim.mode) || !vim.visualAnchor) {
-            clearVisualSelection(input)
+            if (!yankFlashActive) clearVisualSelection(input)
             return
         }
 
+        cancelYankFlash()
         const range = vim.mode === "visual-line" ? visualLineRange(map, vim.visualAnchor, vim.cursor) : visualCharRange(map, vim.visualAnchor, vim.cursor)
         if (!range) {
             clearVisualSelection(input)
@@ -287,15 +297,51 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
         setSelection(input, range.start, range.end, ctx)
     }
+
+    function visualYankRangeFor(map: PromptMap) {
+        if (!isVisualMode(vim.mode) || !vim.visualAnchor) return undefined
+        return vim.mode === "visual-line" ? visualLineRange(map, vim.visualAnchor, vim.cursor) : visualCharRange(map, vim.visualAnchor, vim.cursor)
+    }
+
+    function flashYank(ctx: PromptContext, map: PromptMap, action: YankAction | undefined, visualRange: HostRange | undefined) {
+        if (!action) return
+        const input = focusedInput(ctx)
+        if (!input) return
+        const range = visualRange ?? yankedTextRange(map, vim.cursor, action.text)
+        if (!range) return
+
+        cancelYankFlash()
+        yankFlashActive = true
+        setYankSelection(input, range.start, range.end, ctx)
+        ctx.requestRender()
+        yankTimer = setTimeout(() => {
+            yankTimer = undefined
+            if (!yankFlashActive) return
+            yankFlashActive = false
+            clearVisualSelection(input)
+            ctx.requestRender()
+        }, YANK_FLASH_MS)
+    }
+
+    function cancelYankFlash() {
+        if (yankTimer) clearTimeout(yankTimer)
+        yankTimer = undefined
+        yankFlashActive = false
+    }
+
+    function shouldFlashYankFor(key: string) {
+        if (isVisualMode(vim.mode)) return key === "y"
+        return vim.operator === "y"
+    }
 }
 
-function visualCharRange(map: PromptMap, anchor: CursorPosition, cursor: CursorPosition) {
+function visualCharRange(map: PromptMap, anchor: CursorPosition, cursor: CursorPosition): HostRange | undefined {
     const anchorOffset = hostOffset(map, anchor, "next")
     const cursorOffset = hostOffset(map, cursor, "previous")
     return hostRange(map, anchorOffset, cursorOffset)
 }
 
-function visualLineRange(map: PromptMap, anchor: CursorPosition, cursor: CursorPosition) {
+function visualLineRange(map: PromptMap, anchor: CursorPosition, cursor: CursorPosition): HostRange | undefined {
     const startLine = Math.min(anchor.line, cursor.line)
     const endLine = Math.max(anchor.line, cursor.line)
     const start = hostOffset(map, { line: startLine, col: 0 }, "next")
@@ -303,16 +349,47 @@ function visualLineRange(map: PromptMap, anchor: CursorPosition, cursor: CursorP
     return hostRange(map, start, end)
 }
 
-function hostRange(map: PromptMap, left: number, right: number) {
+function yankedTextRange(map: PromptMap, cursor: CursorPosition, text: string): HostRange | undefined {
+    if (!text) return undefined
+    if (text.endsWith("\n")) {
+        const lineCount = text.split("\n").length - 1
+        return visualLineRange(map, cursor, { line: cursor.line + Math.max(0, lineCount - 1), col: 0 })
+    }
+
+    const start = vimOffsetFromPosition(map.vimText, cursor)
+    return vimOffsetRange(map, start, start + text.length - 1)
+}
+
+function vimOffsetRange(map: PromptMap, left: number, right: number): HostRange | undefined {
+    const start = hostFromVimOffset(map, Math.min(left, right), "next")
+    const end = hostFromVimOffset(map, Math.max(left, right), "previous")
+    return hostRange(map, start, end)
+}
+
+function hostRange(map: PromptMap, left: number, right: number): HostRange | undefined {
     if (!map.hostText) return undefined
     const start = clamp(Math.min(left, right), 0, Math.max(0, map.hostText.length - 1))
     const end = clamp(Math.max(left, right), 0, Math.max(0, map.hostText.length - 1))
     return { start, end }
 }
 
+type YankAction = Extract<VimeeAction, { type: "yank" }>
+
+function yankAction(actions: VimeeAction[]): YankAction | undefined {
+    return actions.find((action): action is YankAction => action.type === "yank")
+}
+
 function setSelection(input: EditBufferLike, start: number, end: number, ctx: PromptContext) {
-    input.selectionBg = ctx.api.theme.current.warning
-    input.selectionFg = ctx.api.theme.current.background
+    setSelectionColors(input, start, end, ctx.api.theme.current.warning, ctx.api.theme.current.background)
+}
+
+function setYankSelection(input: EditBufferLike, start: number, end: number, ctx: PromptContext) {
+    setSelectionColors(input, start, end, ctx.api.theme.current.info, ctx.api.theme.current.background)
+}
+
+function setSelectionColors(input: EditBufferLike, start: number, end: number, background: PromptContext["api"]["theme"]["current"]["warning"], foreground: PromptContext["api"]["theme"]["current"]["background"]) {
+    input.selectionBg = background
+    input.selectionFg = foreground
 
     if (input.setSelectionInclusive) {
         input.setSelectionInclusive(start, end)
@@ -325,7 +402,7 @@ function setSelection(input: EditBufferLike, start: number, end: number, ctx: Pr
         return
     }
 
-    input.editorView?.setSelection?.(start, exclusiveEnd, ctx.api.theme.current.warning, ctx.api.theme.current.background)
+    input.editorView?.setSelection?.(start, exclusiveEnd, background, foreground)
 }
 
 function clearVisualSelection(input: EditBufferLike) {
@@ -343,6 +420,35 @@ function isVisualMode(mode: VimContext["mode"]): mode is "visual" | "visual-line
 
 function vimLineLength(text: string, line: number) {
     return text.split("\n")[line]?.length ?? 0
+}
+
+function vimOffsetFromPosition(text: string, position: CursorPosition) {
+    const lines = text.split("\n")
+    const line = clamp(position.line, 0, Math.max(0, lines.length - 1))
+    let offset = 0
+    for (let index = 0; index < line; index++) offset += lines[index].length + 1
+    return offset + clamp(position.col, 0, lines[line]?.length ?? 0)
+}
+
+function hostFromVimOffset(map: PromptMap, offset: number, bias: "previous" | "next") {
+    const current = clamp(offset, 0, map.vimText.length)
+    if (current === map.vimText.length) return map.hostText.length
+
+    const host = map.vimToHost[current]
+    if (host !== undefined) return host
+
+    if (bias === "previous") {
+        for (let previous = current - 1; previous >= 0; previous--) {
+            const previousHost = map.vimToHost[previous]
+            if (previousHost !== undefined) return previousHost
+        }
+    }
+
+    for (let next = current + 1; next < map.vimToHost.length; next++) {
+        const nextHost = map.vimToHost[next]
+        if (nextHost !== undefined) return nextHost
+    }
+    return map.hostText.length
 }
 
 function clampNormalCursor(input: EditBufferLike) {
