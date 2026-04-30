@@ -17,6 +17,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     let vim = createInitialContext({ line: 0, col: 0 })
     const keybinds = createKeybinds(config, log)
     let timer: ReturnType<typeof setTimeout> | undefined
+    let pendingInsert = ""
 
     return {
         handle(event: KeyEvent, key: string, ctx: PromptContext) {
@@ -35,12 +36,16 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 return true
             }
 
+            const wasPending = keybinds?.isPending() ?? false
+            const pendingBefore = pendingInsert
             sync(text, cursor)
             const result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false, keybinds)
             vim = result.newCtx
             applyActions(result.actions as HostAction[], ctx)
             syncMode(state, vim.mode)
             const keybindPending = keybinds?.isPending() ?? false
+            if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, offset)
+            pendingInsert = keybindPending && state.mode() === "insert" ? plainPending(vim.statusMessage) : ""
             state.setPending(pendingDisplay(vim, keybindPending))
             updateTimeout(ctx)
             log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: result.actions.map((action) => action.type) })
@@ -91,9 +96,27 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         if (!keybinds?.isPending()) return
         timer = setTimeout(() => {
             keybinds.cancel()
+            flushPendingInsert(ctx, pendingInsert)
+            pendingInsert = ""
             state.setPending("")
             ctx.requestRender()
         }, config.keymapTimeout)
+    }
+
+    function flushPendingInsert(ctx: PromptContext, value: string, offset?: number) {
+        if (!value || state.mode() !== "insert") return
+        const ref = ctx.prompt()
+        if (!ref) return
+        const input = focusedInput(ctx)
+        const text = input?.plainText ?? ref.current.input
+        const insertAt = clamp(offset ?? input?.cursorOffset ?? text.length, 0, text.length)
+        const currentOffset = input?.cursorOffset ?? insertAt
+        const next = text.slice(0, insertAt) + value + text.slice(insertAt)
+        setInput(ref, next)
+        buffer.replaceContent(next)
+        const nextOffset = currentOffset >= insertAt ? currentOffset + value.length : currentOffset
+        if (input) input.cursorOffset = nextOffset
+        vim = { ...vim, cursor: positionFromOffset(next, nextOffset) }
     }
 }
 
@@ -156,6 +179,10 @@ function pendingDisplay(ctx: VimContext, keybindPending: boolean) {
     if (ctx.phase === "text-object-pending") return ctx.textObjectModifier ?? ""
     if (keybindPending) return ctx.statusMessage
     return ""
+}
+
+function plainPending(value: string) {
+    return value.includes("<") || value.includes(">") ? "" : value
 }
 
 function consumesKey(key: string, actions: VimeeAction[], ctx: VimContext, keybindPending: boolean) {
