@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "vim-prompt",
+      "dependencies": {
+        "@vimee/core": "^0.3.0",
+      },
+    },
+  },
+  "packages": {
+    "@vimee/core": ["@vimee/core@0.3.0", "", {}, "sha512-aC44fw6HhmjrbJMafAk3oUZIDpFbgNebbDsWwMIFD0WwnOUZPETgzU3HYQetmwz0e38JY3I/g8CJXRQjspgJZw=="],
+  }
+}

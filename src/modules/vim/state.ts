@@ -1,31 +1,11 @@
 import { createSignal } from "solid-js"
 import type { VimLog } from "./log"
-import type { VimOperatorState } from "./operator"
 
 export type VimMode = "normal" | "insert"
-export type VimAction =
-    | "normal"
-    | "insert"
-    | "append"
-    | "appendEnd"
-    | "left"
-    | "right"
-    | "up"
-    | "down"
-    | "lineStart"
-    | "lineEnd"
-    | "wordNext"
-    | "wordEnd"
-    | "wordPrev"
-    | "deleteChar"
-    | "clear"
-    | "clearInsert"
-    | "submit"
 
 export function createVimState(defaultMode: VimMode, log: VimLog = () => {}) {
     const [mode, setMode] = createSignal<VimMode>(defaultMode)
     const [pending, setPending] = createSignal("")
-    const [operator, setOperator] = createSignal<VimOperatorState | undefined>()
 
     log("state.init", { mode: defaultMode })
 
@@ -39,11 +19,6 @@ export function createVimState(defaultMode: VimMode, log: VimLog = () => {}) {
         setPending(next: string) {
             if (pending() !== next) log("state.pending", { from: pending(), to: next })
             setPending(next)
-        },
-        operator,
-        setOperator(next: VimOperatorState | undefined) {
-            if (operator() !== next) log("state.operator", { from: operator(), to: next })
-            setOperator(next)
         },
     }
 }

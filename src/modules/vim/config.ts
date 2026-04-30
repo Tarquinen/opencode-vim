@@ -1,6 +1,5 @@
-import type { VimAction, VimMode } from "./state"
+import type { VimMode } from "./state"
 
-export type VimKeymaps = Partial<Record<VimMode, Record<string, VimAction>>>
 export type VimCursorStyle = {
     style: "block" | "line" | "underline" | "default"
     blinking?: boolean
@@ -8,17 +7,17 @@ export type VimCursorStyle = {
 
 export type VimConfig = {
     defaultMode: VimMode
-    timeoutlen: number
+    keymapTimeout: number
     pendingDisplayDelay: number
     cursorStyles: Record<VimMode, VimCursorStyle>
     debug: boolean
     debugPath?: string
-    keymaps: Record<VimMode, Record<string, VimAction>>
+    keymaps: VimKeymaps
 }
 
 export type VimOptions = {
     defaultMode?: VimMode
-    timeoutlen?: number
+    keymapTimeout?: number
     pendingDisplayDelay?: number
     cursorStyles?: Partial<Record<VimMode, VimCursorStyle>>
     debug?: boolean
@@ -26,32 +25,8 @@ export type VimOptions = {
     keymaps?: VimKeymaps
 }
 
-const DEFAULT_KEYMAPS: Record<VimMode, Record<string, VimAction>> = {
-    insert: {
-        "<Esc>": "normal",
-        "<C-[>": "normal",
-    },
-    normal: {
-        i: "insert",
-        a: "append",
-        A: "appendEnd",
-        h: "left",
-        j: "down",
-        k: "up",
-        l: "right",
-        "0": "lineStart",
-        $: "lineEnd",
-        w: "wordNext",
-        e: "wordEnd",
-        b: "wordPrev",
-        x: "deleteChar",
-        dd: "clear",
-        D: "clear",
-        C: "clearInsert",
-        cc: "clearInsert",
-        "<CR>": "submit",
-    },
-}
+export type VimKeymaps = Partial<Record<VimMode, Record<string, VimMappedAction>>>
+export type VimMappedAction = string
 
 const DEFAULT_CURSOR_STYLES: Record<VimMode, VimCursorStyle> = {
     insert: { style: "line", blinking: true },
@@ -62,7 +37,7 @@ export function createVimConfig(options: unknown): VimConfig {
     const input = readOptions(options)
     return {
         defaultMode: input.defaultMode ?? "insert",
-        timeoutlen: Math.max(0, input.timeoutlen ?? 1000),
+        keymapTimeout: Math.max(0, input.keymapTimeout ?? 1000),
         pendingDisplayDelay: Math.max(0, input.pendingDisplayDelay ?? 120),
         cursorStyles: {
             insert: { ...DEFAULT_CURSOR_STYLES.insert, ...input.cursorStyles?.insert },
@@ -70,10 +45,7 @@ export function createVimConfig(options: unknown): VimConfig {
         },
         debug: input.debug ?? process.env.VIM_PROMPT_DEBUG === "1",
         debugPath: input.debugPath,
-        keymaps: {
-            insert: { ...DEFAULT_KEYMAPS.insert, ...input.keymaps?.insert },
-            normal: { ...DEFAULT_KEYMAPS.normal, ...input.keymaps?.normal },
-        },
+        keymaps: input.keymaps ?? {},
     }
 }
 
@@ -85,7 +57,7 @@ function readOptions(options: unknown): VimOptions {
     const source = raw as Record<string, unknown>
     return {
         defaultMode: isMode(source.defaultMode) ? source.defaultMode : undefined,
-        timeoutlen: typeof source.timeoutlen === "number" ? source.timeoutlen : undefined,
+        keymapTimeout: readNumber(source.keymapTimeout),
         pendingDisplayDelay: typeof source.pendingDisplayDelay === "number" ? source.pendingDisplayDelay : undefined,
         cursorStyles: readCursorStyles(source.cursorStyles),
         debug: typeof source.debug === "boolean" ? source.debug : undefined,
@@ -96,15 +68,15 @@ function readOptions(options: unknown): VimOptions {
 
 function readKeymaps(input: unknown): VimKeymaps | undefined {
     if (!input || typeof input !== "object") return undefined
-    const keymaps: VimKeymaps = {}
     const source = input as Record<string, unknown>
+    const keymaps: VimKeymaps = {}
 
     for (const mode of ["insert", "normal"] as const) {
         const raw = source[mode]
         if (!raw || typeof raw !== "object") continue
         keymaps[mode] = {}
         for (const [key, action] of Object.entries(raw as Record<string, unknown>)) {
-            if (isAction(action)) keymaps[mode][key] = action
+            if (isMappedAction(action)) keymaps[mode][key] = action
         }
     }
 
@@ -138,24 +110,10 @@ function isMode(value: unknown): value is VimMode {
     return value === "insert" || value === "normal"
 }
 
-function isAction(value: unknown): value is VimAction {
-    return (
-        value === "normal" ||
-        value === "insert" ||
-        value === "append" ||
-        value === "appendEnd" ||
-        value === "left" ||
-        value === "right" ||
-        value === "up" ||
-        value === "down" ||
-        value === "lineStart" ||
-        value === "lineEnd" ||
-        value === "wordNext" ||
-        value === "wordEnd" ||
-        value === "wordPrev" ||
-        value === "deleteChar" ||
-        value === "clear" ||
-        value === "clearInsert" ||
-        value === "submit"
-    )
+function isMappedAction(value: unknown): value is VimMappedAction {
+    return typeof value === "string" && value.length > 0
+}
+
+function readNumber(value: unknown) {
+    return typeof value === "number" ? value : undefined
 }

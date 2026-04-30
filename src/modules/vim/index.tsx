@@ -3,46 +3,26 @@ import { useKeyboard } from "@opentui/solid"
 import { onCleanup } from "solid-js"
 import type { PromptContext, PromptModule } from "../../prompt/types"
 import { applyVimCursorStyle } from "./actions"
-import { runVimAction } from "./actions"
 import type { VimConfig } from "./config"
 import { createVimConfig } from "./config"
-import { resolveKeymap } from "./keymap"
-import { isTextSequence, keyNotation } from "./keys"
+import { keyNotation } from "./keys"
 import { createVimLog } from "./log"
 import type { VimLog } from "./log"
-import { clearOperator, handleOperatorKey } from "./operator"
 import { createVimState } from "./state"
+import { createVimeeAdapter } from "./vimee"
 import { VimStatus } from "./view"
 
 export function createVimModule(options?: unknown): PromptModule {
     const config = createVimConfig(options)
     const log = createVimLog(config)
     const state = createVimState(config.defaultMode, log)
-    log("module.create", { defaultMode: config.defaultMode, timeoutlen: config.timeoutlen })
+    log("module.create", { defaultMode: config.defaultMode, keymapTimeout: config.keymapTimeout })
 
     return {
         id: "vim",
         order: 0,
         setup(ctx) {
             log("module.setup", { kind: ctx.kind, sessionID: ctx.sessionID, workspaceID: ctx.workspaceID })
-            return ctx.api.command.register(() => [
-                {
-                    title: "Vim normal mode",
-                    value: "vim-prompt.normal",
-                    keybind: "escape",
-                    category: "Prompt",
-                    hidden: true,
-                    enabled: state.mode() === "insert",
-                    onSelect() {
-                        log("command.normal", { mode: state.mode(), pending: state.pending() })
-                        runVimAction("normal", state, ctx)
-                        applyVimCursorStyle(ctx, config.cursorStyles[state.mode()])
-                        state.setPending("")
-                        clearOperator(state)
-                        ctx.requestRender()
-                    },
-                },
-            ])
         },
         renderAbove(ctx) {
             return <VimKeyboard ctx={ctx} config={config} state={state} log={log} />
@@ -54,8 +34,8 @@ export function createVimModule(options?: unknown): PromptModule {
 }
 
 function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: ReturnType<typeof createVimState>; log: VimLog }) {
-    let timer: ReturnType<typeof setTimeout> | undefined
     let cursorStyleMode = ""
+    const vimee = createVimeeAdapter(props.state, props.config, props.log)
     props.log("keyboard.mount", { kind: props.ctx.kind })
 
     const cursorStyleTimer = setInterval(syncCursorStyle, 50)
@@ -83,76 +63,22 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             return
         }
 
-        const mode = props.state.mode()
-        if (mode === "normal" && handleOperatorKey(key, props.state, props.ctx)) {
+        const consumed = vimee.handle(event, key, props.ctx)
+        if (consumed) {
             event.preventDefault()
             event.stopPropagation()
-            clearPending()
-            props.ctx.requestRender()
-            return
         }
-
-        const sequence = props.state.pending() + key
-        const result = resolveKeymap(props.config, mode, sequence)
-        props.log("keyboard.resolve", { key, mode, sequence, result: result.kind, action: result.kind === "action" ? result.action : undefined })
-
-        if (result.kind === "none") {
-            if (mode === "insert") flushPending(props.ctx)
-            if (mode === "normal") clearOperator(props.state)
-            clearPending()
-            if (mode === "normal") {
-                event.preventDefault()
-                event.stopPropagation()
-            }
-            return
-        }
-
-        event.preventDefault()
-        event.stopPropagation()
-
-        if (result.kind === "pending") {
-            props.state.setPending(result.sequence)
-            if (timer) clearTimeout(timer)
-            timer = setTimeout(() => {
-                if (mode === "insert") flushPending(props.ctx)
-                clearPending()
-                props.ctx.requestRender()
-            }, props.config.timeoutlen)
-            return
-        }
-
-        clearPending()
-        props.log("keyboard.action", { action: result.action, mode: props.state.mode() })
-        runVimAction(result.action, props.state, props.ctx)
         syncCursorStyle(true)
         props.ctx.requestRender()
     })
 
     onCleanup(() => {
         props.log("keyboard.cleanup", { kind: props.ctx.kind })
-        if (timer) clearTimeout(timer)
+        vimee.cleanup()
         clearInterval(cursorStyleTimer)
     })
 
     return <box height={0} />
-
-    function clearPending() {
-        if (timer) clearTimeout(timer)
-        timer = undefined
-        props.state.setPending("")
-    }
-
-    function flushPending(ctx: PromptContext) {
-        const pending = props.state.pending()
-        const ref = ctx.prompt()
-        if (pending || !ref) props.log("keyboard.flush_pending", { pending, hasRef: !!ref, textSequence: isTextSequence(pending) })
-        if (!ref || !pending || !isTextSequence(pending)) return
-        ref.set({
-            input: `${ref.current.input}${pending}`,
-            mode: ref.current.mode,
-            parts: [...ref.current.parts],
-        })
-    }
 
     function syncCursorStyle(force = false) {
         const mode = props.state.mode()
@@ -166,6 +92,5 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
 
 function readablePending(sequence: string) {
     if (!sequence) return undefined
-    if (isTextSequence(sequence)) return sequence
     return sequence.replaceAll("><", " ")
 }

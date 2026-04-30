@@ -5,5 +5,8 @@
     "./tui": {
       "import": "./tui.tsx"
     }
+  },
+  "dependencies": {
+    "@vimee/core": "^0.3.0"
   }
 }
