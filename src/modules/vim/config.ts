@@ -62,7 +62,7 @@ export function createVimConfig(options: unknown): VimConfig {
     const input = readOptions(options)
     return {
         defaultMode: input.defaultMode ?? "insert",
-        timeoutlen: Math.max(0, input.timeoutlen ?? 300),
+        timeoutlen: Math.max(0, input.timeoutlen ?? 1000),
         pendingDisplayDelay: Math.max(0, input.pendingDisplayDelay ?? 120),
         cursorStyles: {
             insert: { ...DEFAULT_CURSOR_STYLES.insert, ...input.cursorStyles?.insert },
