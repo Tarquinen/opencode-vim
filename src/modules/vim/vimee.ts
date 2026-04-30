@@ -235,20 +235,8 @@ function keybindAction(action: string): KeybindDefinition {
 
 function keyForVimee(event: KeyEvent, key: string) {
     if (event.ctrl) return event.name?.toLowerCase()
-    if (key === "<Esc>" || key === "<C-[>") return "Escape"
-    if (key === "<CR>") return "Enter"
-    if (key === "<Tab>") return "Tab"
-    if (key === "<BS>") return "Backspace"
-    if (key === "<Del>") return "Delete"
-    if (key === "<Space>") return " "
-    if (key === "<Up>") return "ArrowUp"
-    if (key === "<Down>") return "ArrowDown"
-    if (key === "<Left>") return "ArrowLeft"
-    if (key === "<Right>") return "ArrowRight"
-    if (key === "<Home>") return "Home"
-    if (key === "<End>") return "End"
-    if (key.startsWith("<")) return undefined
-    return key
+    const token = keyToken(key)
+    return token.startsWith("<") ? undefined : token
 }
 
 function keyToken(token: string) {
