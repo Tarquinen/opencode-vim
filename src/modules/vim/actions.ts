@@ -55,12 +55,16 @@ export function runVimAction(action: VimAction, state: VimState, ctx: PromptCont
             movePromptCursor(ctx, "left")
             return true
         case "insert":
+            state.setMode("insert")
+            ref?.focus()
+            return true
         case "append":
+            moveAppendCursor(ctx)
             state.setMode("insert")
             ref?.focus()
             return true
         case "appendEnd":
-            movePromptCursor(ctx, "lineEnd")
+            moveToAppendLineEnd(ctx)
             state.setMode("insert")
             ref?.focus()
             return true
@@ -149,6 +153,18 @@ function moveBoundedHorizontal(input: EditBufferLike, direction: "left" | "right
     }
 
     return moved
+}
+
+function moveAppendCursor(ctx: PromptContext) {
+    const input = focusedInput(ctx)
+    if (!input) return false
+    return input.moveCursorRight?.() ?? false
+}
+
+function moveToAppendLineEnd(ctx: PromptContext) {
+    const input = focusedInput(ctx)
+    if (!input) return false
+    return input.gotoVisualLineEnd?.() ?? false
 }
 
 function moveToNormalLineEnd(input: EditBufferLike) {
