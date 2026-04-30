@@ -20,11 +20,12 @@ The key rule from Vim `motion.txt` for our current cursor work is that left/righ
 - Insert mode and normal mode.
 - Configurable keymaps using Vim-like key notation.
 - Multi-key sequence resolution with timeout behavior.
+- Operator-pending delete/change flows for a limited motion and text-object subset.
 - Prompt-local cursor movement and editing through guarded OpenTUI internals.
 - A prompt-right mode indicator.
 - Configurable cursor style per mode.
 
-Counts, registers, operators with arbitrary motions, visual mode, replace mode, text objects, marks, undo integration, and macros are not implemented yet.
+Counts, registers, visual mode, replace mode, marks, undo integration, macros, and the full Vim operator/text-object surface are not implemented yet.
 
 ## Configuration Defaults
 
@@ -32,7 +33,7 @@ Default config values:
 
 ```ts
 defaultMode: "insert"
-timeoutlen: 300
+timeoutlen: 1000
 pendingDisplayDelay: 120
 cursorStyles: {
   insert: { style: "line", blinking: true },
@@ -81,7 +82,7 @@ Users can override or add mappings through plugin options:
   "./plugin/vim-prompt",
   {
     "vim": {
-      "timeoutlen": 300,
+      "timeoutlen": 1000,
       "pendingDisplayDelay": 120,
       "cursorStyles": {
         "insert": { "style": "line", "blinking": true },
@@ -131,6 +132,61 @@ Rules:
 - Display of pending state is delayed by `pendingDisplayDelay` to avoid flicker for fast mappings such as `kj`.
 - If the sequence resolves before the display delay, it should never flash in the status area.
 - If the sequence remains pending past the delay, it should be shown until it resolves or times out.
+
+## Operators And Text Objects
+
+Vim composes operators with motions and text objects. `vim-prompt` should follow that model rather than defining every sequence as a standalone action.
+
+Initial supported operators:
+
+- `d`: delete.
+- `c`: change, meaning delete and then enter insert mode.
+
+Initial supported motion operands:
+
+- `w`: to the start of the next word.
+- `e`: to the end of the current or next word.
+- `b`: back to the start of the previous word.
+
+Initial supported text objects:
+
+- `iw`: inner word under the cursor.
+
+Expected behavior:
+
+- `dw` deletes from the cursor through the `w` motion range.
+- `de` deletes from the cursor through the `e` motion range.
+- `db` deletes backward from the cursor through the `b` motion range.
+- `diw` deletes the inner word under the cursor.
+- `ciw` deletes the inner word under the cursor and enters insert mode at the start of the deleted word.
+
+Reusable implementation model:
+
+```ts
+type VimOperator = "delete" | "change"
+type VimOperand = Motion | TextObject
+type TextRange = { start: number; end: number }
+```
+
+Operator-pending flow:
+
+```txt
+d -> wait for motion or text object
+c -> wait for motion or text object
+d w -> delete motion range for w
+d e -> delete motion range for e
+d b -> delete motion range for b
+d i w -> delete inner word
+c i w -> delete inner word, then enter insert mode
+```
+
+Implementation notes:
+
+- Motion ranges are cursor-relative.
+- Text-object ranges are object-relative and should cover the word under the cursor, regardless of where inside the word the cursor is.
+- `change` reuses delete behavior, then switches to insert mode and places the cursor at the start of the deleted range.
+- Current word behavior approximates Vim by treating contiguous non-whitespace as a word.
+- Vim's `cw` has special behavior closer to `ce`; this should be handled explicitly when `cw` is added.
 
 ## Actions
 
@@ -386,8 +442,8 @@ This is intentionally isolated in `src/modules/vim/actions.ts`. If OpenCode expo
 ## Known Gaps
 
 - Counts such as `3w` or `2dd`.
-- Operators with arbitrary motions, such as `dw`, `cw`, `d$`, `c0`.
-- Text objects such as `iw`, `aw`, `ip`.
+- Full operator/motion coverage, such as `cw`, `d$`, `c0`.
+- Additional text objects such as `aw`, `ip`, `ap`.
 - Visual mode.
 - Replace mode.
 - Undo/redo integration.
