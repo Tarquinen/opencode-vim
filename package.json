@@ -1,6 +1,6 @@
 {
   "name": "opencode-vim",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "exports": {
     "./tui": {
       "import": "./tui.tsx"
