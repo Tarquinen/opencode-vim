@@ -62,8 +62,10 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 return true
             }
 
+            const hostEnd = vimeeKey === "e" ? endMotionOffset(map.hostText, offset, vim.count || 1) : undefined
             const result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false, keybinds)
             vim = result.newCtx
+            if (hostEnd !== undefined && result.actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
             applyActions(result.actions as HostAction[], ctx, map)
             syncMode(state, vim.mode)
             const keybindPending = keybinds?.isPending() ?? false
@@ -276,6 +278,27 @@ function clampNormalCursor(input: EditBufferLike) {
     if (!cursor || !eol || offset === undefined) return
     if (cursor.visualCol === 0) return
     if (cursor.visualRow === eol.visualRow && (cursor.offset === eol.offset || offset === eol.offset)) input.cursorOffset = Math.max(0, offset - 1)
+}
+
+function endMotionOffset(text: string, offset: number, count: number) {
+    let index = offset
+    for (let step = 0; step < count; step++) {
+        index++
+        while (index < text.length && isWhitespace(text[index])) index++
+        const kind = wordKind(text[index])
+        if (!kind) return Math.max(0, text.length - 1)
+        while (wordKind(text[index + 1]) === kind) index++
+    }
+    return clamp(index, 0, Math.max(0, text.length - 1))
+}
+
+function isWhitespace(value: string | undefined) {
+    return value === " " || value === "\t" || value === "\n"
+}
+
+function wordKind(value: string | undefined) {
+    if (!value || isWhitespace(value)) return undefined
+    return /\w/.test(value) ? "word" : "punctuation"
 }
 
 function createKeybinds(config: VimConfig, log: VimLog): KeybindMap | undefined {
