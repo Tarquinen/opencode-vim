@@ -156,6 +156,6 @@ function arrowKey(name: string, sequence: string): ParsedKey {
         raw: sequence,
         eventType: "press",
         source: "raw",
-        super: true,
+        super: false,
     }
 }
