@@ -1,0 +1,37 @@
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": [
+    [
+      "./plugin/opencode-vim",
+      {
+        "vim": {
+          "defaultMode": "insert",
+          "keymapTimeout": 500,
+          "pendingDisplayDelay": 120,
+          "cursorStyles": {
+            "insert": {
+              "style": "line",
+              "blinking": true
+            },
+            "normal": {
+              "style": "block",
+              "blinking": true
+            }
+          },
+          "debug": false,
+          "debugPath": "/home/you/.cache/opencode/opencode-vim.log",
+          "keymaps": {
+            "insert": {
+              "kj": "normal"
+            },
+            "normal": {
+              "i": "insert",
+              "<CR>": "submit",
+              "Y": "y$"
+            }
+          }
+        }
+      }
+    ]
+  ]
+}
