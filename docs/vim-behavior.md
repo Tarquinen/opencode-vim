@@ -22,6 +22,7 @@ The key rule from Vim `motion.txt` for our current cursor work is that left/righ
 - Multi-key sequence resolution with timeout behavior.
 - Prompt-local cursor movement and editing through guarded OpenTUI internals.
 - A prompt-right mode indicator.
+- Configurable cursor style per mode.
 
 Counts, registers, operators with arbitrary motions, visual mode, replace mode, text objects, marks, undo integration, and macros are not implemented yet.
 
@@ -33,6 +34,10 @@ Default config values:
 defaultMode: "insert"
 timeoutlen: 300
 pendingDisplayDelay: 120
+cursorStyles: {
+  insert: { style: "line", blinking: true },
+  normal: { style: "block", blinking: true }
+}
 ```
 
 Default insert-mode mappings:
@@ -58,6 +63,7 @@ Default normal-mode mappings:
   "0": "lineStart",
   "$": "lineEnd",
   "w": "wordNext",
+  "e": "wordEnd",
   "b": "wordPrev",
   "x": "deleteChar",
   "dd": "clear",
@@ -77,6 +83,10 @@ Users can override or add mappings through plugin options:
     "vim": {
       "timeoutlen": 300,
       "pendingDisplayDelay": 120,
+      "cursorStyles": {
+        "insert": { "style": "line", "blinking": true },
+        "normal": { "style": "block", "blinking": true }
+      },
       "keymaps": {
         "insert": {
           "kj": "normal"
@@ -159,11 +169,9 @@ Expected Vim behavior:
 
 Current behavior:
 
+- Moves one raw cursor step right using the focused OpenTUI edit buffer.
 - Switches to insert mode and focuses the prompt.
-
-Known limitation:
-
-- It does not yet move one character right before entering insert mode. This should be added with the same guarded cursor helper used by normal-mode movement.
+- Unlike normal-mode `l`, this movement is allowed to land on the insertion cell after the current character.
 
 ### `appendEnd`
 
@@ -173,11 +181,9 @@ Expected Vim behavior:
 
 Current behavior:
 
-- Moves to the normal-mode line end helper, switches to insert mode, and focuses the prompt.
-
-Known limitation:
-
-- The normal-mode line-end helper clamps to the last occupied character. For true `A`, we may need a separate insert-mode line-end path that positions at the append cell after the last character.
+- Moves to OpenTUI's visual line end insertion position.
+- Switches to insert mode and focuses the prompt.
+- This intentionally differs from normal-mode `$`, which clamps back to the last occupied character.
 
 ### `left`
 
@@ -262,6 +268,22 @@ Known limitation:
 
 - Exact Vim word/WORD semantics are delegated to OpenTUI and may not match Vim perfectly.
 
+### `wordEnd`
+
+Expected Vim behavior:
+
+- `e` moves to the end of the current word when possible.
+- If already at the end of a word, it moves to the end of the next word.
+
+Current behavior:
+
+- Computes the next word end from the focused prompt text and cursor offset.
+- Treats contiguous non-whitespace as a word for now.
+
+Known limitation:
+
+- This is an approximation of Vim's `word` behavior. Vim distinguishes keyword words from punctuation runs; `vim-prompt` currently uses non-whitespace groups.
+
 ### `wordPrev`
 
 Expected Vim behavior:
@@ -327,6 +349,27 @@ Current behavior:
 
 - Calls `TuiPromptRef.submit()`.
 
+## Cursor Style
+
+Cursor style is configurable per mode.
+
+Supported OpenTUI styles:
+
+- `block`
+- `line`
+- `underline`
+- `default`
+
+Default behavior:
+
+- Insert mode uses `line`, matching the common vertical-bar insert cursor.
+- Normal mode uses `block`, matching Vim's normal-mode cursor shape.
+
+Implementation note:
+
+- OpenCode's public `TuiPromptRef` does not expose cursor style.
+- `vim-prompt` applies cursor style through the same guarded focused-renderable path used for cursor movement.
+
 ## Internal Cursor Access
 
 OpenCode's public `TuiPromptRef` currently exposes input text, focus, reset, set, and submit methods, but no cursor position or cursor movement API.
@@ -336,6 +379,7 @@ For cursor movement, `vim-prompt` uses a guarded OpenTUI internal path:
 - Reads `api.renderer.currentFocusedRenderable`.
 - Feature-detects edit-buffer methods before using them.
 - Calls methods such as `moveCursorLeft`, `moveCursorRight`, `moveCursorUp`, `moveCursorDown`, `gotoVisualLineEnd`, `moveWordForward`, and `deleteChar`.
+- Sets `cursorStyle` for mode-specific cursor shapes.
 
 This is intentionally isolated in `src/modules/vim/actions.ts`. If OpenCode exposes first-class prompt cursor APIs later, replace this internal helper rather than spreading direct renderable access across modules.
 
@@ -352,4 +396,3 @@ This is intentionally isolated in `src/modules/vim/actions.ts`. If OpenCode expo
 - Character find motions such as `f`, `F`, `t`, `T`.
 - Vim-accurate word vs WORD distinctions.
 - True linewise behavior for `dd`, `cc`, `D`, and `C`.
-- `a` and `A` need more precise append-position handling.
