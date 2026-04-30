@@ -2,24 +2,26 @@ import type { KeyEvent } from "@opentui/core"
 import { TextBuffer, createInitialContext, createKeybindMap, parseKeySequence, processKeystroke } from "@vimee/core"
 import type { CursorPosition, KeybindDefinition, KeybindMap, ValidKeySequence, VimAction as VimeeAction, VimContext, VimMode as VimeeMode } from "@vimee/core"
 import type { PromptContext } from "../../prompt/types"
-import { focusedInput, setInput, type EditBufferLike } from "./actions"
+import { focusedInput, setInput } from "./actions"
 import type { VimConfig } from "./config"
 import type { VimLog } from "./log"
+import { createPromptMap, derivePromptMap, hostOffset, hostPosition, type PromptMap } from "./map"
 import type { createVimState } from "./state"
 
 type VimState = ReturnType<typeof createVimState>
 type HostAction = VimeeAction | { type: "submit" }
-type VisualLineOperator = "d" | "c" | "y"
 
 export type VimeeAdapter = ReturnType<typeof createVimeeAdapter>
 
 export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimLog) {
     let buffer = new TextBuffer("")
+    let activeMap = createPromptMap("")
+    const maps = new Map([[activeMap.vimText, activeMap]])
     let vim = createInitialContext({ line: 0, col: 0 })
     const keybinds = createKeybinds(config, log)
-    const normalKeyPrefixes = keyPrefixes(config.keymaps.normal)
     let timer: ReturnType<typeof setTimeout> | undefined
     let pendingInsert = ""
+    let nativeInsertUndoSaved = false
 
     return {
         handle(event: KeyEvent, key: string, ctx: PromptContext) {
@@ -29,7 +31,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             const input = focusedInput(ctx)
             const text = input?.plainText ?? ref.current.input
             const offset = clamp(input?.cursorOffset ?? text.length, 0, text.length)
-            const cursor = positionFromOffset(text, offset)
+            const map = mapForHostText(text, input)
+            const cursor = hostPosition(map, offset)
             const vimeeKey = keyForVimee(event, key)
             if (!vimeeKey) return false
 
@@ -44,29 +47,17 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             }
 
             if (state.mode() === "insert") {
-                const consumed = handleInsertMode(event, vimeeKey, ctx, text, cursor, offset)
+                const consumed = handleInsertMode(event, vimeeKey, ctx, map, cursor, offset)
                 return consumed ?? false
             }
 
             const wasPending = keybinds?.isPending() ?? false
             const pendingBefore = pendingInsert
-            sync(text, cursor)
-            if (handleVisualLineCommand(vimeeKey, input, text, ctx, wasPending)) {
-                state.setPending("")
-                updateTimeout(ctx)
-                log("vimee.visual_line", { key, vimeeKey, cursor: vim.cursor })
-                return true
-            }
-            if (handleVisualMotion(vimeeKey, input, text, wasPending)) {
-                state.setPending("")
-                updateTimeout(ctx)
-                log("vimee.visual_motion", { key, vimeeKey, cursor: vim.cursor })
-                return true
-            }
+            sync(map, cursor)
 
             const result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false, keybinds)
             vim = result.newCtx
-            applyActions(result.actions as HostAction[], ctx)
+            applyActions(result.actions as HostAction[], ctx, map)
             syncMode(state, vim.mode)
             const keybindPending = keybinds?.isPending() ?? false
             if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, offset)
@@ -81,26 +72,60 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         },
     }
 
-    function sync(text: string, cursor: CursorPosition) {
-        if (buffer.getContent() !== text) buffer = new TextBuffer(text)
+    function sync(map: PromptMap, cursor: CursorPosition) {
+        if (buffer.getContent() !== map.vimText) buffer.replaceContent(map.vimText)
         vim = { ...vim, cursor, mode: state.mode() }
     }
 
-    function applyActions(actions: HostAction[], ctx: PromptContext) {
+    function mapForHostText(text: string, input: ReturnType<typeof focusedInput>) {
+        if (activeMap.hostText === text) return activeMap
+        activeMap = createPromptMap(text, input)
+        rememberMap(activeMap)
+        if (state.mode() === "insert") {
+            if (!nativeInsertUndoSaved) {
+                buffer.saveUndoPoint(vim.cursor)
+                nativeInsertUndoSaved = true
+            }
+            buffer.replaceContent(activeMap.vimText)
+        } else {
+            buffer = new TextBuffer(activeMap.vimText)
+            nativeInsertUndoSaved = false
+        }
+        return activeMap
+    }
+
+    function rememberMap(map: PromptMap) {
+        maps.set(map.vimText, map)
+    }
+
+    function nextMap(map: PromptMap, vimText: string) {
+        const known = maps.get(vimText)
+        if (known) return known
+        const next = derivePromptMap(map, vimText)
+        rememberMap(next)
+        return next
+    }
+
+    function applyActions(actions: HostAction[], ctx: PromptContext, map: PromptMap) {
         const ref = ctx.prompt()
         const input = focusedInput(ctx)
+        let currentMap = map
         if (!ref) return
 
         for (const action of actions) {
             switch (action.type) {
                 case "content-change":
-                    setInput(ref, action.content)
+                    rememberMap(currentMap)
+                    currentMap = nextMap(currentMap, action.content)
+                    activeMap = currentMap
+                    setInput(ref, currentMap.hostText)
                     buffer.replaceContent(action.content)
                     break
                 case "cursor-move":
-                    if (input) input.cursorOffset = offsetFromPosition(buffer.getContent(), action.position)
+                    if (input) input.cursorOffset = hostOffset(currentMap, action.position)
                     break
                 case "mode-change":
+                    nativeInsertUndoSaved = false
                     syncMode(state, action.mode)
                     break
                 case "quit":
@@ -112,16 +137,16 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             }
         }
 
-        if (input) input.cursorOffset = offsetFromPosition(buffer.getContent(), vim.cursor)
+        if (input) input.cursorOffset = hostOffset(currentMap, vim.cursor)
     }
 
-    function handleInsertMode(event: KeyEvent, key: string, ctx: PromptContext, text: string, cursor: CursorPosition, offset: number) {
+    function handleInsertMode(event: KeyEvent, key: string, ctx: PromptContext, map: PromptMap, cursor: CursorPosition, offset: number) {
         if (key === "Escape") {
             cancelPendingInsert(ctx, offset)
-            sync(text, cursor)
+            sync(map, cursor)
             const result = processKeystroke(key, vim, buffer, event.ctrl, false)
             vim = result.newCtx
-            applyActions(result.actions as HostAction[], ctx)
+            applyActions(result.actions as HostAction[], ctx, map)
             syncMode(state, vim.mode)
             state.setPending("")
             log("vimee.key", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: result.actions.map((action) => action.type) })
@@ -141,9 +166,9 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 updateTimeout(ctx)
                 return true
             case "matched": {
-                sync(text, cursor)
-                const actions = applyKeybind(resolved.definition)
-                applyActions(actions, ctx)
+                sync(map, cursor)
+                const actions = applyKeybind(resolved.definition, map)
+                applyActions(actions, ctx, map)
                 syncMode(state, vim.mode)
                 pendingInsert = ""
                 state.setPending("")
@@ -160,10 +185,10 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         }
     }
 
-    function applyKeybind(definition: KeybindDefinition) {
+    function applyKeybind(definition: KeybindDefinition, map: PromptMap) {
         if ("execute" in definition) {
             const actions = definition.execute(vim, buffer) as HostAction[]
-            vim = { ...vim, cursor: positionFromOffset(buffer.getContent(), offsetFromPosition(buffer.getContent(), vim.cursor)) }
+            vim = { ...vim, cursor: hostPosition(map, hostOffset(map, vim.cursor)) }
             return actions
         }
 
@@ -174,229 +199,6 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             actions = [...actions, ...(result.actions as HostAction[])]
         }
         return actions
-    }
-
-    function handleVisualLineCommand(key: string, input: EditBufferLike | undefined, text: string, ctx: PromptContext, keybindPending: boolean) {
-        if (!input || keybindPending || normalKeyPrefixes.has(key)) return false
-
-        if (vim.phase === "operator-pending" && isVisualLineOperator(vim.operator) && key === vim.operator) {
-            applyVisualLineOperator(ctx, input, text, vim.operator, "line")
-            return true
-        }
-        if (vim.phase === "operator-pending" && isVisualLineOperator(vim.operator) && key === "$") {
-            applyVisualLineOperator(ctx, input, text, vim.operator, "end")
-            return true
-        }
-        if (vim.phase === "operator-pending" && isVisualLineOperator(vim.operator) && key === "0") {
-            applyVisualLineOperator(ctx, input, text, vim.operator, "start")
-            return true
-        }
-
-        if (vim.phase !== "idle") return false
-        if (key === "I") {
-            moveVisualLineStart(input, text)
-            enterInsertMode(ctx)
-            return true
-        }
-        if (key === "A") {
-            moveVisualLineEnd(input, text, { append: true })
-            enterInsertMode(ctx)
-            return true
-        }
-        if (key === "D") return applyVisualLineOperator(ctx, input, text, "d", "end")
-        if (key === "C") return applyVisualLineOperator(ctx, input, text, "c", "end")
-        if (key === "S") return applyVisualLineOperator(ctx, input, text, "c", "line")
-        if (key === "Y") return applyVisualLineOperator(ctx, input, text, "y", "line")
-        return false
-    }
-
-    function applyVisualLineOperator(ctx: PromptContext, input: EditBufferLike, text: string, operator: VisualLineOperator, scope: "line" | "start" | "end") {
-        const ref = ctx.prompt()
-        if (!ref) return true
-
-        const range = scope === "line" ? visualLineRange(input, text) : scope === "start" ? visualLineStartRange(input, text) : visualLineEndRange(input, text)
-        if (!range) return true
-
-        const value = text.slice(range.start, range.end + 1)
-        if (operator === "y") {
-            vim = { ...vim, phase: "idle", operator: null, register: value, statusMessage: "" }
-            return true
-        }
-
-        saveUndoPoint(vim.cursor)
-        const next = text.slice(0, range.start) + text.slice(range.end + 1)
-        const nextOffset = operator === "c" ? range.start : clamp(range.start, 0, Math.max(0, next.length - 1))
-        setInput(ref, next)
-        buffer.replaceContent(next)
-        input.cursorOffset = nextOffset
-        vim = { ...vim, mode: operator === "c" ? "insert" : "normal", phase: "idle", operator: null, statusMessage: "", cursor: positionFromOffset(next, nextOffset) }
-        syncMode(state, vim.mode)
-        if (operator === "c") ref.focus()
-        return true
-    }
-
-    function visualLineRange(input: EditBufferLike, text: string) {
-        const original = clamp(input.cursorOffset ?? 0, 0, text.length)
-        moveVisualLineStart(input, text)
-        const start = clamp(input.cursorOffset ?? original, 0, text.length)
-        input.cursorOffset = original
-        moveVisualLineEnd(input, text)
-        const end = clamp(input.cursorOffset ?? original, 0, Math.max(0, text.length - 1))
-        input.cursorOffset = original
-        vim = { ...vim, cursor: positionFromOffset(text, original) }
-        if (!text || end < start) return undefined
-        return { start, end }
-    }
-
-    function visualLineEndRange(input: EditBufferLike, text: string) {
-        const start = clamp(input.cursorOffset ?? 0, 0, text.length)
-        const original = start
-        moveVisualLineEnd(input, text)
-        const end = clamp(input.cursorOffset ?? original, 0, Math.max(0, text.length - 1))
-        input.cursorOffset = original
-        vim = { ...vim, cursor: positionFromOffset(text, original) }
-        if (!text || end < start) return undefined
-        return { start, end }
-    }
-
-    function visualLineStartRange(input: EditBufferLike, text: string) {
-        const end = clamp(input.cursorOffset ?? 0, 0, Math.max(0, text.length - 1))
-        const original = end
-        moveVisualLineStart(input, text)
-        const start = clamp(input.cursorOffset ?? original, 0, text.length)
-        input.cursorOffset = original
-        vim = { ...vim, cursor: positionFromOffset(text, original) }
-        if (!text || end < start) return undefined
-        return { start, end }
-    }
-
-    function handleVisualMotion(key: string, input: EditBufferLike | undefined, text: string, keybindPending: boolean) {
-        if (!input || keybindPending || vim.phase !== "idle" || normalKeyPrefixes.has(key)) return false
-
-        switch (key) {
-            case "h":
-                return moveHorizontal(input, text, "left")
-            case "l":
-                return moveHorizontal(input, text, "right")
-            case "j":
-                return moveVertical(input, text, "down")
-            case "k":
-                return moveVertical(input, text, "up")
-            case "0":
-                return moveVisualLineStart(input, text)
-            case "$":
-                return moveVisualLineEnd(input, text)
-            default:
-                return false
-        }
-    }
-
-    function moveHorizontal(input: EditBufferLike, text: string, direction: "left" | "right") {
-        const move = direction === "left" ? input.moveCursorLeft : input.moveCursorRight
-        if (!move) return false
-        const beforeOffset = input.cursorOffset
-        const before = input.visualCursor
-        const moved = move.call(input)
-        const after = input.visualCursor
-        if (moved && before && after && beforeOffset !== undefined && after.visualRow !== before.visualRow) {
-            input.cursorOffset = beforeOffset
-            syncCursorFromInput(input, text)
-            return true
-        }
-        if (moved && direction === "right" && beforeOffset !== undefined && isAtVisualLineEnd(input)) {
-            input.cursorOffset = beforeOffset
-            syncCursorFromInput(input, text)
-            return true
-        }
-        clampNormalLineEnd(input)
-        syncCursorFromInput(input, text)
-        return true
-    }
-
-    function moveVertical(input: EditBufferLike, text: string, direction: "up" | "down") {
-        const move = direction === "up" ? input.moveCursorUp : input.moveCursorDown
-        if (!move) return false
-        const beforeRow = input.visualCursor?.visualRow
-        move.call(input)
-        boundVerticalMove(input, text, direction, beforeRow)
-        clampNormalLineEnd(input)
-        syncCursorFromInput(input, text)
-        return true
-    }
-
-    function enterInsertMode(ctx: PromptContext) {
-        vim = { ...vim, mode: "insert", phase: "idle", operator: null, statusMessage: "" }
-        syncMode(state, "insert")
-        ctx.prompt()?.focus()
-    }
-
-    function moveVisualLineStart(input: EditBufferLike, text: string) {
-        const startRow = input.visualCursor?.visualRow
-        for (let index = 0; index < text.length; index++) {
-            const beforeOffset = input.cursorOffset
-            if (!input.moveCursorLeft?.()) break
-            if (startRow !== undefined && input.visualCursor?.visualRow !== startRow) {
-                if (beforeOffset !== undefined) input.cursorOffset = beforeOffset
-                break
-            }
-            if (input.visualCursor?.visualCol === 0) break
-        }
-        syncCursorFromInput(input, text)
-        return true
-    }
-
-    function moveVisualLineEnd(input: EditBufferLike, text: string, options?: { append?: boolean }) {
-        if (input.gotoVisualLineEnd?.()) {
-            if (!options?.append) clampNormalLineEnd(input)
-            syncCursorFromInput(input, text)
-            return true
-        }
-
-        const startRow = input.visualCursor?.visualRow
-        let previousOffset = input.cursorOffset
-        for (let index = 0; index < text.length; index++) {
-            const beforeOffset = input.cursorOffset
-            if (!input.moveCursorRight?.()) break
-            if (startRow !== undefined && input.visualCursor?.visualRow !== startRow) {
-                if (beforeOffset !== undefined) input.cursorOffset = beforeOffset
-                break
-            }
-            if (!options?.append && isAtVisualLineEnd(input)) {
-                if (previousOffset !== undefined) input.cursorOffset = previousOffset
-                break
-            }
-            previousOffset = input.cursorOffset
-        }
-        if (!options?.append) clampNormalLineEnd(input)
-        syncCursorFromInput(input, text)
-        return true
-    }
-
-    function boundVerticalMove(input: EditBufferLike, text: string, direction: "up" | "down", beforeRow: number | undefined) {
-        const afterRow = input.visualCursor?.visualRow
-        if (beforeRow === undefined || afterRow === undefined) return
-        const targetRow = direction === "down" ? beforeRow + 1 : beforeRow - 1
-        if (direction === "down" && afterRow <= targetRow) return
-        if (direction === "up" && afterRow >= targetRow) return
-
-        const moveBack = direction === "down" ? input.moveCursorLeft : input.moveCursorRight
-        if (!moveBack) return
-        for (let index = 0; index < text.length && input.visualCursor?.visualRow !== undefined; index++) {
-            const row = input.visualCursor.visualRow
-            if (direction === "down" ? row <= targetRow : row >= targetRow) break
-            if (!moveBack.call(input)) break
-        }
-        if (direction === "up" && input.visualCursor?.visualRow === targetRow) moveVisualLineEnd(input, text)
-    }
-
-    function syncCursorFromInput(input: EditBufferLike, text: string) {
-        const offset = clamp(input.cursorOffset ?? 0, 0, text.length)
-        vim = { ...vim, cursor: positionFromOffset(text, offset) }
-    }
-
-    function saveUndoPoint(cursor: CursorPosition) {
-        const undoable = buffer as TextBuffer & { saveUndoPoint?: (cursor: CursorPosition) => void }
-        undoable.saveUndoPoint?.(cursor)
     }
 
     function updateTimeout(ctx: PromptContext) {
@@ -432,10 +234,12 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         const currentOffset = input?.cursorOffset ?? insertAt
         const next = text.slice(0, insertAt) + value + text.slice(insertAt)
         setInput(ref, next)
-        buffer.replaceContent(next)
+        activeMap = createPromptMap(next, input)
+        rememberMap(activeMap)
+        buffer.replaceContent(activeMap.vimText)
         const nextOffset = currentOffset >= insertAt ? currentOffset + value.length : currentOffset
         if (input) input.cursorOffset = nextOffset
-        vim = { ...vim, cursor: positionFromOffset(next, nextOffset) }
+        vim = { ...vim, cursor: hostPosition(activeMap, nextOffset) }
     }
 }
 
@@ -471,24 +275,6 @@ function keybindAction(action: string): KeybindDefinition {
     }
 }
 
-function isVisualLineOperator(value: unknown): value is VisualLineOperator {
-    return value === "d" || value === "c" || value === "y"
-}
-
-function keyPrefixes(keymaps: Record<string, string> | undefined) {
-    const prefixes = new Set<string>()
-    if (!keymaps) return prefixes
-    for (const keys of Object.keys(keymaps)) {
-        try {
-            const [first] = parseKeySequence(keys)
-            if (first) prefixes.add(keyToken(first))
-        } catch {
-            // Invalid keymaps are logged when the KeybindMap is built.
-        }
-    }
-    return prefixes
-}
-
 function keyForVimee(event: KeyEvent, key: string) {
     if (event.ctrl) return event.name?.toLowerCase()
     const token = keyToken(key)
@@ -516,22 +302,6 @@ function tokenCtrl(token: string) {
     return token.startsWith("<C-") && token !== "<C-[>"
 }
 
-function isAtVisualLineEnd(input: EditBufferLike) {
-    const cursor = input.visualCursor
-    const eol = input.editorView?.getVisualEOL?.()
-    if (!cursor || !eol) return false
-    return cursor.visualRow === eol.visualRow && cursor.offset === eol.offset
-}
-
-function clampNormalLineEnd(input: EditBufferLike) {
-    const cursor = input.visualCursor
-    const eol = input.editorView?.getVisualEOL?.()
-    const offset = input.cursorOffset
-    if (!cursor || !eol || offset === undefined) return
-    if (cursor.visualCol === 0) return
-    if (cursor.visualRow === eol.visualRow && (cursor.offset === eol.offset || offset === eol.offset)) input.cursorOffset = Math.max(0, offset - 1)
-}
-
 function syncMode(state: VimState, mode: VimContext["mode"]) {
     state.setMode(mode === "insert" ? "insert" : "normal")
 }
@@ -552,19 +322,6 @@ function consumesKey(key: string, actions: VimeeAction[], ctx: VimContext, keybi
     if (keybindPending) return true
     if (ctx.phase !== "idle") return true
     return ctx.mode !== "insert" || key === "Escape"
-}
-
-function positionFromOffset(text: string, offset: number): CursorPosition {
-    const lines = text.slice(0, offset).split("\n")
-    return { line: lines.length - 1, col: lines[lines.length - 1]?.length ?? 0 }
-}
-
-function offsetFromPosition(text: string, position: CursorPosition) {
-    const lines = text.split("\n")
-    const line = clamp(position.line, 0, Math.max(0, lines.length - 1))
-    let offset = 0
-    for (let index = 0; index < line; index++) offset += lines[index].length + 1
-    return offset + clamp(position.col, 0, lines[line]?.length ?? 0)
 }
 
 function clamp(value: number, min: number, max: number) {

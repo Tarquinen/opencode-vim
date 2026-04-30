@@ -20,7 +20,7 @@ The key rule from Vim `motion.txt` for our current cursor work is that left/righ
 - Insert mode and normal mode.
 - Vim key handling through `@vimee/core`.
 - Operator-pending delete/change flows, motions, text objects, counts, registers, marks, macros, undo/redo, and other behavior provided by `@vimee/core`.
-- Prompt-local cursor movement and editing through guarded OpenTUI internals.
+- Prompt-local cursor movement and editing through a host-to-vimee mapping layer.
 - A prompt-right mode indicator and pending key display.
 - Configurable cursor style per mode.
 
@@ -153,15 +153,17 @@ Implementation note:
 
 OpenCode's public `TuiPromptRef` currently exposes input text, focus, reset, set, and submit methods, but no cursor position or cursor movement API.
 
-For cursor movement, `vim-prompt` uses a guarded OpenTUI internal path:
+For cursor movement, `vim-prompt` uses a guarded OpenTUI internal path plus a prompt mapping layer:
 
 - Reads `api.renderer.currentFocusedRenderable`.
 - Feature-detects edit-buffer methods before using them.
 - Reads prompt text from `plainText` and cursor position from `cursorOffset` when available.
-- Writes `cursorOffset` for vimee cursor movements.
+- Builds virtual vimee text in `src/modules/vim/map.ts`, inserting synthetic line breaks at detected TUI soft-wrap boundaries.
+- Translates vimee cursor positions and content changes back to host text without writing synthetic line breaks into the submitted prompt.
+- Writes `cursorOffset` for translated vimee cursor movements.
 - Sets `cursorStyle` for mode-specific cursor shapes.
 
-This is intentionally isolated in `src/modules/vim/actions.ts`. If OpenCode exposes first-class prompt cursor APIs later, replace this internal helper rather than spreading direct renderable access across modules.
+Direct renderable access is intentionally isolated in `src/modules/vim/actions.ts`; coordinate translation is isolated in `src/modules/vim/map.ts`. If OpenCode exposes first-class prompt cursor APIs later, replace these helpers rather than spreading direct renderable access across modules.
 
 ## Known Gaps
 
