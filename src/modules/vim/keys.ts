@@ -27,10 +27,6 @@ export function keyNotation(event: KeyEvent) {
     return NAMED_KEYS[name] ?? `<${name}>`
 }
 
-export function isTextSequence(sequence: string) {
-    return !sequence.includes("<") && !sequence.includes(">")
-}
-
 function ctrlKey(name: string) {
     if (name === "escape" || name === "esc") return "["
     if (name.length === 1) return name

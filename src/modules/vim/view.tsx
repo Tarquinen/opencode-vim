@@ -1,6 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { createSignal, onCleanup } from "solid-js"
 import type { Accessor } from "solid-js"
+import type { PromptContext } from "../../prompt/types"
 import type { VimLog } from "./log"
 import type { VimMode } from "./state"
 
@@ -9,6 +10,7 @@ const STATUS_SYNC_MS = 50
 type VimStatusProps = {
     mode: Accessor<VimMode>
     pending: Accessor<string | undefined>
+    theme: PromptContext["api"]["theme"]["current"]
     pendingDisplayDelay?: number
     disabled?: boolean
     log?: VimLog
@@ -42,8 +44,8 @@ export function VimStatus(props: VimStatusProps) {
 
     return (
         <box paddingLeft={1} paddingRight={1} flexDirection="row">
-            {pending() ? <text fg="cyan">{pending()} </text> : undefined}
-            <text fg={props.disabled ? "gray" : mode() === "normal" ? "yellow" : "green"}>{mode() === "normal" ? "NORMAL" : "INSERT"}</text>
+            {pending() ? <text fg={props.theme.info}>{pending()} </text> : undefined}
+            <text fg={props.disabled ? props.theme.textMuted : mode() === "normal" ? props.theme.warning : props.theme.success}>{mode() === "normal" ? "NORMAL" : "INSERT"}</text>
         </box>
     )
 
