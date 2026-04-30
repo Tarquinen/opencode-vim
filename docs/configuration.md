@@ -71,9 +71,7 @@ If your plugin is installed somewhere else, change the plugin path to match your
 
 ### `autoUpdate`
 
-Checks the installed npm package version against the latest npm version on startup. If the installed version is older, `opencode-vim` removes its package directory from the OpenCode plugin cache so OpenCode reinstalls it on the next setup.
-
-This only runs for npm-installed plugins. File and local development plugins are skipped.
+Updates `opencode-vim` automatically when a newer npm version is available.
 
 Default:
 
