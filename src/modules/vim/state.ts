@@ -1,7 +1,7 @@
 import { createSignal } from "solid-js"
 import type { VimLog } from "./log"
 
-export type VimMode = "normal" | "insert"
+export type VimMode = "normal" | "insert" | "visual" | "visual-line"
 
 export function createVimState(defaultMode: VimMode, log: VimLog = () => {}) {
     const [mode, setMode] = createSignal<VimMode>(defaultMode)

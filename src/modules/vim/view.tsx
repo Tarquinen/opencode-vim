@@ -45,7 +45,7 @@ export function VimStatus(props: VimStatusProps) {
     return (
         <box paddingLeft={1} paddingRight={1} flexDirection="row">
             {pending() ? <text fg={props.theme.info}>{pending()} </text> : undefined}
-            <text fg={props.disabled ? props.theme.textMuted : mode() === "normal" ? props.theme.warning : props.theme.success}>{mode() === "normal" ? "NORMAL" : "INSERT"}</text>
+            <text fg={props.disabled ? props.theme.textMuted : mode() === "insert" ? props.theme.success : props.theme.warning}>{modeLabel(mode())}</text>
         </box>
     )
 
@@ -83,4 +83,10 @@ export function VimStatus(props: VimStatusProps) {
         setPending(nextPending)
         props.requestRender?.()
     }
+}
+
+function modeLabel(mode: VimMode) {
+    if (mode === "visual") return "VISUAL"
+    if (mode === "visual-line") return "VISUAL LINE"
+    return mode === "normal" ? "NORMAL" : "INSERT"
 }

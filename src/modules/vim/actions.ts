@@ -1,3 +1,4 @@
+import type { RGBA } from "@opentui/core"
 import type { TuiPromptInfo, TuiPromptRef } from "@opencode-ai/plugin/tui"
 import type { PromptContext } from "../../prompt/types"
 import type { VimCursorStyle } from "./config"
@@ -6,12 +7,17 @@ export type EditBufferLike = {
     cursorOffset?: number
     plainText?: string
     visualCursor?: VisualCursorLike
-    editorView?: { getVisualEOL?: () => VisualCursorLike | undefined }
+    editorView?: { getVisualEOL?: () => VisualCursorLike | undefined; setSelection?: (start: number, end: number, bgColor?: RGBA, fgColor?: RGBA) => void; resetSelection?: () => void }
     cursorStyle?: VimCursorStyle
+    selectionBg?: RGBA
+    selectionFg?: RGBA
     moveCursorLeft?: () => boolean
     moveCursorRight?: () => boolean
     moveCursorUp?: () => boolean
     moveCursorDown?: () => boolean
+    setSelection?: (start: number, end: number) => void
+    setSelectionInclusive?: (start: number, end: number) => void
+    clearSelection?: () => void
     gotoVisualLineEnd?: () => boolean
     gotoLineEnd?: () => void
 }

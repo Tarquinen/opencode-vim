@@ -31,6 +31,8 @@ export type VimMappedAction = string
 const DEFAULT_CURSOR_STYLES: Record<VimMode, VimCursorStyle> = {
     insert: { style: "line", blinking: true },
     normal: { style: "block", blinking: true },
+    visual: { style: "block", blinking: true },
+    "visual-line": { style: "block", blinking: true },
 }
 
 export function createVimConfig(options: unknown): VimConfig {
@@ -42,6 +44,8 @@ export function createVimConfig(options: unknown): VimConfig {
         cursorStyles: {
             insert: { ...DEFAULT_CURSOR_STYLES.insert, ...input.cursorStyles?.insert },
             normal: { ...DEFAULT_CURSOR_STYLES.normal, ...input.cursorStyles?.normal },
+            visual: { ...DEFAULT_CURSOR_STYLES.visual, ...input.cursorStyles?.visual },
+            "visual-line": { ...DEFAULT_CURSOR_STYLES["visual-line"], ...input.cursorStyles?.["visual-line"] },
         },
         debug: input.debug ?? process.env.VIM_PROMPT_DEBUG === "1",
         debugPath: input.debugPath,
@@ -71,7 +75,7 @@ function readKeymaps(input: unknown): VimKeymaps | undefined {
     const source = input as Record<string, unknown>
     const keymaps: VimKeymaps = {}
 
-    for (const mode of ["insert", "normal"] as const) {
+    for (const mode of ["insert", "normal", "visual", "visual-line"] as const) {
         const raw = source[mode]
         if (!raw || typeof raw !== "object") continue
         keymaps[mode] = {}
@@ -89,6 +93,8 @@ function readCursorStyles(input: unknown): VimOptions["cursorStyles"] {
     return {
         insert: readCursorStyle(source.insert),
         normal: readCursorStyle(source.normal),
+        visual: readCursorStyle(source.visual),
+        "visual-line": readCursorStyle(source["visual-line"]),
     }
 }
 
@@ -107,7 +113,7 @@ function isCursorStyle(value: unknown): value is VimCursorStyle["style"] {
 }
 
 function isMode(value: unknown): value is VimMode {
-    return value === "insert" || value === "normal"
+    return value === "insert" || value === "normal" || value === "visual" || value === "visual-line"
 }
 
 function isMappedAction(value: unknown): value is VimMappedAction {

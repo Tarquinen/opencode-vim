@@ -147,6 +147,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         }
 
         setCursor(input, currentMap, vim.cursor)
+        syncVisualSelection(input, currentMap, ctx)
     }
 
     function handleInsertMode(event: KeyEvent, key: string, ctx: PromptContext, map: PromptMap, cursor: CursorPosition, offset: number) {
@@ -263,12 +264,85 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
     function appendVisualLine(input: EditBufferLike | undefined, map: PromptMap) {
         if (!input?.gotoVisualLineEnd) return false
+        clearVisualSelection(input)
         input.gotoVisualLineEnd()
         vim = { ...vim, cursor: hostPosition(map, input.cursorOffset ?? map.hostText.length), mode: "insert", phase: "idle", count: 0, operator: null, statusMessage: "-- INSERT --" }
         nativeInsertUndoSaved = false
         syncMode(state, "insert")
         return true
     }
+
+    function syncVisualSelection(input: EditBufferLike | undefined, map: PromptMap, ctx: PromptContext) {
+        if (!input) return
+        if (!isVisualMode(vim.mode) || !vim.visualAnchor) {
+            clearVisualSelection(input)
+            return
+        }
+
+        const range = vim.mode === "visual-line" ? visualLineRange(map, vim.visualAnchor, vim.cursor) : visualCharRange(map, vim.visualAnchor, vim.cursor)
+        if (!range) {
+            clearVisualSelection(input)
+            return
+        }
+
+        setSelection(input, range.start, range.end, ctx)
+    }
+}
+
+function visualCharRange(map: PromptMap, anchor: CursorPosition, cursor: CursorPosition) {
+    const anchorOffset = hostOffset(map, anchor, "next")
+    const cursorOffset = hostOffset(map, cursor, "previous")
+    return hostRange(map, anchorOffset, cursorOffset)
+}
+
+function visualLineRange(map: PromptMap, anchor: CursorPosition, cursor: CursorPosition) {
+    const startLine = Math.min(anchor.line, cursor.line)
+    const endLine = Math.max(anchor.line, cursor.line)
+    const start = hostOffset(map, { line: startLine, col: 0 }, "next")
+    const end = hostOffset(map, { line: endLine, col: vimLineLength(map.vimText, endLine) }, "previous")
+    return hostRange(map, start, end)
+}
+
+function hostRange(map: PromptMap, left: number, right: number) {
+    if (!map.hostText) return undefined
+    const start = clamp(Math.min(left, right), 0, Math.max(0, map.hostText.length - 1))
+    const end = clamp(Math.max(left, right), 0, Math.max(0, map.hostText.length - 1))
+    return { start, end }
+}
+
+function setSelection(input: EditBufferLike, start: number, end: number, ctx: PromptContext) {
+    input.selectionBg = ctx.api.theme.current.warning
+    input.selectionFg = ctx.api.theme.current.background
+
+    if (input.setSelectionInclusive) {
+        input.setSelectionInclusive(start, end)
+        return
+    }
+
+    const exclusiveEnd = end + 1
+    if (input.setSelection) {
+        input.setSelection(start, exclusiveEnd)
+        return
+    }
+
+    input.editorView?.setSelection?.(start, exclusiveEnd, ctx.api.theme.current.warning, ctx.api.theme.current.background)
+}
+
+function clearVisualSelection(input: EditBufferLike) {
+    if (input.clearSelection) {
+        input.clearSelection()
+        return
+    }
+
+    input.editorView?.resetSelection?.()
+}
+
+function isVisualMode(mode: VimContext["mode"]): mode is "visual" | "visual-line" {
+    return mode === "visual" || mode === "visual-line"
+}
+
+function vimLineLength(text: string, line: number) {
+    return text.split("\n")[line]?.length ?? 0
 }
 
 function clampNormalCursor(input: EditBufferLike) {
@@ -361,7 +435,7 @@ function tokenCtrl(token: string) {
 }
 
 function syncMode(state: VimState, mode: VimContext["mode"]) {
-    state.setMode(mode === "insert" ? "insert" : "normal")
+    state.setMode(mode === "insert" || mode === "visual" || mode === "visual-line" ? mode : "normal")
 }
 
 function pendingDisplay(ctx: VimContext, keybindPending: boolean) {
