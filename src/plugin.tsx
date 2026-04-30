@@ -4,8 +4,24 @@ import { PromptRoot } from "./prompt/root"
 import type { PromptModule } from "./prompt/types"
 import { createVimModule } from "./modules/vim"
 import { createSnippetsModule } from "./modules/snippets"
+import { checkAutoUpdate } from "./update"
 
-const tui: TuiPlugin = async (api, options) => {
+const tui: TuiPlugin = async (api, options, meta) => {
+    if (readAutoUpdate(options)) {
+        let timer: Timer | undefined
+        api.lifecycle.onDispose(() => {
+            if (timer) clearTimeout(timer)
+        })
+
+        void checkAutoUpdate(meta, api.lifecycle.signal).then((result) => {
+            if (!result.updated) return
+
+            timer = setTimeout(() => {
+                api.ui.toast({ variant: "info", message: "Updating opencode-vim. Restart OpenCode to finish." })
+            }, 5000)
+        }).catch(() => {})
+    }
+
     const moduleCache = new Map<string, PromptModule[]>()
     const createModules = (key: string) => {
         const cached = moduleCache.get(key)
@@ -41,6 +57,12 @@ const tui: TuiPlugin = async (api, options) => {
             },
         },
     })
+}
+
+function readAutoUpdate(options: unknown) {
+    if (!options || typeof options !== "object") return true
+    const value = (options as { autoUpdate?: unknown }).autoUpdate
+    return typeof value === "boolean" ? value : true
 }
 
 function hasSnippetsPlugin(api: TuiPluginApi) {

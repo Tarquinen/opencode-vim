@@ -13,6 +13,7 @@ Add `opencode-vim` to the `plugin` array in your OpenCode `tui.jsonc` file:
     [
       "./plugin/opencode-vim",
       {
+        "autoUpdate": true,
         "vim": {
           "defaultMode": "insert"
         }
@@ -33,6 +34,7 @@ If your plugin is installed somewhere else, change the plugin path to match your
     [
       "./plugin/opencode-vim",
       {
+        "autoUpdate": true,
         "vim": {
           "defaultMode": "insert",
           "keymapTimeout": 500,
@@ -66,6 +68,24 @@ If your plugin is installed somewhere else, change the plugin path to match your
 ```
 
 ## Options
+
+### `autoUpdate`
+
+Checks the installed npm package version against the latest npm version on startup. If the installed version is older, `opencode-vim` removes its package directory from the OpenCode plugin cache so OpenCode reinstalls it on the next setup.
+
+This only runs for npm-installed plugins. File and local development plugins are skipped.
+
+Default:
+
+```jsonc
+"autoUpdate": true
+```
+
+Example:
+
+```jsonc
+"autoUpdate": false
+```
 
 ### `defaultMode`
 
