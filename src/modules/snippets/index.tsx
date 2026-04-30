@@ -10,7 +10,7 @@ export function createSnippetsModule(): PromptModule {
         id: "snippets",
         order: -10,
         onSubmit() {
-            return controller.chooseActive?.() === true
+            return controller.accept?.() === true
         },
         renderAbove(ctx) {
             return <SnippetAutocomplete ctx={ctx} controller={controller} />

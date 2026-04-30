@@ -1,7 +1,13 @@
 import { basename, join } from "node:path"
+import { mkdir, writeFile } from "node:fs/promises"
 import type { SnippetInfo, SnippetSource } from "./types"
 
 const SNIPPET_EXT = ".md"
+const EMPTY_SNIPPET = `---
+description: ""
+---
+
+`
 
 export async function loadSnippets(projectDir?: string) {
     const registry = new Map<string, SnippetInfo>()
@@ -53,7 +59,22 @@ async function loadFile(filePath: string, source: SnippetSource) {
     } satisfies SnippetInfo
 }
 
-function parseFrontmatter(raw: string) {
+export async function ensureSnippetDraft(name: string, projectDir?: string) {
+    const dir = await ensureSnippetsDir(projectDir)
+    const filePath = join(dir, `${name}${SNIPPET_EXT}`)
+    if (!(await Bun.file(filePath).exists())) await writeFile(filePath, EMPTY_SNIPPET)
+    return filePath
+}
+
+async function ensureSnippetsDir(projectDir?: string) {
+    const home = process.env.HOME
+    const dir = projectDir ? join(projectDir, ".opencode/snippet") : home ? join(home, ".config/opencode/snippet") : undefined
+    if (!dir) throw new Error("Unable to resolve snippets directory")
+    await mkdir(dir, { recursive: true })
+    return dir
+}
+
+export function parseFrontmatter(raw: string) {
     if (!raw.startsWith("---\n")) return { data: {} as Record<string, unknown>, content: raw }
 
     const end = raw.indexOf("\n---", 4)
@@ -95,7 +116,7 @@ function parseYamlish(input: string) {
     return data
 }
 
-function normalizeAliases(value: unknown) {
+export function normalizeAliases(value: unknown) {
     return asArray(value).filter((entry) => typeof entry === "string" && entry.length > 0) as string[]
 }
 
@@ -103,7 +124,7 @@ function asArray(value: unknown) {
     return Array.isArray(value) ? value : typeof value === "string" ? [value] : []
 }
 
-function unquote(value: string) {
+export function unquote(value: string) {
     return value.replace(/^['"]|['"]$/g, "")
 }
 
