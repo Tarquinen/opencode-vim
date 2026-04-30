@@ -5,11 +5,16 @@ import type { PromptModule } from "./prompt/types"
 import { createVimModule } from "./modules/vim"
 import { createSnippetsModule } from "./modules/snippets"
 
-const tui: TuiPlugin = async (api) => {
-    const createModules = () => {
+const tui: TuiPlugin = async (api, options) => {
+    const moduleCache = new Map<string, PromptModule[]>()
+    const createModules = (key: string) => {
+        const cached = moduleCache.get(key)
+        if (cached) return cached
+
         const modules: PromptModule[] = []
         if (hasSnippetsPlugin(api)) modules.push(createSnippetsModule())
-        modules.push(createVimModule())
+        modules.push(createVimModule(options))
+        moduleCache.set(key, modules)
         return modules
     }
 
@@ -17,7 +22,7 @@ const tui: TuiPlugin = async (api) => {
         order: 50,
         slots: {
             home_prompt(ctx, props) {
-                return <PromptRoot api={api} slot={ctx} kind="home" workspaceID={props.workspace_id} ref={props.ref} modules={createModules()} />
+                return <PromptRoot api={api} slot={ctx} kind="home" workspaceID={props.workspace_id} ref={props.ref} modules={createModules(`home:${props.workspace_id ?? ""}`)} />
             },
             session_prompt(ctx, props) {
                 return (
@@ -30,7 +35,7 @@ const tui: TuiPlugin = async (api) => {
                         disabled={props.disabled}
                         onSubmit={props.on_submit}
                         ref={props.ref}
-                        modules={createModules()}
+                        modules={createModules(`session:${props.session_id}`)}
                     />
                 )
             },
