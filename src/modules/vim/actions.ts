@@ -1,5 +1,6 @@
 import type { TuiPromptInfo, TuiPromptRef } from "@opencode-ai/plugin/tui"
 import type { PromptContext } from "../../prompt/types"
+import type { VimCursorStyle } from "./config"
 import type { VimAction } from "./state"
 import type { createVimState } from "./state"
 
@@ -24,6 +25,7 @@ type EditBufferLike = {
         }
     }
     plainText?: string
+    cursorStyle?: VimCursorStyle
     moveCursorLeft?: () => boolean
     moveCursorRight?: () => boolean
     moveCursorUp?: () => boolean
@@ -35,6 +37,13 @@ type EditBufferLike = {
     moveWordBackward?: () => boolean
     deleteChar?: () => boolean
     gotoBufferEnd?: () => boolean | void
+}
+
+export function applyVimCursorStyle(ctx: PromptContext, style: VimCursorStyle) {
+    const input = focusedInput(ctx)
+    if (!input) return false
+    input.cursorStyle = style
+    return true
 }
 
 export function runVimAction(action: VimAction, state: VimState, ctx: PromptContext) {

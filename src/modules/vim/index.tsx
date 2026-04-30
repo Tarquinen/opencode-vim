@@ -2,6 +2,7 @@
 import { useKeyboard } from "@opentui/solid"
 import { onCleanup } from "solid-js"
 import type { PromptContext, PromptModule } from "../../prompt/types"
+import { applyVimCursorStyle } from "./actions"
 import { runVimAction } from "./actions"
 import type { VimConfig } from "./config"
 import { createVimConfig } from "./config"
@@ -34,6 +35,7 @@ export function createVimModule(options?: unknown): PromptModule {
                     onSelect() {
                         log("command.normal", { mode: state.mode(), pending: state.pending() })
                         runVimAction("normal", state, ctx)
+                        applyVimCursorStyle(ctx, config.cursorStyles[state.mode()])
                         state.setPending("")
                         ctx.requestRender()
                     },
@@ -51,7 +53,10 @@ export function createVimModule(options?: unknown): PromptModule {
 
 function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: ReturnType<typeof createVimState>; log: VimLog }) {
     let timer: ReturnType<typeof setTimeout> | undefined
+    let cursorStyleMode = ""
     props.log("keyboard.mount", { kind: props.ctx.kind })
+
+    const cursorStyleTimer = setInterval(syncCursorStyle, 50)
 
     useKeyboard((event) => {
         props.log("keyboard.event", {
@@ -108,12 +113,14 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
         clearPending()
         props.log("keyboard.action", { action: result.action, mode: props.state.mode() })
         runVimAction(result.action, props.state, props.ctx)
+        syncCursorStyle(true)
         props.ctx.requestRender()
     })
 
     onCleanup(() => {
         props.log("keyboard.cleanup", { kind: props.ctx.kind })
         if (timer) clearTimeout(timer)
+        clearInterval(cursorStyleTimer)
     })
 
     return <box height={0} />
@@ -134,6 +141,15 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             mode: ref.current.mode,
             parts: [...ref.current.parts],
         })
+    }
+
+    function syncCursorStyle(force = false) {
+        const mode = props.state.mode()
+        if (!force && cursorStyleMode === mode) return
+        if (applyVimCursorStyle(props.ctx, props.config.cursorStyles[mode])) {
+            cursorStyleMode = mode
+            props.log("cursor.style", { mode, style: props.config.cursorStyles[mode].style, blinking: props.config.cursorStyles[mode].blinking })
+        }
     }
 }
 

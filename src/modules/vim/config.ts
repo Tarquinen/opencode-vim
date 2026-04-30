@@ -1,11 +1,16 @@
 import type { VimAction, VimMode } from "./state"
 
 export type VimKeymaps = Partial<Record<VimMode, Record<string, VimAction>>>
+export type VimCursorStyle = {
+    style: "block" | "line" | "underline" | "default"
+    blinking?: boolean
+}
 
 export type VimConfig = {
     defaultMode: VimMode
     timeoutlen: number
     pendingDisplayDelay: number
+    cursorStyles: Record<VimMode, VimCursorStyle>
     debug: boolean
     debugPath?: string
     keymaps: Record<VimMode, Record<string, VimAction>>
@@ -15,6 +20,7 @@ export type VimOptions = {
     defaultMode?: VimMode
     timeoutlen?: number
     pendingDisplayDelay?: number
+    cursorStyles?: Partial<Record<VimMode, VimCursorStyle>>
     debug?: boolean
     debugPath?: string
     keymaps?: VimKeymaps
@@ -46,12 +52,21 @@ const DEFAULT_KEYMAPS: Record<VimMode, Record<string, VimAction>> = {
     },
 }
 
+const DEFAULT_CURSOR_STYLES: Record<VimMode, VimCursorStyle> = {
+    insert: { style: "line", blinking: true },
+    normal: { style: "block", blinking: true },
+}
+
 export function createVimConfig(options: unknown): VimConfig {
     const input = readOptions(options)
     return {
         defaultMode: input.defaultMode ?? "insert",
         timeoutlen: Math.max(0, input.timeoutlen ?? 300),
         pendingDisplayDelay: Math.max(0, input.pendingDisplayDelay ?? 120),
+        cursorStyles: {
+            insert: { ...DEFAULT_CURSOR_STYLES.insert, ...input.cursorStyles?.insert },
+            normal: { ...DEFAULT_CURSOR_STYLES.normal, ...input.cursorStyles?.normal },
+        },
         debug: input.debug ?? process.env.VIM_PROMPT_DEBUG === "1",
         debugPath: input.debugPath,
         keymaps: {
@@ -71,6 +86,7 @@ function readOptions(options: unknown): VimOptions {
         defaultMode: isMode(source.defaultMode) ? source.defaultMode : undefined,
         timeoutlen: typeof source.timeoutlen === "number" ? source.timeoutlen : undefined,
         pendingDisplayDelay: typeof source.pendingDisplayDelay === "number" ? source.pendingDisplayDelay : undefined,
+        cursorStyles: readCursorStyles(source.cursorStyles),
         debug: typeof source.debug === "boolean" ? source.debug : undefined,
         debugPath: typeof source.debugPath === "string" ? source.debugPath : undefined,
         keymaps: readKeymaps(source.keymaps),
@@ -92,6 +108,29 @@ function readKeymaps(input: unknown): VimKeymaps | undefined {
     }
 
     return keymaps
+}
+
+function readCursorStyles(input: unknown): VimOptions["cursorStyles"] {
+    if (!input || typeof input !== "object") return undefined
+    const source = input as Record<string, unknown>
+    return {
+        insert: readCursorStyle(source.insert),
+        normal: readCursorStyle(source.normal),
+    }
+}
+
+function readCursorStyle(input: unknown): VimCursorStyle | undefined {
+    if (!input || typeof input !== "object") return undefined
+    const source = input as Record<string, unknown>
+    if (!isCursorStyle(source.style)) return undefined
+    return {
+        style: source.style,
+        blinking: typeof source.blinking === "boolean" ? source.blinking : undefined,
+    }
+}
+
+function isCursorStyle(value: unknown): value is VimCursorStyle["style"] {
+    return value === "block" || value === "line" || value === "underline" || value === "default"
 }
 
 function isMode(value: unknown): value is VimMode {
