@@ -5,12 +5,25 @@ import type { VimCursorStyle } from "./config"
 export type EditBufferLike = {
     cursorOffset?: number
     plainText?: string
+    visualCursor?: VisualCursorLike
+    editorView?: {
+        getVisualEOL?: () => VisualCursorLike
+    }
     cursorStyle?: VimCursorStyle
     moveCursorLeft?: () => boolean
     moveCursorRight?: () => boolean
     moveCursorUp?: () => boolean
     moveCursorDown?: () => boolean
+    gotoVisualLineEnd?: () => boolean
     gotoLineEnd?: () => void
+}
+
+export type VisualCursorLike = {
+    visualRow?: number
+    visualCol?: number
+    logicalRow?: number
+    logicalCol?: number
+    offset?: number
 }
 
 export function applyVimCursorStyle(ctx: PromptContext, style: VimCursorStyle) {
