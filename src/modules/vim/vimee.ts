@@ -1,5 +1,5 @@
 import type { KeyEvent } from "@opentui/core"
-import { TextBuffer, createInitialContext, createKeybindMap, processKeystroke } from "@vimee/core"
+import { TextBuffer, createInitialContext, createKeybindMap, parseKeySequence, processKeystroke } from "@vimee/core"
 import type { CursorPosition, KeybindDefinition, KeybindMap, ValidKeySequence, VimAction as VimeeAction, VimContext, VimMode as VimeeMode } from "@vimee/core"
 import type { PromptContext } from "../../prompt/types"
 import { focusedInput, setInput } from "./actions"
@@ -39,6 +39,11 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             if (state.mode() === "insert" && key === "<CR>") {
                 cancelPendingInsert(ctx, offset)
                 return false
+            }
+
+            if (state.mode() === "insert") {
+                const consumed = handleInsertMode(event, vimeeKey, ctx, text, cursor, offset)
+                return consumed ?? false
             }
 
             const wasPending = keybinds?.isPending() ?? false
@@ -93,6 +98,67 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         }
 
         if (input) input.cursorOffset = offsetFromPosition(buffer.getContent(), vim.cursor)
+    }
+
+    function handleInsertMode(event: KeyEvent, key: string, ctx: PromptContext, text: string, cursor: CursorPosition, offset: number) {
+        if (key === "Escape") {
+            cancelPendingInsert(ctx, offset)
+            sync(text, cursor)
+            const result = processKeystroke(key, vim, buffer, event.ctrl, false)
+            vim = result.newCtx
+            applyActions(result.actions as HostAction[], ctx)
+            syncMode(state, vim.mode)
+            state.setPending("")
+            log("vimee.key", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: result.actions.map((action) => action.type) })
+            return true
+        }
+
+        if (!keybinds?.hasKeybinds("insert") && !keybinds?.isPending()) return undefined
+
+        const wasPending = keybinds.isPending()
+        const pendingBefore = pendingInsert
+        const resolved = keybinds.resolve(key, "insert", event.ctrl)
+
+        switch (resolved.status) {
+            case "pending":
+                pendingInsert = plainPending(resolved.display)
+                state.setPending(resolved.display)
+                updateTimeout(ctx)
+                return true
+            case "matched": {
+                sync(text, cursor)
+                const actions = applyKeybind(resolved.definition)
+                applyActions(actions, ctx)
+                syncMode(state, vim.mode)
+                pendingInsert = ""
+                state.setPending("")
+                updateTimeout(ctx)
+                log("vimee.keybind", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: actions.map((action) => action.type) })
+                return true
+            }
+            case "none":
+                if (wasPending && pendingBefore) flushPendingInsert(ctx, pendingBefore, offset)
+                pendingInsert = ""
+                state.setPending("")
+                updateTimeout(ctx)
+                return wasPending ? false : undefined
+        }
+    }
+
+    function applyKeybind(definition: KeybindDefinition) {
+        if ("execute" in definition) {
+            const actions = definition.execute(vim, buffer) as HostAction[]
+            vim = { ...vim, cursor: positionFromOffset(buffer.getContent(), offsetFromPosition(buffer.getContent(), vim.cursor)) }
+            return actions
+        }
+
+        let actions: HostAction[] = []
+        for (const token of parseKeySequence(definition.keys)) {
+            const result = processKeystroke(keyToken(token), vim, buffer, tokenCtrl(token), false)
+            vim = result.newCtx
+            actions = [...actions, ...(result.actions as HostAction[])]
+        }
+        return actions
     }
 
     function updateTimeout(ctx: PromptContext) {
@@ -183,6 +249,27 @@ function keyForVimee(event: KeyEvent, key: string) {
     if (key === "<End>") return "End"
     if (key.startsWith("<")) return undefined
     return key
+}
+
+function keyToken(token: string) {
+    if (token === "<Esc>" || token === "<C-[>") return "Escape"
+    if (token === "<CR>") return "Enter"
+    if (token === "<Tab>") return "Tab"
+    if (token === "<BS>") return "Backspace"
+    if (token === "<Del>") return "Delete"
+    if (token === "<Space>") return " "
+    if (token === "<Up>") return "ArrowUp"
+    if (token === "<Down>") return "ArrowDown"
+    if (token === "<Left>") return "ArrowLeft"
+    if (token === "<Right>") return "ArrowRight"
+    if (token === "<Home>") return "Home"
+    if (token === "<End>") return "End"
+    if (token.startsWith("<C-") && token.endsWith(">")) return token.slice(3, -1).toLowerCase()
+    return token
+}
+
+function tokenCtrl(token: string) {
+    return token.startsWith("<C-") && token !== "<C-[>"
 }
 
 function syncMode(state: VimState, mode: VimContext["mode"]) {
