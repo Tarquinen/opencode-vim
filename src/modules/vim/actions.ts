@@ -7,6 +7,13 @@ type VimState = ReturnType<typeof createVimState>
 type EditBufferLike = {
     focused?: boolean
     cursorOffset?: number
+    visualCursor?: {
+        visualRow: number
+        visualCol: number
+        logicalRow: number
+        logicalCol: number
+        offset: number
+    }
     plainText?: string
     moveCursorLeft?: () => boolean
     moveCursorRight?: () => boolean
@@ -86,9 +93,9 @@ function movePromptCursor(ctx: PromptContext, action: "left" | "right" | "up" | 
 
     switch (action) {
         case "left":
-            return input.moveCursorLeft?.() ?? false
+            return moveBoundedHorizontal(input, "left")
         case "right":
-            return input.moveCursorRight?.() ?? false
+            return moveBoundedHorizontal(input, "right")
         case "up":
             return input.moveCursorUp?.() ?? false
         case "down":
@@ -104,6 +111,20 @@ function movePromptCursor(ctx: PromptContext, action: "left" | "right" | "up" | 
         case "wordPrev":
             return input.moveWordBackward?.() ?? false
     }
+}
+
+function moveBoundedHorizontal(input: EditBufferLike, direction: "left" | "right") {
+    const before = input.visualCursor
+    const beforeOffset = input.cursorOffset
+    const moved = direction === "left" ? (input.moveCursorLeft?.() ?? false) : (input.moveCursorRight?.() ?? false)
+    const after = input.visualCursor
+
+    if (moved && before && after && beforeOffset !== undefined && after.visualRow !== before.visualRow) {
+        input.cursorOffset = beforeOffset
+        return false
+    }
+
+    return moved
 }
 
 function deletePromptChar(ctx: PromptContext) {
