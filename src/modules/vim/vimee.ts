@@ -73,7 +73,17 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             const result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false, keybinds)
             vim = result.newCtx
             if (hostEnd !== undefined && result.actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
-            applyActions(result.actions as HostAction[], ctx, map)
+            let clampFinalCursor = true
+            const content = result.actions.find((action) => action.type === "content-change")?.content
+            if (vimeeKey === "x" && content !== undefined) {
+                const next = nextMap(map, content)
+                const target = clamp(offset, 0, Math.max(0, next.hostText.length - 1))
+                if (offset < map.hostText.length - 1 && map.hostText[offset + 1] !== "\n" && hostOffset(next, vim.cursor, "previous") < target) {
+                    vim = { ...vim, cursor: hostPosition(next, target) }
+                    clampFinalCursor = false
+                }
+            }
+            applyActions(result.actions as HostAction[], ctx, map, clampFinalCursor)
             if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(result.actions), visualYankRange)
             syncMode(state, vim.mode)
             const keybindPending = keybinds?.isPending() ?? false
@@ -124,7 +134,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         return next
     }
 
-    function applyActions(actions: HostAction[], ctx: PromptContext, map: PromptMap) {
+    function applyActions(actions: HostAction[], ctx: PromptContext, map: PromptMap, clampFinalCursor = true) {
         const ref = ctx.prompt()
         const input = focusedInput(ctx)
         let currentMap = map
@@ -155,7 +165,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             }
         }
 
-        setCursor(input, currentMap, vim.cursor)
+        setCursor(input, currentMap, vim.cursor, clampFinalCursor)
         syncVisualSelection(input, currentMap, ctx)
     }
 
@@ -265,10 +275,10 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         return hostOffset(map, position, vim.mode === "insert" ? "next" : "previous")
     }
 
-    function setCursor(input: EditBufferLike | undefined, map: PromptMap, position: CursorPosition) {
+    function setCursor(input: EditBufferLike | undefined, map: PromptMap, position: CursorPosition, clampCursor = true) {
         if (!input) return
         input.cursorOffset = cursorOffset(map, position)
-        if (vim.mode !== "insert") clampNormalCursor(input)
+        if (clampCursor && vim.mode !== "insert") clampNormalCursor(input)
     }
 
     function appendVisualLine(input: EditBufferLike | undefined, map: PromptMap) {
