@@ -15,12 +15,13 @@ export function createPromptMap(hostText: string, input?: EditBufferLike): Promp
 export function derivePromptMap(map: PromptMap, vimText: string): PromptMap {
     const prefix = commonPrefix(map.vimText, vimText)
     const suffix = commonSuffix(map.vimText, vimText, prefix)
+    const inserted = vimText.slice(prefix, vimText.length - suffix)
     const synthetic = new Set<number>()
     let hostText = ""
 
     for (let vimOffset = 0; vimOffset < vimText.length; vimOffset++) {
         const oldOffset = previousOffset(map, vimOffset, vimText.length, prefix, suffix)
-        if (oldOffset !== undefined && map.vimToHost[oldOffset] === undefined) {
+        if (oldOffset !== undefined && map.vimToHost[oldOffset] === undefined && preserveSynthetic(vimOffset, prefix, suffix, vimText.length, inserted)) {
             synthetic.add(vimOffset)
             continue
         }
@@ -29,6 +30,11 @@ export function derivePromptMap(map: PromptMap, vimText: string): PromptMap {
     }
 
     return buildPromptMapFromSynthetic(hostText, vimText, synthetic)
+}
+
+function preserveSynthetic(vimOffset: number, prefix: number, suffix: number, vimLength: number, inserted: string) {
+    if (!inserted.includes("\n")) return true
+    return vimOffset !== prefix - 1 && vimOffset !== vimLength - suffix
 }
 
 export function hostPosition(map: PromptMap, hostOffset: number): CursorPosition {
