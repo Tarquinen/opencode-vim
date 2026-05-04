@@ -2,7 +2,7 @@
 
 Adds Vim-style insert and normal mode editing to the OpenCode prompt.
 
-![Demo](./assets/demo.gif)
+![Demo](./assets/demo2.gif)
 
 ## Installation
 
