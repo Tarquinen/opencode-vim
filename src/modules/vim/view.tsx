@@ -10,6 +10,7 @@ const STATUS_SYNC_MS = 50
 type VimStatusProps = {
     mode: Accessor<VimMode>
     pending: Accessor<string | undefined>
+    enabled: Accessor<boolean>
     theme: PromptContext["api"]["theme"]["current"]
     pendingDisplayDelay?: number
     disabled?: boolean
@@ -20,6 +21,7 @@ type VimStatusProps = {
 export function VimStatus(props: VimStatusProps) {
     const [mode, setMode] = createSignal(props.mode())
     const [pending, setPending] = createSignal<string | undefined>()
+    const [enabled, setEnabled] = createSignal(props.enabled())
     let pendingTimer: ReturnType<typeof setTimeout> | undefined
     let scheduledPending: string | undefined
 
@@ -30,6 +32,13 @@ export function VimStatus(props: VimStatusProps) {
         if (mode() !== nextMode) {
             props.log?.("status.sync", { fromMode: mode(), toMode: nextMode, fromPending: pending(), toPending: pending() })
             setMode(nextMode)
+            props.requestRender?.()
+        }
+
+        const nextEnabled = props.enabled()
+        if (enabled() !== nextEnabled) {
+            props.log?.("status.enabled", { from: enabled(), to: nextEnabled })
+            setEnabled(nextEnabled)
             props.requestRender?.()
         }
 
@@ -44,8 +53,8 @@ export function VimStatus(props: VimStatusProps) {
 
     return (
         <box paddingLeft={1} paddingRight={1} flexDirection="row">
-            {pending() ? <text fg={props.theme.info}>{pending()} </text> : undefined}
-            <text fg={props.disabled ? props.theme.textMuted : mode() === "insert" ? props.theme.success : props.theme.warning}>{modeLabel(mode())}</text>
+            {enabled() && pending() ? <text fg={props.theme.info}>{pending()} </text> : undefined}
+            {enabled() ? <text fg={props.disabled ? props.theme.textMuted : mode() === "insert" ? props.theme.success : props.theme.warning}>{modeLabel(mode())}</text> : undefined}
         </box>
     )
 

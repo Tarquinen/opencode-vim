@@ -2,6 +2,7 @@
 import type { KeyEvent, ParsedKey } from "@opentui/core"
 import { useKeyboard } from "@opentui/solid"
 import { onCleanup } from "solid-js"
+import type { Accessor } from "solid-js"
 import type { PromptContext, PromptModule } from "../../prompt/types"
 import { applyVimCursorStyle, focusedInput } from "./actions"
 import type { VimConfig } from "./config"
@@ -13,7 +14,7 @@ import { createVimState } from "./state"
 import { createVimeeAdapter } from "./vimee"
 import { VimStatus } from "./view"
 
-export function createVimModule(options?: unknown): PromptModule {
+export function createVimModule(options?: unknown, enabled: Accessor<boolean> = () => true): PromptModule {
     const config = createVimConfig(options)
     const log = createVimLog(config)
     const state = createVimState(config.defaultMode, log)
@@ -26,15 +27,15 @@ export function createVimModule(options?: unknown): PromptModule {
             log("module.setup", { kind: ctx.kind, sessionID: ctx.sessionID, workspaceID: ctx.workspaceID })
         },
         renderAbove(ctx) {
-            return <VimKeyboard ctx={ctx} config={config} state={state} log={log} />
+            return <VimKeyboard ctx={ctx} config={config} state={state} enabled={enabled} log={log} />
         },
         renderRight(ctx) {
-            return <VimStatus mode={state.mode} pending={() => readablePending(state.pending())} theme={ctx.api.theme.current} pendingDisplayDelay={config.pendingDisplayDelay} disabled={ctx.disabled} log={log} requestRender={ctx.requestRender} />
+            return <VimStatus mode={state.mode} pending={() => readablePending(state.pending())} enabled={enabled} theme={ctx.api.theme.current} pendingDisplayDelay={config.pendingDisplayDelay} disabled={ctx.disabled} log={log} requestRender={ctx.requestRender} />
         },
     }
 }
 
-function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: ReturnType<typeof createVimState>; log: VimLog }) {
+function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: ReturnType<typeof createVimState>; enabled: Accessor<boolean>; log: VimLog }) {
     let cursorStyleMode = ""
     const vimee = createVimeeAdapter(props.state, props.config, props.log)
     props.log("keyboard.mount", { kind: props.ctx.kind })
@@ -53,8 +54,8 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             pending: props.state.pending(),
         })
 
-        if (props.ctx.disabled || props.ctx.visible === false) {
-            props.log("keyboard.skip", { disabled: props.ctx.disabled, visible: props.ctx.visible })
+        if (!props.enabled() || props.ctx.disabled || props.ctx.visible === false) {
+            props.log("keyboard.skip", { enabled: props.enabled(), disabled: props.ctx.disabled, visible: props.ctx.visible })
             return
         }
 

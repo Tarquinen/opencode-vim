@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPlugin, TuiPluginApi, TuiPluginModule } from "@opencode-ai/plugin/tui"
+import { createSignal } from "solid-js"
 import { PromptRoot } from "./prompt/root"
 import type { PromptModule } from "./prompt/types"
 import { createVimModule } from "./modules/vim"
@@ -7,6 +8,23 @@ import { createSnippetsModule } from "./modules/snippets"
 import { checkAutoUpdate } from "./update"
 
 const tui: TuiPlugin = async (api, options, meta) => {
+    const vimEnabledKey = `${meta.id}:enabled`
+    const [vimEnabled, setVimEnabled] = createSignal(api.kv.get(vimEnabledKey, true) === true)
+
+    api.command.register(() => [{
+        title: vimEnabled() ? "Disable Vim Mode" : "Enable Vim Mode",
+        value: "opencode-vim.toggle",
+        description: vimEnabled() ? "Turn off Vim key handling" : "Turn on Vim key handling",
+        category: "Vim",
+        slash: { name: "vim" },
+        onSelect() {
+            const next = !vimEnabled()
+            setVimEnabled(next)
+            api.kv.set(vimEnabledKey, next)
+            api.ui.toast({ variant: "info", message: `Vim mode ${next ? "enabled" : "disabled"}` })
+        },
+    }])
+
     if (readAutoUpdate(options)) {
         let timer: Timer | undefined
         api.lifecycle.onDispose(() => {
@@ -29,7 +47,7 @@ const tui: TuiPlugin = async (api, options, meta) => {
 
         const modules: PromptModule[] = []
         if (hasSnippetsPlugin(api)) modules.push(createSnippetsModule())
-        modules.push(createVimModule(options))
+        modules.push(createVimModule(options, vimEnabled))
         moduleCache.set(key, modules)
         return modules
     }
