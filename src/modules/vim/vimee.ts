@@ -1,6 +1,6 @@
 import type { KeyEvent } from "@opentui/core"
-import { TextBuffer, createInitialContext, createKeybindMap, parseKeySequence, processKeystroke } from "@vimee/core"
-import type { CursorPosition, KeybindDefinition, KeybindMap, ValidKeySequence, VimAction as VimeeAction, VimContext, VimMode as VimeeMode } from "@vimee/core"
+import { TextBuffer, createInitialContext, createKeybindMap, parseKeySequence, processKeystroke, resetContext } from "@vimee/core"
+import type { CursorPosition, KeybindDefinition, KeybindMap, MotionRange, Operator, ValidKeySequence, VimAction as VimeeAction, VimContext, VimMode as VimeeMode } from "@vimee/core"
 import type { PromptContext } from "../../prompt/types"
 import { focusedInput, setInput, type EditBufferLike } from "./actions"
 import type { VimConfig } from "./config"
@@ -38,7 +38,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             const offset = clamp(input?.cursorOffset ?? text.length, 0, text.length)
             const map = mapForHostText(text, input)
             const cursor = hostPosition(map, offset)
-            const vimeeKey = keyForVimee(event, key)
+            let vimeeKey = keyForVimee(event, key)
             if (!vimeeKey) return false
 
             if (state.mode() === "normal" && key === "<CR>") {
@@ -70,6 +70,9 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             const hostEnd = vimeeKey === "e" ? endMotionOffset(map.hostText, offset, vim.count || 1) : undefined
             const shouldFlashYank = shouldFlashYankFor(vimeeKey)
             const visualYankRange = visualYankRangeFor(map)
+            vimeeKey = textObjectAlias(vimeeKey, vim) ?? vimeeKey
+            const textObjectHandled = handleTextObject(vimeeKey, ctx, map)
+            if (textObjectHandled !== undefined) return textObjectHandled
             const result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false, keybinds)
             vim = result.newCtx
             if (hostEnd !== undefined && result.actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
@@ -230,6 +233,34 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         return actions
     }
 
+    function handleTextObject(key: string, ctx: PromptContext, map: PromptMap) {
+        if (vim.phase !== "text-object-pending" || !vim.textObjectModifier) return undefined
+        const range = resolvePromptTextObject(vim.textObjectModifier, key, vim.cursor, buffer)
+        if (!range) return undefined
+
+        const flashRange = vim.operator === "y" ? motionHostRange(map, range) : undefined
+
+        if (!vim.operator) {
+            vim = { ...resetContext(vim), visualAnchor: range.start, cursor: range.end }
+            applyActions([{ type: "cursor-move", position: range.end }], ctx, map)
+            state.setPending("")
+            updateTimeout(ctx)
+            log("vimee.textobject", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: ["cursor-move"] })
+            return true
+        }
+        if (!textObjectOperator(vim.operator)) return undefined
+
+        const result = executeTextObject(vim.operator, range, buffer, vim)
+        vim = result.context
+        applyActions(result.actions, ctx, map)
+        if (flashRange) flashYank(ctx, activeMap, { type: "yank", text: result.yankedText }, flashRange)
+        syncMode(state, vim.mode)
+        state.setPending("")
+        updateTimeout(ctx)
+        log("vimee.textobject", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: result.actions.map((action) => action.type) })
+        return true
+    }
+
     function updateTimeout(ctx: PromptContext) {
         if (timer) clearTimeout(timer)
         timer = undefined
@@ -368,6 +399,13 @@ function yankedTextRange(map: PromptMap, cursor: CursorPosition, text: string): 
 
     const start = vimOffsetFromPosition(map.vimText, cursor)
     return vimOffsetRange(map, start, start + text.length - 1)
+}
+
+function motionHostRange(map: PromptMap, range: MotionRange): HostRange | undefined {
+    if (range.linewise) return visualLineRange(map, range.start, range.end)
+    const start = vimOffsetFromPosition(map.vimText, range.start)
+    const end = vimOffsetFromPosition(map.vimText, range.end)
+    return vimOffsetRange(map, start, end)
 }
 
 function vimOffsetRange(map: PromptMap, left: number, right: number): HostRange | undefined {
@@ -570,6 +608,206 @@ function consumesKey(key: string, actions: VimeeAction[], ctx: VimContext, keybi
     if (keybindPending) return true
     if (ctx.phase !== "idle") return true
     return ctx.mode !== "insert" || key === "Escape"
+}
+
+function textObjectAlias(key: string, ctx: VimContext) {
+    if (ctx.phase !== "text-object-pending") return undefined
+    if (key === "b") return "("
+    if (key === "B") return "{"
+    return undefined
+}
+
+function textObjectOperator(operator: Operator): operator is "y" | "d" | "c" {
+    return operator === "y" || operator === "d" || operator === "c"
+}
+
+function resolvePromptTextObject(modifier: "i" | "a", key: string, cursor: CursorPosition, buffer: TextBuffer): MotionRange | null {
+    if (key === "q") return quoteRange(modifier, cursor, buffer)
+    if (key !== "p") return null
+    return paragraphRange(modifier, cursor, buffer)
+}
+
+function quoteRange(modifier: "i" | "a", cursor: CursorPosition, buffer: TextBuffer): MotionRange | null {
+    const pair = quoteObjectPair(cursor, buffer)
+    if (!pair) return null
+    const start = modifier === "i" ? pair.open + 1 : pair.open
+    const end = modifier === "i" ? pair.close - 1 : pair.close
+    return {
+        start: { line: cursor.line, col: start },
+        end: { line: cursor.line, col: Math.max(start, end) },
+        linewise: false,
+        inclusive: true,
+    }
+}
+
+function paragraphRange(modifier: "i" | "a", cursor: CursorPosition, buffer: TextBuffer): MotionRange | null {
+    const count = buffer.getLineCount()
+    if (count === 0) return null
+
+    let start = clamp(cursor.line, 0, count - 1)
+    while (start < count && blankLine(buffer.getLine(start))) start++
+    if (start >= count) {
+        start = clamp(cursor.line, 0, count - 1)
+        while (start >= 0 && blankLine(buffer.getLine(start))) start--
+    }
+    if (start < 0 || start >= count) return null
+
+    let end = start
+    while (start > 0 && !blankLine(buffer.getLine(start - 1))) start--
+    while (end < count - 1 && !blankLine(buffer.getLine(end + 1))) end++
+
+    if (modifier === "a") {
+        if (end < count - 1 && blankLine(buffer.getLine(end + 1))) {
+            end++
+            while (end < count - 1 && blankLine(buffer.getLine(end + 1))) end++
+        } else {
+            while (start > 0 && blankLine(buffer.getLine(start - 1))) start--
+        }
+    }
+
+    return {
+        start: { line: start, col: 0 },
+        end: { line: end, col: Math.max(0, buffer.getLineLength(end) - 1) },
+        linewise: true,
+        inclusive: true,
+    }
+}
+
+function quoteObjectPair(cursor: CursorPosition, buffer: TextBuffer) {
+    let best: { open: number; close: number; distance: number } | undefined
+    for (const quote of ['"', "'", "`"] as const) {
+        const pair = quotePair(cursor, buffer, quote)
+        if (!pair) continue
+        if (!best || pair.distance < best.distance) best = pair
+    }
+    return best
+}
+
+function quotePair(cursor: CursorPosition, buffer: TextBuffer, quote: string) {
+    const line = buffer.getLine(cursor.line)
+    let open = -1
+    let close = -1
+    let inQuote = false
+    let quoteStart = -1
+
+    for (let index = 0; index < line.length; index++) {
+        if (line[index] !== quote || escaped(line, index)) continue
+        if (!inQuote) {
+            quoteStart = index
+            inQuote = true
+            continue
+        }
+        if (cursor.col >= quoteStart && cursor.col <= index) {
+            return { open: quoteStart, close: index, distance: 0 }
+        }
+        inQuote = false
+    }
+
+    for (let index = cursor.col; index < line.length; index++) {
+        if (line[index] !== quote || escaped(line, index)) continue
+        if (open === -1) open = index
+        else {
+            close = index
+            break
+        }
+    }
+    if (open !== -1 && close !== -1) return { open, close, distance: open - cursor.col }
+
+    close = -1
+    open = -1
+    for (let index = cursor.col; index >= 0; index--) {
+        if (line[index] !== quote || escaped(line, index)) continue
+        if (close === -1) close = index
+        else {
+            open = index
+            break
+        }
+    }
+    if (open !== -1 && close !== -1) return { open, close, distance: cursor.col - close }
+    return undefined
+}
+
+function executeTextObject(operator: Operator, range: MotionRange, buffer: TextBuffer, ctx: VimContext) {
+    buffer.saveUndoPoint(ctx.cursor)
+    const result = range.linewise ? executeLinewiseTextObject(operator, range, buffer) : executeCharwiseTextObject(operator, range, buffer)
+    const registers = ctx.selectedRegister ? { ...ctx.registers, [ctx.selectedRegister]: result.yankedText } : ctx.registers
+    const context = {
+        ...resetContext(ctx),
+        mode: result.mode,
+        cursor: result.cursor,
+        register: result.yankedText,
+        registers,
+        statusMessage: result.statusMessage,
+    }
+    const actions: VimeeAction[] = [{ type: "yank", text: result.yankedText }, ...result.actions, { type: "mode-change", mode: result.mode }, { type: "cursor-move", position: result.cursor }]
+    return { actions, context, yankedText: result.yankedText }
+}
+
+function executeLinewiseTextObject(operator: Operator, range: MotionRange, buffer: TextBuffer) {
+    const startLine = Math.min(range.start.line, range.end.line)
+    const endLine = Math.max(range.start.line, range.end.line)
+    const lineCount = endLine - startLine + 1
+    const yankedText = buffer.getLines().slice(startLine, endLine + 1).join("\n") + "\n"
+    if (operator === "y") {
+        return { actions: [] as VimeeAction[], cursor: { line: startLine, col: 0 }, mode: "normal" as VimeeMode, yankedText, statusMessage: lineCount >= 2 ? `${lineCount} lines yanked` : "" }
+    }
+
+    buffer.deleteLines(startLine, lineCount)
+    if (buffer.getLineCount() === 0) buffer.insertLine(0, "")
+    const line = Math.min(startLine, buffer.getLineCount() - 1)
+    if (operator === "c") buffer.insertLine(line, "")
+    return {
+        actions: [{ type: "content-change", content: buffer.getContent() }] as VimeeAction[],
+        cursor: { line, col: 0 },
+        mode: (operator === "c" ? "insert" : "normal") as VimeeMode,
+        yankedText,
+        statusMessage: lineCount >= 2 ? `${lineCount} fewer lines` : "",
+    }
+}
+
+function executeCharwiseTextObject(operator: Operator, range: MotionRange, buffer: TextBuffer) {
+    const ordered = orderedRange(range)
+    const endCol = range.inclusive ? ordered.end.col + 1 : ordered.end.col
+    const yankedText = textInRange(buffer, ordered.start, { line: ordered.end.line, col: endCol })
+    if (operator === "y") {
+        return { actions: [] as VimeeAction[], cursor: ordered.start, mode: "normal" as VimeeMode, yankedText, statusMessage: yankedText.split("\n").length >= 2 ? `${yankedText.split("\n").length} lines yanked` : "" }
+    }
+
+    const linesBefore = buffer.getLineCount()
+    buffer.deleteRange(ordered.start.line, ordered.start.col, ordered.end.line, endCol)
+    const linesRemoved = linesBefore - buffer.getLineCount()
+    return {
+        actions: [{ type: "content-change", content: buffer.getContent() }] as VimeeAction[],
+        cursor: { line: ordered.start.line, col: operator === "c" ? ordered.start.col : Math.min(ordered.start.col, Math.max(0, buffer.getLineLength(ordered.start.line) - 1)) },
+        mode: (operator === "c" ? "insert" : "normal") as VimeeMode,
+        yankedText,
+        statusMessage: linesRemoved >= 2 ? `${linesRemoved} fewer lines` : "",
+    }
+}
+
+function orderedRange(range: MotionRange) {
+    if (range.start.line > range.end.line || (range.start.line === range.end.line && range.start.col > range.end.col)) {
+        return { start: range.end, end: range.start }
+    }
+    return { start: range.start, end: range.end }
+}
+
+function textInRange(buffer: TextBuffer, start: CursorPosition, end: CursorPosition) {
+    if (start.line === end.line) return buffer.getLine(start.line).slice(start.col, end.col)
+    const lines = [buffer.getLine(start.line).slice(start.col)]
+    for (let line = start.line + 1; line < end.line; line++) lines.push(buffer.getLine(line))
+    lines.push(buffer.getLine(end.line).slice(0, end.col))
+    return lines.join("\n")
+}
+
+function blankLine(line: string) {
+    return line.trim().length === 0
+}
+
+function escaped(line: string, index: number) {
+    let slashCount = 0
+    for (let cursor = index - 1; cursor >= 0 && line[cursor] === "\\"; cursor--) slashCount++
+    return slashCount % 2 === 1
 }
 
 function clamp(value: number, min: number, max: number) {
