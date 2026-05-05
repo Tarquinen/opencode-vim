@@ -250,7 +250,12 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         }
         if (!textObjectOperator(vim.operator)) return undefined
 
+        const originalCursor = vim.cursor
         const result = executeTextObject(vim.operator, range, buffer, vim)
+        if (vim.operator === "y") {
+            result.context = { ...result.context, cursor: originalCursor }
+            result.actions = result.actions.map((action) => (action.type === "cursor-move" ? { ...action, position: originalCursor } : action))
+        }
         vim = result.context
         applyActions(result.actions, ctx, map)
         if (flashRange) flashYank(ctx, activeMap, { type: "yank", text: result.yankedText }, flashRange)
