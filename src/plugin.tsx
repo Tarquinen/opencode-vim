@@ -5,6 +5,7 @@ import { PromptRoot } from "./prompt/root"
 import type { PromptModule } from "./prompt/types"
 import { createVimModule } from "./modules/vim"
 import { createSnippetsModule } from "./modules/snippets"
+import type { SnippetController } from "./modules/snippets/types"
 import { checkAutoUpdate } from "./update"
 
 const tui: TuiPlugin = async (api, options, meta) => {
@@ -51,8 +52,9 @@ const tui: TuiPlugin = async (api, options, meta) => {
         if (cached) return cached
 
         const modules: PromptModule[] = []
-        if (hasSnippetsPlugin(api)) modules.push(createSnippetsModule())
-        modules.push(createVimModule(options, vimEnabled))
+        const snippets: SnippetController = {}
+        if (hasSnippetsPlugin(api)) modules.push(createSnippetsModule(snippets))
+        modules.push(createVimModule(options, vimEnabled, snippets))
         moduleCache.set(key, modules)
         return modules
     }

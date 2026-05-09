@@ -46,4 +46,5 @@ export type SnippetController = {
     accept?: () => boolean
     reload?: () => void
     insertTrigger?: () => void
+    navigate?: (delta: number) => boolean
 }

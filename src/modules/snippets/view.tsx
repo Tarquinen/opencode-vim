@@ -100,6 +100,7 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
         props.controller.accept = undefined
         props.controller.reload = undefined
         props.controller.insertTrigger = undefined
+        props.controller.navigate = undefined
     })
 
     const dialogBlockingInput = () => dialogOpen() || dialogHandoffUntil() > Date.now()
@@ -154,6 +155,27 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
     const choose = (index = selected()) => {
         const item = options()[index]
         return item ? chooseItem(item) : false
+    }
+
+    const navigate = (delta: number) => {
+        const ref = props.ctx.prompt()
+        if (!ref || dialogBlockingInput()) return false
+
+        const current = findTrailingHashtagTrigger(ref.current.input)
+        if (!current || dismissed() === current.token) return false
+
+        const value = current.query.trim()
+        const total = optionsForQuery(value).length
+        if (total === 0 && !canCreateForQuery(current.query)) return false
+
+        if (pendingPromptSync) clearTimeout(pendingPromptSync)
+        pendingPromptSync = undefined
+        setInput(ref.current.input)
+        setSyncingPrompt(false)
+        lockKeyboardSelection()
+        setSelected((current) => stepSelection(current, total || 1, delta))
+        props.ctx.requestRender()
+        return true
     }
 
     const accept = () => {
@@ -224,6 +246,7 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
         syncPromptInput(ref, insertSnippetTrigger(ref.current.input))
         ref.focus()
     }
+    props.controller.navigate = navigate
 
     createEffect(() => {
         const ref = props.ctx.prompt()
@@ -293,12 +316,7 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
         if (dialogBlockingInput()) return
         if (!visible()) return
 
-        const total = options().length
-        const actionable = total > 0 || canCreate()
-
-        if ((name === "up" || name === "down") && actionable) {
-            lockKeyboardSelection()
-            setSelected((current) => stepSelection(current, total || 1, name === "up" ? -1 : 1))
+        if ((name === "up" || name === "down") && navigate(name === "up" ? -1 : 1)) {
             event.preventDefault()
             event.stopPropagation()
             return
@@ -311,8 +329,8 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
             return
         }
 
-        if (name === "tab" && actionable) {
-            if (total > 0) choose()
+        if (name === "tab" && (options().length > 0 || canCreate())) {
+            if (options().length > 0) choose()
             else void createSnippetDraft()
             event.preventDefault()
             event.stopPropagation()

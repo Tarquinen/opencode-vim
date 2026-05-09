@@ -4,6 +4,7 @@ import { useKeyboard } from "@opentui/solid"
 import { onCleanup } from "solid-js"
 import type { Accessor } from "solid-js"
 import type { PromptContext, PromptModule } from "../../prompt/types"
+import type { SnippetController } from "../snippets/types"
 import { applyVimCursorStyle, focusedInput } from "./actions"
 import type { VimConfig } from "./config"
 import { createVimConfig } from "./config"
@@ -14,7 +15,7 @@ import { createVimState } from "./state"
 import { createVimeeAdapter } from "./vimee"
 import { VimStatus } from "./view"
 
-export function createVimModule(options?: unknown, enabled: Accessor<boolean> = () => true): PromptModule {
+export function createVimModule(options?: unknown, enabled: Accessor<boolean> = () => true, snippets?: SnippetController): PromptModule {
     const config = createVimConfig(options)
     const log = createVimLog(config)
     const state = createVimState(config.defaultMode, log)
@@ -27,7 +28,7 @@ export function createVimModule(options?: unknown, enabled: Accessor<boolean> = 
             log("module.setup", { kind: ctx.kind, sessionID: ctx.sessionID, workspaceID: ctx.workspaceID })
         },
         renderAbove(ctx) {
-            return <VimKeyboard ctx={ctx} config={config} state={state} enabled={enabled} log={log} />
+            return <VimKeyboard ctx={ctx} config={config} state={state} snippets={snippets} enabled={enabled} log={log} />
         },
         renderRight(ctx) {
             return <VimStatus mode={state.mode} pending={() => readablePending(state.pending())} enabled={enabled} theme={ctx.api.theme.current} pendingDisplayDelay={config.pendingDisplayDelay} disabled={ctx.disabled} log={log} requestRender={ctx.requestRender} />
@@ -35,7 +36,7 @@ export function createVimModule(options?: unknown, enabled: Accessor<boolean> = 
     }
 }
 
-function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: ReturnType<typeof createVimState>; enabled: Accessor<boolean>; log: VimLog }) {
+function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: ReturnType<typeof createVimState>; snippets?: SnippetController; enabled: Accessor<boolean>; log: VimLog }) {
     let cursorStyleMode = ""
     const vimee = createVimeeAdapter(props.state, props.config, props.log)
     const preparedEvents = new WeakSet<KeyEvent>()
@@ -79,7 +80,7 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             return
         }
 
-        if (sendNavigationKey(event, props.ctx, key, props.state.mode())) {
+        if (sendNavigationKey(event, props.ctx, key, props.state.mode(), props.snippets)) {
             syncCursorStyle(true)
             props.ctx.requestRender()
             return
@@ -131,8 +132,15 @@ function preparePassThroughKey(ctx: PromptContext, key: string, mode: string) {
     return true
 }
 
-function sendNavigationKey(event: KeyEvent, ctx: PromptContext, key: string, mode: string) {
+function sendNavigationKey(event: KeyEvent, ctx: PromptContext, key: string, mode: string, snippets?: SnippetController) {
     if (mode !== "normal") return false
+    const delta = snippetNavigationDelta(key)
+    if (delta !== 0 && snippets?.navigate?.(delta)) {
+        event.preventDefault()
+        event.stopPropagation()
+        return true
+    }
+
     const forwarded = commandNavigationKey(ctx, key)
     if (!forwarded) return false
 
@@ -140,6 +148,12 @@ function sendNavigationKey(event: KeyEvent, ctx: PromptContext, key: string, mod
     event.stopPropagation()
     ctx.api.renderer.keyInput.processParsedKey(forwarded)
     return true
+}
+
+function snippetNavigationDelta(key: string) {
+    if (key === "j") return 1
+    if (key === "k") return -1
+    return 0
 }
 
 function commandNavigationKey(ctx: PromptContext, key: string): ParsedKey | undefined {

@@ -3,9 +3,7 @@ import type { PromptModule } from "../../prompt/types"
 import type { SnippetController } from "./types"
 import { SnippetAutocomplete } from "./view"
 
-export function createSnippetsModule(): PromptModule {
-    const controller: SnippetController = {}
-
+export function createSnippetsModule(controller: SnippetController): PromptModule {
     return {
         id: "snippets",
         order: -10,
