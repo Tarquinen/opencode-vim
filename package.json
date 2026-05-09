@@ -7,12 +7,13 @@
     }
   },
   "dependencies": {
-    "@opentui/core": "^0.2.1",
-    "@opentui/solid": "^0.2.1",
+    "@opentui/core": "^0.2.6",
+    "@opentui/keymap": "^0.2.6",
+    "@opentui/solid": "^0.2.6",
     "solid-js": "^1.9.12",
     "@vimee/core": "^0.3.0"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.14.30"
+    "@opencode-ai/plugin": "1.14.44"
   }
 }

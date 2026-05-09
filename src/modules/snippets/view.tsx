@@ -229,40 +229,45 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
             commandTimer = undefined
             if (disposed) return
 
-            commandDispose = props.ctx.api.command.register(() => [
-                {
-                    title: "Reload snippets",
-                    value: "snippets.reload",
-                    description: "Reload snippet files from disk",
-                    category: "Prompt",
-                    slash: { name: "snippets:reload" },
-                    onSelect() {
-                        void executeReloadInPrompt(ref)
+            commandDispose = props.ctx.api.keymap.registerLayer({
+                commands: [
+                    {
+                        namespace: "palette",
+                        name: "snippets.reload",
+                        title: "Reload snippets",
+                        desc: "Reload snippet files from disk",
+                        category: "Prompt",
+                        slashName: "snippets:reload",
+                        run() {
+                            void executeReloadInPrompt(ref)
+                        },
                     },
-                },
-                {
-                    title: "Insert snippet",
-                    value: "snippets.insert",
-                    description: "Insert a snippet trigger into the prompt",
-                    category: "Prompt",
-                    onSelect() {
-                        syncPromptInput(ref, insertSnippetTrigger(ref.current.input))
-                        ref.focus()
+                    {
+                        namespace: "palette",
+                        name: "snippets.insert",
+                        title: "Insert snippet",
+                        desc: "Insert a snippet trigger into the prompt",
+                        category: "Prompt",
+                        run() {
+                            syncPromptInput(ref, insertSnippetTrigger(ref.current.input))
+                            ref.focus()
+                        },
                     },
-                },
-                {
-                    title: "Accept snippet autocomplete",
-                    value: "snippets.accept",
-                    keybind: "input_submit",
-                    category: "Prompt",
-                    hidden: true,
-                    enabled: ref.focused,
-                    onSelect() {
-                        if (accept()) return
-                        ref.submit()
+                    {
+                        namespace: "palette",
+                        name: "snippets.accept",
+                        title: "Accept snippet autocomplete",
+                        category: "Prompt",
+                        hidden: true,
+                        enabled: () => ref.focused,
+                        run() {
+                            if (accept()) return
+                            ref.submit()
+                        },
                     },
-                },
-            ])
+                ],
+                bindings: acceptSnippetBindings(props.ctx.api),
+            })
         }, 0)
     })
 
@@ -557,6 +562,21 @@ function Highlighted(props: { text: string; query: string; fg: RGBA }) {
 
 function syncPromptInput(prompt: TuiPromptRef, input: string) {
     prompt.set({ input, mode: prompt.current.mode, parts: [...prompt.current.parts] })
+}
+
+function acceptSnippetBindings(api: TuiPluginApi) {
+    const command = "snippets.accept"
+    const title = "Accept snippet autocomplete"
+
+    if (!api.tuiConfig.keybinds.has("input.submit")) {
+        return [{ key: "input_submit", cmd: command, desc: title }]
+    }
+
+    return api.tuiConfig.keybinds.get("input.submit").map((binding) => ({
+        ...binding,
+        cmd: command,
+        desc: binding.desc ?? title,
+    }))
 }
 
 function selectedText(theme: PromptContext["api"]["theme"]["current"]) {
