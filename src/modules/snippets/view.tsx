@@ -205,6 +205,14 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
         return false
     }
 
+    const canAcceptSubmit = (ref: TuiPromptRef) => {
+        if (isReloadCommand(ref.current.input)) return true
+        if (dialogBlockingInput()) return true
+
+        const current = findTrailingHashtagTrigger(ref.current.input)
+        return !!current && dismissed() !== current.token
+    }
+
     props.controller.accept = accept
     props.controller.reload = () => {
         const ref = props.ctx.prompt()
@@ -259,7 +267,7 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
                         title: "Accept snippet autocomplete",
                         category: "Prompt",
                         hidden: true,
-                        enabled: () => ref.focused,
+                        enabled: () => ref.focused && canAcceptSubmit(ref),
                         run() {
                             if (accept()) return
                             ref.submit()
