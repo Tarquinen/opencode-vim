@@ -159,7 +159,7 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
 
     const navigate = (delta: number) => {
         const ref = props.ctx.prompt()
-        if (!ref || dialogBlockingInput()) return false
+        if (!ref || !ref.focused || dialogBlockingInput()) return false
 
         const current = findTrailingHashtagTrigger(ref.current.input)
         if (!current || dismissed() === current.token) return false
