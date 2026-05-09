@@ -38,9 +38,16 @@ export function createVimModule(options?: unknown, enabled: Accessor<boolean> = 
 function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: ReturnType<typeof createVimState>; enabled: Accessor<boolean>; log: VimLog }) {
     let cursorStyleMode = ""
     const vimee = createVimeeAdapter(props.state, props.config, props.log)
+    const preparedEvents = new WeakSet<KeyEvent>()
     props.log("keyboard.mount", { kind: props.ctx.kind })
 
     const cursorStyleTimer = setInterval(syncCursorStyle, 50)
+    const offKeyIntercept = props.ctx.api.keymap.intercept("key", ({ event }) => {
+        if (!props.enabled() || props.ctx.disabled || props.ctx.visible === false) return
+        const key = keyNotation(event)
+        if (!key || !passThroughKey(event, key, props.state.mode())) return
+        if (preparePassThroughKey(props.ctx, key, props.state.mode())) preparedEvents.add(event)
+    }, { priority: 100 })
 
     useKeyboard((event) => {
         props.log("keyboard.event", {
@@ -66,7 +73,7 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
         }
 
         if (passThroughKey(event, key, props.state.mode())) {
-            preparePassThroughKey(props.ctx, key, props.state.mode())
+            if (!preparedEvents.delete(event)) preparePassThroughKey(props.ctx, key, props.state.mode())
             syncCursorStyle(true)
             props.ctx.requestRender()
             return
@@ -89,6 +96,7 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
 
     onCleanup(() => {
         props.log("keyboard.cleanup", { kind: props.ctx.kind })
+        offKeyIntercept()
         vimee.cleanup()
         clearInterval(cursorStyleTimer)
     })
@@ -116,10 +124,11 @@ function passThroughKey(event: KeyEvent, key: string, mode: string) {
 }
 
 function preparePassThroughKey(ctx: PromptContext, key: string, mode: string) {
-    if (mode !== "normal" || key !== "<CR>") return
+    if (mode !== "normal" || key !== "<CR>") return false
     const input = focusedInput(ctx)
-    if (!input?.plainText || input.cursorOffset === undefined) return
+    if (!input?.plainText || input.cursorOffset === undefined) return false
     input.cursorOffset = Math.min(input.cursorOffset + 1, input.plainText.length)
+    return true
 }
 
 function sendNavigationKey(event: KeyEvent, ctx: PromptContext, key: string, mode: string) {
