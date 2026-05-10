@@ -75,8 +75,6 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
 
         if (passThroughKey(event, key, props.state.mode())) {
             if (!preparedEvents.delete(event)) preparePassThroughKey(props.ctx, key, props.state.mode())
-            syncCursorStyle(true)
-            props.ctx.requestRender()
             return
         }
 
@@ -90,9 +88,9 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
         if (consumed) {
             event.preventDefault()
             event.stopPropagation()
+            syncCursorStyle(true)
+            props.ctx.requestRender()
         }
-        syncCursorStyle(true)
-        props.ctx.requestRender()
     })
 
     onCleanup(() => {

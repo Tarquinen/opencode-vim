@@ -10,6 +10,8 @@ import type { createVimState } from "./state"
 
 type VimState = ReturnType<typeof createVimState>
 type HostAction = VimeeAction | { type: "submit" }
+type HostKeybindAction = "normal" | "submit"
+type HostKeybindDefinition = KeybindDefinition & { hostAction?: HostKeybindAction }
 type HostRange = { start: number; end: number }
 
 const YANK_FLASH_MS = 250
@@ -33,11 +35,6 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             const ref = ctx.prompt()
             if (!ref) return false
 
-            const input = focusedInput(ctx)
-            const text = input?.plainText ?? ref.current.input
-            const offset = clamp(input?.cursorOffset ?? text.length, 0, text.length)
-            const map = mapForHostText(text, input)
-            const cursor = hostPosition(map, offset)
             let vimeeKey = keyForVimee(event, key)
             if (!vimeeKey) return false
 
@@ -46,15 +43,28 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 return true
             }
 
-            if (state.mode() === "insert" && key === "<CR>") {
-                cancelPendingInsert(ctx, offset)
-                return false
+            if (state.mode() === "insert") {
+                if (key === "<CR>") {
+                    cancelPendingInsert(ctx)
+                    return false
+                }
+                if (vimeeKey === "Escape") {
+                    cancelPendingInsert(ctx, undefined, false)
+                    enterNormal(ctx)
+                    state.setPending("")
+                    updateTimeout(ctx)
+                    log("vimee.key", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: ["mode-change"] })
+                    return true
+                }
+                return handleInsertKeybind(event, vimeeKey, ctx)
             }
 
-            if (state.mode() === "insert") {
-                const consumed = handleInsertMode(event, vimeeKey, ctx, map, cursor, offset)
-                return consumed ?? false
-            }
+            const input = focusedInput(ctx)
+            const text = input?.plainText ?? ref.current.input
+            const offset = clamp(input?.cursorOffset ?? text.length, 0, text.length)
+
+            const map = mapForHostText(text, input)
+            const cursor = hostPosition(map, offset)
 
             const wasPending = keybinds?.isPending() ?? false
             const pendingBefore = pendingInsert
@@ -172,20 +182,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         syncVisualSelection(input, currentMap, ctx)
     }
 
-    function handleInsertMode(event: KeyEvent, key: string, ctx: PromptContext, map: PromptMap, cursor: CursorPosition, offset: number) {
-        if (key === "Escape") {
-            cancelPendingInsert(ctx, offset, false)
-            sync(map, cursor)
-            const result = processKeystroke(key, vim, buffer, event.ctrl, false)
-            vim = result.newCtx
-            applyActions(result.actions as HostAction[], ctx, map)
-            syncMode(state, vim.mode)
-            state.setPending("")
-            log("vimee.key", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: result.actions.map((action) => action.type) })
-            return true
-        }
-
-        if (!keybinds?.hasKeybinds("insert") && !keybinds?.isPending()) return undefined
+    function handleInsertKeybind(event: KeyEvent, key: string, ctx: PromptContext) {
+        if (!keybinds?.hasKeybinds("insert") && !keybinds?.isPending()) return false
 
         const wasPending = keybinds.isPending()
         const pendingBefore = pendingInsert
@@ -198,23 +196,65 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 updateTimeout(ctx)
                 return true
             case "matched": {
-                sync(map, cursor)
-                const actions = applyKeybind(resolved.definition, map)
-                applyActions(actions, ctx, map)
-                syncMode(state, vim.mode)
+                if (applyInsertKeybind(resolved.definition, ctx)) {
+                    pendingInsert = ""
+                    state.setPending("")
+                    updateTimeout(ctx)
+                    log("vimee.keybind", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: ["mode-change"] })
+                    return true
+                }
+
+                if (wasPending && pendingBefore) flushPendingInsert(ctx, pendingBefore)
                 pendingInsert = ""
                 state.setPending("")
                 updateTimeout(ctx)
-                log("vimee.keybind", { key, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: actions.map((action) => action.type) })
-                return true
+                log("vimee.keybind.unsupported", { key })
+                return false
             }
             case "none":
-                if (wasPending && pendingBefore) flushPendingInsert(ctx, pendingBefore, offset)
+                if (wasPending && pendingBefore) flushPendingInsert(ctx, pendingBefore)
                 pendingInsert = ""
                 state.setPending("")
                 updateTimeout(ctx)
-                return wasPending ? false : undefined
+                return false
         }
+    }
+
+    function applyInsertKeybind(definition: KeybindDefinition, ctx: PromptContext) {
+        switch (insertHostAction(definition)) {
+            case "normal":
+                enterNormal(ctx)
+                return true
+            case "submit":
+                ctx.prompt()?.submit()
+                return true
+            default:
+                return false
+        }
+    }
+
+    function enterNormal(ctx: PromptContext) {
+        const ref = ctx.prompt()
+        const input = focusedInput(ctx)
+        const text = input?.plainText ?? ref?.current.input ?? ""
+        const offset = clamp(input?.cursorOffset ?? text.length, 0, text.length)
+
+        if (input && text.length > 0) {
+            input.cursorOffset = Math.max(0, offset - 1)
+            clampNormalCursor(input)
+        }
+
+        vim = { ...resetContext(vim), mode: "normal", statusMessage: "" }
+        nativeInsertUndoSaved = false
+        syncMode(state, "normal")
+    }
+
+    function insertHostAction(definition: KeybindDefinition): HostKeybindAction | undefined {
+        const action = (definition as HostKeybindDefinition).hostAction
+        if (action) return action
+        if ("execute" in definition) return undefined
+        if (definition.keys === "<Esc>" || definition.keys === "<C-[>" || definition.keys === "Escape") return "normal"
+        return undefined
     }
 
     function applyKeybind(definition: KeybindDefinition, map: PromptMap) {
@@ -299,12 +339,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         const currentOffset = input?.cursorOffset ?? insertAt
         const next = text.slice(0, insertAt) + value + text.slice(insertAt)
         setInput(ref, next)
-        activeMap = createPromptMap(next, input)
-        rememberMap(activeMap)
-        buffer.replaceContent(activeMap.vimText)
         const nextOffset = currentOffset >= insertAt ? currentOffset + value.length : currentOffset
         if (input) input.cursorOffset = nextOffset
-        vim = { ...vim, cursor: hostPosition(activeMap, nextOffset) }
     }
 
     function cursorOffset(map: PromptMap, position: CursorPosition) {
@@ -553,14 +589,14 @@ function createKeybinds(config: VimConfig, log: VimLog): KeybindMap | undefined 
     return count > 0 ? map : undefined
 }
 
-function keybindAction(action: string): KeybindDefinition {
+function keybindAction(action: string): HostKeybindDefinition {
     switch (action) {
         case "normal":
-            return { keys: "<Esc>" }
+            return { keys: "<Esc>", hostAction: "normal" }
         case "insert":
             return { keys: "i" }
         case "submit":
-            return { execute: () => [{ type: "submit" } as unknown as VimeeAction] }
+            return { execute: () => [{ type: "submit" } as unknown as VimeeAction], hostAction: "submit" }
         default:
             return { keys: action }
     }
