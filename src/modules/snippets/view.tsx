@@ -82,11 +82,12 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
     syncInterval = setInterval(() => {
         const ref = props.ctx.prompt()
         if (!ref) {
-            setInput("")
+            if (input()) setInput("")
             setSyncingPrompt(false)
             return
         }
-        setInput(ref.current.input ?? "")
+        const next = ref.current.input ?? ""
+        if (next !== input()) setInput(next)
     }, PROMPT_SYNC_MS)
 
     onCleanup(() => {

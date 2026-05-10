@@ -1,16 +1,24 @@
 import type { HashtagTriggerMatch, SnippetInfo } from "./types"
 
-const HASHTAG_TRIGGER = /(^|\s)#([^\s#]*)$/
-
 export function findTrailingHashtagTrigger(input: string): HashtagTriggerMatch | undefined {
-    const match = HASHTAG_TRIGGER.exec(input)
-    if (!match) return undefined
+    let start = -1
+    for (let i = input.length - 1; i >= 0; i--) {
+        const char = input[i]
+        if (char === "#") {
+            start = i
+            break
+        }
+        if (/\s/.test(char)) return undefined
+    }
 
-    const query = match[2] ?? ""
+    if (start < 0) return undefined
+    if (start > 0 && !/\s/.test(input[start - 1])) return undefined
+
+    const query = input.slice(start + 1)
     const token = `#${query}`
 
     return {
-        start: input.length - token.length,
+        start,
         end: input.length,
         query,
         token,
