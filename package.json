@@ -14,6 +14,7 @@
     "@vimee/core": "^0.3.0"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.14.44"
+    "@opencode-ai/plugin": "1.14.44",
+    "@types/bun": "^1.3.14"
   }
 }
