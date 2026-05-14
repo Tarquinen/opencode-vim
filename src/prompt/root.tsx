@@ -2,24 +2,37 @@
 import { onCleanup } from "solid-js"
 import type { JSX } from "@opentui/solid"
 import { HostPrompt } from "./host"
-import { sortModules } from "./modules"
-import { createPromptRef } from "./ref"
-import type { PromptRootProps } from "./types"
+import { notifyPromptRef, sortModules } from "./modules"
+import type { PromptContext, PromptRootProps } from "./types"
 
 export function PromptRoot(props: PromptRootProps) {
     const modules = sortModules(props.modules)
     const api = props.api
-    const ctx = createPromptRef(modules, {
+    let current: ReturnType<PromptContext["prompt"]>
+    const ctx: PromptContext = {
         api,
         slot: props.slot,
         kind: props.kind,
-        sessionID: props.sessionID,
-        workspaceID: props.workspaceID,
-        visible: props.visible,
-        disabled: props.disabled,
+        get sessionID() {
+            return props.sessionID
+        },
+        get workspaceID() {
+            return props.workspaceID
+        },
+        get visible() {
+            return props.visible
+        },
+        get disabled() {
+            return props.disabled
+        },
+        prompt: () => current,
+        setPromptRef(ref) {
+            current = ref
+            notifyPromptRef(modules, ref, ctx)
+        },
         submitHost: () => props.onSubmit?.(),
         requestRender: () => api.renderer.requestRender(),
-    })
+    }
 
     const cleanups = modules.flatMap((module) => {
         const cleanup = module.setup?.(ctx)
