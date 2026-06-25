@@ -1,20 +1,35 @@
 {
   "name": "opencode-vim",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "exports": {
     "./tui": {
       "import": "./tui.tsx"
     }
   },
   "dependencies": {
-    "@opentui/core": "^0.2.6",
-    "@opentui/keymap": "^0.2.6",
-    "@opentui/solid": "^0.2.6",
-    "solid-js": "^1.9.12",
     "@vimee/core": "^0.3.0"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.4.3",
+    "@opentui/core": "^0.4.2",
+    "@opentui/keymap": "^0.4.2",
+    "@opentui/solid": "^0.4.2",
+    "solid-js": "^1.9.12"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "1.14.44",
-    "@types/bun": "^1.3.14"
-  }
+    "@opentui/core": "^0.4.2",
+    "@opentui/keymap": "^0.4.2",
+    "@opentui/solid": "^0.4.2",
+    "@types/bun": "^1.3.14",
+    "solid-js": "^1.9.12"
+  },
+  "files": [
+    "assets/",
+    "docs/",
+    "src/",
+    "README.md",
+    "tui.json.example",
+    "tui.tsx"
+  ]
 }

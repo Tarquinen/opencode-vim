@@ -1,0 +1,50 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  npm:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.x"
+          registry-url: https://registry.npmjs.org
+
+      - name: Check npm version
+        id: package
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "${NAME}@${VERSION} is already published."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "${NAME}@${VERSION} is not published yet."
+          fi
+
+      - name: Publish
+        if: steps.package.outputs.published == 'false'
+        run: npx --yes --package npm@11 npm publish --access public --provenance
