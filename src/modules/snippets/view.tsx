@@ -1,7 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { spawn } from "node:child_process"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import { useKeyboard } from "@opentui/solid"
 import { RGBA, type ScrollBoxRenderable } from "@opentui/core"
 import type { TuiPluginApi, TuiPromptRef } from "@opencode-ai/plugin/tui"
 import type { PromptContext } from "../../prompt/types"
@@ -303,7 +302,7 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
         }, 0)
     })
 
-    useKeyboard((event) => {
+    const offKeyboard = props.ctx.api.keymap.intercept("key", ({ event }) => {
         const ref = props.ctx.prompt()
         const name = event.name?.toLowerCase()
 
@@ -340,6 +339,8 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
 
         schedulePromptSync()
     })
+
+    onCleanup(() => offKeyboard())
 
     return (
         <Show when={visible()}>
