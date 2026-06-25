@@ -1,6 +1,5 @@
 /** @jsxImportSource @opentui/solid */
 import type { KeyEvent, ParsedKey } from "@opentui/core"
-import { useKeyboard } from "@opentui/solid"
 import { onCleanup } from "solid-js"
 import type { Accessor } from "solid-js"
 import type { PromptContext, PromptModule } from "../../prompt/types"
@@ -31,7 +30,7 @@ export function createVimModule(options?: unknown, enabled: Accessor<boolean> = 
             return <VimKeyboard ctx={ctx} config={config} state={state} snippets={snippets} enabled={enabled} log={log} />
         },
         renderRight(ctx) {
-            return <VimStatus mode={state.mode} pending={() => readablePending(state.pending())} enabled={enabled} theme={ctx.api.theme.current} pendingDisplayDelay={config.pendingDisplayDelay} disabled={ctx.disabled} log={log} requestRender={ctx.requestRender} />
+            return <VimStatus mode={state.mode} pending={() => readablePending(state.pending())} subscribe={state.subscribe} enabled={enabled} theme={ctx.api.theme.current} pendingDisplayDelay={config.pendingDisplayDelay} disabled={ctx.disabled} log={log} requestRender={ctx.requestRender} />
         },
     }
 }
@@ -50,7 +49,7 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
         if (preparePassThroughKey(props.ctx, key, props.state.mode())) preparedEvents.add(event)
     }, { priority: 100 })
 
-    useKeyboard((event) => {
+    const offKeyboard = props.ctx.api.keymap.intercept("key", ({ event }) => {
         props.log("keyboard.event", {
             name: event.name,
             ctrl: event.ctrl,
@@ -96,6 +95,7 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
     onCleanup(() => {
         props.log("keyboard.cleanup", { kind: props.ctx.kind })
         offKeyIntercept()
+        offKeyboard()
         vimee.cleanup()
         clearInterval(cursorStyleTimer)
     })
