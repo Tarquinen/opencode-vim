@@ -43,7 +43,7 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
 
     const cursorStyleTimer = setInterval(syncCursorStyle, 50)
     const offKeyIntercept = props.ctx.api.keymap.intercept("key", ({ event }) => {
-        if (!props.enabled() || props.ctx.disabled || props.ctx.visible === false) return
+        if (!canHandleKeys(props)) return
         const key = keyNotation(event)
         if (!key || !passThroughKey(event, key, props.state.mode())) return
         if (preparePassThroughKey(props.ctx, key, props.state.mode())) preparedEvents.add(event)
@@ -61,8 +61,8 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             pending: props.state.pending(),
         })
 
-        if (!props.enabled() || props.ctx.disabled || props.ctx.visible === false) {
-            props.log("keyboard.skip", { enabled: props.enabled(), disabled: props.ctx.disabled, visible: props.ctx.visible })
+        if (!canHandleKeys(props)) {
+            props.log("keyboard.skip", { enabled: props.enabled(), disabled: props.ctx.disabled, visible: props.ctx.visible, dialogOpen: props.ctx.api.ui.dialog.open })
             return
         }
 
@@ -110,6 +110,10 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             props.log("cursor.style", { mode, style: props.config.cursorStyles[mode].style, blinking: props.config.cursorStyles[mode].blinking })
         }
     }
+}
+
+function canHandleKeys(props: { ctx: PromptContext; enabled: Accessor<boolean> }) {
+    return props.enabled() && !props.ctx.disabled && props.ctx.visible !== false && !props.ctx.api.ui.dialog.open
 }
 
 function readablePending(sequence: string) {

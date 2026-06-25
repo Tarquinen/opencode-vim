@@ -103,7 +103,7 @@ export function SnippetAutocomplete(props: SnippetAutocompleteProps) {
         props.controller.navigate = undefined
     })
 
-    const dialogBlockingInput = () => dialogOpen() || dialogHandoffUntil() > Date.now()
+    const dialogBlockingInput = () => props.ctx.api.ui.dialog.open || dialogOpen() || dialogHandoffUntil() > Date.now()
     const match = createMemo(() => {
         if (props.ctx.disabled || props.ctx.visible === false) return undefined
         return findTrailingHashtagTrigger(input())
