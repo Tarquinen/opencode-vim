@@ -77,6 +77,11 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             return
         }
 
+        if (key === "<Esc>" && props.state.mode() === "normal" && !props.state.pending()) {
+            props.log("keyboard.fallthrough", { key, mode: props.state.mode() })
+            return
+        }
+
         if (sendNavigationKey(event, props.ctx, key, props.state.mode(), props.snippets)) {
             syncCursorStyle(true)
             props.ctx.requestRender()
