@@ -7,6 +7,7 @@ import type { SnippetController } from "../snippets/types"
 import { applyVimCursorStyle, focusedInput } from "./actions"
 import type { VimConfig } from "./config"
 import { createVimConfig } from "./config"
+import { displayToChar, displayWidth } from "./map"
 import { keyNotation } from "./keys"
 import { createVimLog } from "./log"
 import type { VimLog } from "./log"
@@ -135,7 +136,7 @@ function preparePassThroughKey(ctx: PromptContext, key: string, mode: string) {
     if (mode !== "normal" || key !== "<CR>") return false
     const input = focusedInput(ctx)
     if (!input?.plainText || input.cursorOffset === undefined) return false
-    input.cursorOffset = Math.min(input.cursorOffset + 1, input.plainText.length)
+    input.cursorOffset = Math.min(input.cursorOffset + 1, displayWidth(input.plainText))
     return true
 }
 
@@ -178,8 +179,8 @@ function isPromptFocused(ctx: PromptContext) {
 function isNativeCompletionToken(ctx: PromptContext) {
     const text = ctx.prompt()?.current.input ?? focusedInput(ctx)?.plainText ?? ""
     const input = focusedInput(ctx)
-    const offset = Math.max(0, input?.cursorOffset ?? text.length)
-    const beforeCursor = text.slice(0, Math.min(offset + 1, text.length))
+    const charIdx = displayToChar(text, Math.max(0, input?.cursorOffset ?? 0))
+    const beforeCursor = text.slice(0, Math.min(charIdx + 1, text.length))
     return /^\/\S*$/.test(beforeCursor) || /(?:^|\s)@\S*$/.test(beforeCursor)
 }
 
