@@ -1,10 +1,10 @@
-# Configuration Guide
+# 配置指南
 
-This guide shows how to enable `opencode-vim` in OpenCode and configure its Vim prompt behavior.
+介绍如何在 OpenCode 中启用 `opencode-vim` 并配置 Vim 输入行为。
 
-## Basic Setup
+## 基本设置
 
-Add `opencode-vim` to the `plugin` array in your OpenCode `tui.jsonc` file:
+在 `tui.jsonc` 的 `plugin` 数组中添加 `opencode-vim`：
 
 ```jsonc
 {
@@ -23,9 +23,9 @@ Add `opencode-vim` to the `plugin` array in your OpenCode `tui.jsonc` file:
 }
 ```
 
-If your plugin is installed somewhere else, change the plugin path to match your setup.
+如果插件安装在别处，请修改路径。
 
-## Full Example
+## 完整示例
 
 ```jsonc
 {
@@ -67,19 +67,19 @@ If your plugin is installed somewhere else, change the plugin path to match your
 }
 ```
 
-## Options
+## 选项
 
 ### `autoUpdate`
 
-Updates `opencode-vim` automatically when a newer npm version is available.
+当有新版本时自动更新 `opencode-vim`。
 
-Default:
+默认：
 
 ```jsonc
 "autoUpdate": true
 ```
 
-Example:
+示例：
 
 ```jsonc
 "autoUpdate": false
@@ -87,20 +87,20 @@ Example:
 
 ### `defaultMode`
 
-The mode the prompt starts in.
+输入框启动时的模式。
 
-Allowed values:
+可选值：
 
 - `"insert"`
 - `"normal"`
 
-Default:
+默认：
 
 ```jsonc
 "defaultMode": "insert"
 ```
 
-Example:
+示例：
 
 ```jsonc
 "defaultMode": "normal"
@@ -108,15 +108,15 @@ Example:
 
 ### `keymapTimeout`
 
-How long, in milliseconds, the prompt waits for the next key when a configured keymap has only been partially typed.
+当按键映射只输入了部分时，等待下一个按键的时间，单位毫秒。
 
-Default:
+默认：
 
 ```jsonc
 "keymapTimeout": 500
 ```
 
-Examples:
+示例：
 
 ```jsonc
 "keymapTimeout": 250
@@ -126,19 +126,19 @@ Examples:
 "keymapTimeout": 1000
 ```
 
-Use a shorter timeout for faster fallback after partial mappings. Use a longer timeout if you type multi-key mappings slowly.
+短超时适合快速回退，长超时适合慢速输入多键映射。
 
 ### `pendingDisplayDelay`
 
-How long, in milliseconds, the prompt waits before showing a pending key sequence in the status area.
+在状态栏显示待按键序列的延迟，单位毫秒。
 
-Default:
+默认：
 
 ```jsonc
 "pendingDisplayDelay": 120
 ```
 
-Examples:
+示例：
 
 ```jsonc
 "pendingDisplayDelay": 0
@@ -148,20 +148,20 @@ Examples:
 "pendingDisplayDelay": 300
 ```
 
-This only affects display. It does not change how long keymaps wait for more input.
+只影响显示，不影响按键映射等待时间。
 
 ### `cursorStyles`
 
-The cursor style to use in each mode.
+各模式下的光标样式。
 
-Allowed styles:
+可选样式：
 
 - `"block"`
 - `"line"`
 - `"underline"`
 - `"default"`
 
-Default:
+默认：
 
 ```jsonc
 "cursorStyles": {
@@ -176,7 +176,7 @@ Default:
 }
 ```
 
-Examples:
+示例：
 
 ```jsonc
 "cursorStyles": {
@@ -202,25 +202,25 @@ Examples:
 }
 ```
 
-You can configure only one mode if you want. Any omitted values use the defaults.
+可以只配置某个模式，未设置的部分使用默认值。
 
 ### `debug`
 
-Enables debug logging.
+启用调试日志。
 
-Default:
+默认：
 
 ```jsonc
 "debug": false
 ```
 
-Example:
+示例：
 
 ```jsonc
 "debug": true
 ```
 
-You can also enable debug logging with this environment variable:
+也可以通过环境变量启用：
 
 ```bash
 VIM_PROMPT_DEBUG=1
@@ -228,32 +228,32 @@ VIM_PROMPT_DEBUG=1
 
 ### `debugPath`
 
-The file path used for debug logs when debug logging is enabled.
+调试日志的写入路径。
 
-Default:
+默认：
 
 ```txt
 ~/.cache/opencode/opencode-vim.log
 ```
 
-Example:
+示例：
 
 ```jsonc
 "debugPath": "/tmp/opencode-vim.log"
 ```
 
-Use an absolute path in config. `~` is not expanded inside `debugPath`.
+须使用绝对路径，不支持 `~`。
 
 ### `keymaps`
 
-Custom keymaps for insert mode and normal mode.
+自定义 insert 模式和 normal 模式的按键映射。
 
-Allowed modes:
+可选模式：
 
 - `"insert"`
 - `"normal"`
 
-Each keymap entry maps a key sequence to an action:
+每个映射项将一个按键序列映射到一个动作：
 
 ```jsonc
 "keymaps": {
@@ -266,16 +266,16 @@ Each keymap entry maps a key sequence to an action:
 }
 ```
 
-Supported built-in actions:
+支持的内置动作：
 
-| Action | Modes | Effect |
-|---|---|---|
-| `"submit"` | insert, normal | Submits the prompt |
-| `"normal"` | insert only | Exits insert mode, enters normal mode |
-| `"insert"` | normal only | Enters insert mode |
-| `"<vim keys>"` | normal only | Executes the configured Vim key sequence |
+| 动作           | 可用模式       | 效果                               |
+| -------------- | -------------- | ---------------------------------- |
+| `"submit"`     | insert, normal | 提交 prompt                        |
+| `"normal"`     | 仅 insert      | 退出 insert 模式，进入 normal 模式 |
+| `"insert"`     | 仅 normal      | 进入 insert 模式                   |
+| `"<vim keys>"` | 仅 normal      | 执行对应的 Vim 按键序列            |
 
-For example, this maps `Y` to yank from the cursor to the end of the line:
+例如，将 `Y` 映射为从光标处拉到行尾：
 
 ```jsonc
 "keymaps": {
@@ -285,15 +285,15 @@ For example, this maps `Y` to yank from the cursor to the end of the line:
 }
 ```
 
-Unlike other keys, `<CR>` in normal mode defaults to `"submit"` when no mapping is configured. In insert mode, if `<CR>` is unmapped and OpenCode's `input_submit` is not `return`, it inserts a newline instead of submitting.
+与其他按键不同，`<CR>` 在 normal 模式下未配置映射时默认提交 prompt。insert 模式下如果 `<CR>` 未配置映射，且 OpenCode 的 `input_submit` 不为 `return`，则插入换行而非提交。
 
-> **Note:** When `input_submit` is not `"return"`, make sure to also set `"input_newline": "return"` in the OpenCode `keybinds` config. Without it, `<CR>` in insert mode does nothing (neither submits nor inserts a newline).
+> **注意：** 当 `input_submit` 不为 `"return"` 时，还需在 OpenCode 的 `keybinds` 中设置 `"input_newline": "return"`。否则 `<CR>` 在 insert 模式下既不提交也不换行，相当于无效按键。
 
-## Keymap Syntax
+## 按键映射语法
 
-Key sequences can contain printable ASCII characters, except literal spaces. Use `<Space>` for the space key.
+按键序列可以使用可打印 ASCII 字符（不能包含空格，空格用 `<Space>` 表示）。
 
-Examples:
+示例：
 
 ```jsonc
 "x": "d"
@@ -302,7 +302,7 @@ Examples:
 "\\r": "<C-r>"
 ```
 
-Supported special keys:
+支持的特殊键：
 
 - `<Esc>`
 - `<CR>`
@@ -310,11 +310,11 @@ Supported special keys:
 - `<BS>`
 - `<Del>`
 - `<Space>`
-- `<C-a>` through `<C-z>`
+- `<C-a>` 到 `<C-z>`
 
-Ctrl key names must be lowercase. Use `<C-s>`, not `<C-S>`.
+Ctrl 键名称必须用小写，用 `<C-s>` 而不是 `<C-S>`。
 
-Unsupported examples:
+不支持的示例：
 
 ```jsonc
 "<C-S>": "submit"
@@ -323,11 +323,11 @@ Unsupported examples:
 "a b": "normal"
 ```
 
-Invalid keymaps are skipped. Enable debug logging if you need to troubleshoot keymap registration.
+无效的映射会被跳过。如有需要，启用调试日志排查问题。
 
-## Keymap Examples
+## 按键映射示例
 
-Use `kj` or `jk` to leave insert mode:
+使用 `kj` 或 `jk` 退出 insert 模式：
 
 ```jsonc
 "keymaps": {
@@ -338,7 +338,7 @@ Use `kj` or `jk` to leave insert mode:
 }
 ```
 
-Submit with `<CR>` in normal mode is the default — this keymap is optional:
+normal 模式下使用 `<CR>` 提交是默认行为，该映射可省略：
 
 ```jsonc
 "keymaps": {
@@ -348,7 +348,7 @@ Submit with `<CR>` in normal mode is the default — this keymap is optional:
 }
 ```
 
-Submit the prompt with Ctrl-S in insert mode:
+在 insert 模式下用 Ctrl-S 提交：
 
 ```jsonc
 "keymaps": {
@@ -358,7 +358,7 @@ Submit the prompt with Ctrl-S in insert mode:
 }
 ```
 
-Make `Y` yank to the end of the line:
+`Y` 拉取到行尾：
 
 ```jsonc
 "keymaps": {
@@ -368,7 +368,7 @@ Make `Y` yank to the end of the line:
 }
 ```
 
-Make `D` delete to the beginning of the line:
+`D` 删除到行首：
 
 ```jsonc
 "keymaps": {
@@ -378,7 +378,7 @@ Make `D` delete to the beginning of the line:
 }
 ```
 
-Make `H` move to the beginning and `L` move to the end:
+`H` 移到行首，`L` 移到行尾：
 
 ```jsonc
 "keymaps": {
@@ -389,7 +389,7 @@ Make `H` move to the beginning and `L` move to the end:
 }
 ```
 
-Use `q` to enter insert mode from normal mode:
+用 `q` 从 normal 模式进入 insert 模式：
 
 ```jsonc
 "keymaps": {
@@ -399,7 +399,7 @@ Use `q` to enter insert mode from normal mode:
 }
 ```
 
-Use a leader-style sequence:
+使用类似 leader 键的序列：
 
 ```jsonc
 "keymaps": {
@@ -410,17 +410,17 @@ Use a leader-style sequence:
 }
 ```
 
-## Troubleshooting
+## 故障排查
 
-If a keymap does not work, check these first:
+如果映射不生效，请检查：
 
-- The mode is either `insert` or `normal`.
-- The key sequence does not contain a literal space.
-- Special keys use one of the supported names exactly.
-- Ctrl keys use lowercase letters, such as `<C-s>`.
-- The action string is not empty.
+- 模式是 `insert` 或 `normal`
+- 按键序列不包含空格
+- 特殊键名称准确无误
+- Ctrl 键使用小写字母，如 `<C-s>`
+- 动作字符串不为空
 
-To debug configuration problems, enable logging:
+如需调试配置问题，启用日志：
 
 ```jsonc
 "debug": true,

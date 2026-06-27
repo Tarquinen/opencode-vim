@@ -128,7 +128,7 @@ function readablePending(sequence: string) {
 
 function passThroughKey(event: KeyEvent, key: string, mode: string) {
     if (mode !== "normal") return false
-    return event.super === true || isArrowKey(key) || key === "<CR>" || key === "<C-c>"
+    return event.super === true || isArrowKey(key) || key === "<C-c>"
 }
 
 function preparePassThroughKey(ctx: PromptContext, key: string, mode: string) {

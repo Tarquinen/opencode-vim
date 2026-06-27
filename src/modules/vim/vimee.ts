@@ -38,16 +38,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             let vimeeKey = keyForVimee(event, key)
             if (!vimeeKey) return false
 
-            if (state.mode() === "normal" && key === "<CR>") {
-                ref.submit()
-                return true
-            }
-
             if (state.mode() === "insert") {
-                if (key === "<CR>") {
-                    cancelPendingInsert(ctx)
-                    return false
-                }
                 if (vimeeKey === "Escape") {
                     cancelPendingInsert(ctx, undefined, false)
                     enterNormal(ctx)
@@ -99,6 +90,16 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             applyActions(result.actions as HostAction[], ctx, map, clampFinalCursor)
             if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(result.actions), visualYankRange)
             syncMode(state, vim.mode)
+
+            if (key === "<CR>" && state.mode() === "normal" && result.actions.length === 0) {
+                const input = focusedInput(ctx)
+                if (input?.plainText && input.cursorOffset !== undefined) {
+                    input.cursorOffset = Math.min(input.cursorOffset + 1, input.plainText.length)
+                }
+                ref.submit()
+                return true
+            }
+
             const keybindPending = keybinds?.isPending() ?? false
             if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, offset)
             pendingInsert = keybindPending && state.mode() === "insert" ? plainPending(vim.statusMessage) : ""

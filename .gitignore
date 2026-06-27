@@ -2,5 +2,6 @@ node_modules/
 .opencode/
 docs/*
 !docs/configuration.md
+!docs/configuration.zh.md
 assets/*.mp4
 assets/screenshot-*.png
