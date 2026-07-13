@@ -7,7 +7,7 @@ import type { SnippetController } from "../snippets/types"
 import { applyVimCursorStyle, focusedInput } from "./actions"
 import type { VimConfig } from "./config"
 import { createVimConfig } from "./config"
-import { displayToChar, displayWidth } from "./map"
+import { displayToChar } from "./map"
 import { keyNotation } from "./keys"
 import { createVimLog } from "./log"
 import type { VimLog } from "./log"
@@ -39,17 +39,9 @@ export function createVimModule(options?: unknown, enabled: Accessor<boolean> = 
 function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: ReturnType<typeof createVimState>; snippets?: SnippetController; enabled: Accessor<boolean>; log: VimLog }) {
     let cursorStyleMode = ""
     const vimee = createVimeeAdapter(props.state, props.config, props.log)
-    const preparedEvents = new WeakSet<KeyEvent>()
     props.log("keyboard.mount", { kind: props.ctx.kind })
 
     const cursorStyleTimer = setInterval(syncCursorStyle, 50)
-    const offKeyIntercept = props.ctx.api.keymap.intercept("key", ({ event }) => {
-        if (!canHandleKeys(props)) return
-        const key = keyNotation(event)
-        if (!key || !passThroughKey(event, key, props.state.mode())) return
-        if (preparePassThroughKey(props.ctx, key, props.state.mode())) preparedEvents.add(event)
-    }, { priority: 100 })
-
     const offKeyboard = props.ctx.api.keymap.intercept("key", ({ event }) => {
         props.log("keyboard.event", {
             name: event.name,
@@ -73,10 +65,7 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             return
         }
 
-        if (passThroughKey(event, key, props.state.mode())) {
-            if (!preparedEvents.delete(event)) preparePassThroughKey(props.ctx, key, props.state.mode())
-            return
-        }
+        if (passThroughKey(event, key, props.state.mode())) return
 
         if (key === "<Esc>" && props.state.mode() === "normal" && !props.state.pending()) {
             props.log("keyboard.fallthrough", { key, mode: props.state.mode() })
@@ -107,7 +96,6 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
 
     onCleanup(() => {
         props.log("keyboard.cleanup", { kind: props.ctx.kind })
-        offKeyIntercept()
         offKeyboard()
         vimee.cleanup()
         clearInterval(cursorStyleTimer)
@@ -136,15 +124,7 @@ function readablePending(sequence: string) {
 
 function passThroughKey(event: KeyEvent, key: string, mode: string) {
     if (mode !== "normal") return false
-    return event.super === true || isArrowKey(key) || key === "<CR>" || key === "<C-c>"
-}
-
-function preparePassThroughKey(ctx: PromptContext, key: string, mode: string) {
-    if (mode !== "normal" || key !== "<CR>") return false
-    const input = focusedInput(ctx)
-    if (!input?.plainText || input.cursorOffset === undefined) return false
-    input.cursorOffset = Math.min(input.cursorOffset + 1, displayWidth(input.plainText))
-    return true
+    return event.super === true || isArrowKey(key) || key === "<C-c>"
 }
 
 function sendNavigationKey(event: KeyEvent, ctx: PromptContext, key: string, mode: string, snippets?: SnippetController) {

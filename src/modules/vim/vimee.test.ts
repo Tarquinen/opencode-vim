@@ -48,6 +48,67 @@ describe("vim command keymaps", () => {
     })
 })
 
+describe("vim enter keymaps", () => {
+    test("submits unmapped Enter in normal mode without moving the cursor", () => {
+        const fixture = createFixture("normal", undefined, "中")
+        fixture.input.cursorOffset = 2
+
+        expect(fixture.handle("<CR>")).toBe(true)
+        expect(fixture.submissions).toHaveLength(1)
+        expect(fixture.input.cursorOffset).toBe(2)
+    })
+
+    test("passes unmapped Enter through in insert mode", () => {
+        const fixture = createFixture("insert", undefined)
+
+        expect(fixture.handle("<CR>")).toBe(false)
+        expect(fixture.submissions).toHaveLength(0)
+    })
+
+    test("does not submit a matched mapping with no immediate actions", () => {
+        const fixture = createFixture("normal", "d", "text", () => {}, "<CR>")
+
+        expect(fixture.handle("<CR>")).toBe(true)
+        expect(fixture.submissions).toHaveLength(0)
+    })
+
+    test("runs an Enter command mapping", () => {
+        const fixture = createFixture("normal", "command:test.run", "", () => {}, "<CR>")
+
+        expect(fixture.handle("<CR>")).toBe(true)
+        expect(fixture.commands).toEqual(["test.run"])
+        expect(fixture.submissions).toHaveLength(0)
+    })
+
+    test("applies mode and submit mappings", () => {
+        const normal = createFixture("normal", "insert", "", () => {}, "<CR>")
+        const insert = createFixture("insert", "submit", "", () => {}, "<CR>")
+
+        expect(normal.handle("<CR>")).toBe(true)
+        expect(normal.handle("a")).toBe(false)
+        expect(insert.handle("<CR>")).toBe(true)
+        expect(insert.submissions).toHaveLength(1)
+    })
+
+    test("allows Enter to finish a multi-key mapping", () => {
+        const fixture = createFixture("normal", "command:test.run", "", () => {}, "g<CR>")
+
+        expect(fixture.handle("g")).toBe(true)
+        expect(fixture.handle("<CR>")).toBe(true)
+        expect(fixture.commands).toEqual(["test.run"])
+        expect(fixture.submissions).toHaveLength(0)
+    })
+
+    test("rejects mappings that defer Enter", () => {
+        const logs: Array<[string, unknown]> = []
+        const fixture = createFixture("normal", "command:test.run", "", (event, data) => logs.push([event, data]), "<CR>x")
+
+        expect(fixture.handle("<CR>")).toBe(true)
+        expect(fixture.submissions).toHaveLength(1)
+        expect(logs.some(([event]) => event === "vimee.keymap.invalid")).toBe(true)
+    })
+})
+
 describe("vim prompt history", () => {
     test("starts from an empty prompt and continues through history", () => {
         const fixture = createFixture("normal", undefined, "")
@@ -111,15 +172,19 @@ function createFixture(mode: VimMode, action: string | undefined, text = "text",
         moveCursorLeft: () => false,
     }
     const commands: string[] = []
+    const submissions: true[] = []
     const prompt = {
         current: { input: text, mode: "normal", parts: [] },
         set() {},
-        submit() {},
+        submit() {
+            submissions.push(true)
+        },
         blur() {},
     }
     const fixture = {
         input,
         commands,
+        submissions,
         dispatch: (_command: string) => {},
         handle: (key = mappedKey) => adapter.handle({ name: key } as KeyEvent, key, ctx),
     }

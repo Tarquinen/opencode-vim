@@ -23,7 +23,7 @@ opencode plugin opencode-vim@latest --global
 | `v`, `V` | Visual and visual-line selection |
 | `3w`, `diw`, `ci"`, `yiq`, `dip`, `yib` | Counts and text objects |
 | `k`, `j` on an empty prompt | Browse previous and next prompts |
-| `<CR>` in normal mode | Submit the prompt |
+| `<CR>` in normal mode | Submit the prompt (configurable) |
 | `/vim` | Toggle Vim mode on or off |
 
 ## Custom Keymaps

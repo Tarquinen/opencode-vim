@@ -31,6 +31,8 @@ All action types below can be configured in any mode.
 | `command:<name>` | Dispatch an active OpenCode command |
 | Any other string | Run it as a Vim key sequence, such as `y$` |
 
+An unmapped `<CR>` submits in normal mode and passes through to OpenCode in insert mode. `<CR>` can be mapped directly or end a sequence, but cannot start a multi-key sequence.
+
 ## OpenCode Commands
 
 Command mappings use the command ID, not a slash command. For example, use `command:session.new`, not `command:/new`.

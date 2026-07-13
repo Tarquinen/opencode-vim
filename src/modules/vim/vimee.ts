@@ -43,16 +43,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             let vimeeKey = keyForVimee(event, key)
             if (!vimeeKey) return false
 
-            if (state.mode() === "normal" && key === "<CR>") {
-                ref.submit()
-                return true
-            }
-
             if (state.mode() === "insert") {
-                if (key === "<CR>") {
-                    cancelPendingInsert(ctx)
-                    return false
-                }
                 if (vimeeKey === "Escape") {
                     cancelPendingInsert(ctx, undefined, false)
                     enterNormal(ctx)
@@ -102,11 +93,34 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             vimeeKey = textObjectAlias(vimeeKey, vim) ?? vimeeKey
             const textObjectHandled = handleTextObject(vimeeKey, ctx, map)
             if (textObjectHandled !== undefined) return textObjectHandled
-            const result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false, keybinds)
+            const resolved = keybinds?.resolve(vimeeKey, vim.mode, event.ctrl)
+            if (resolved?.status === "pending") {
+                vim = { ...vim, statusMessage: resolved.display }
+                state.setPending(resolved.display)
+                updateTimeout(ctx)
+                log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: [] })
+                return true
+            }
+            if (vimeeKey === "Enter" && state.mode() === "normal" && vim.phase === "idle" && !wasPending && resolved?.status !== "matched") {
+                ref.submit()
+                state.setPending("")
+                updateTimeout(ctx)
+                log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: ["submit"] })
+                return true
+            }
+
+            let result
+            if (resolved?.status === "matched") {
+                const actions = applyKeybind(resolved.definition, map)
+                result = { newCtx: vim, actions }
+            } else {
+                result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false)
+            }
             vim = result.newCtx
-            if (hostEnd !== undefined && result.actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
+            const actions = result.actions as HostAction[]
+            if (hostEnd !== undefined && actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
             let clampFinalCursor = true
-            const content = result.actions.find((action) => action.type === "content-change")?.content
+            const content = actions.find((action) => action.type === "content-change")?.content
             if (vimeeKey === "x" && content !== undefined) {
                 const next = nextMap(map, content)
                 const nextDW = displayWidth(next.hostText)
@@ -116,16 +130,17 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                     clampFinalCursor = false
                 }
             }
-            applyActions(result.actions as HostAction[], ctx, map, clampFinalCursor)
-            if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(result.actions), visualYankRange)
+            applyActions(actions, ctx, map, clampFinalCursor)
+            if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(actions), visualYankRange)
             syncMode(state, vim.mode)
+
             const keybindPending = keybinds?.isPending() ?? false
             if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, charOff)
             pendingInsert = keybindPending && state.mode() === "insert" ? plainPending(vim.statusMessage) : ""
             state.setPending(pendingDisplay(vim, keybindPending))
             updateTimeout(ctx)
-            log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: result.actions.map((action) => action.type) })
-            return consumesKey(vimeeKey, result.actions, vim, keybindPending)
+            log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: actions.map((action) => action.type) })
+            return consumesKey(vimeeKey, actions, vim, keybindPending)
         },
         cleanup() {
             if (timer) clearTimeout(timer)
@@ -493,7 +508,7 @@ function hostRange(map: PromptMap, left: number, right: number): HostRange | und
 
 type YankAction = Extract<VimeeAction, { type: "yank" }>
 
-function yankAction(actions: VimeeAction[]): YankAction | undefined {
+function yankAction(actions: HostAction[]): YankAction | undefined {
     return actions.find((action): action is YankAction => action.type === "yank")
 }
 
@@ -646,6 +661,8 @@ function createKeybinds(config: VimConfig, log: VimLog): KeybindMap | undefined 
         if (!keymaps) continue
         for (const [keys, action] of Object.entries(keymaps)) {
             try {
+                const tokens = parseKeySequence(keys)
+                if (tokens.length > 1 && tokens[0] === "<CR>") throw new Error("<CR> cannot start a multi-key mapping")
                 map.addKeybind(mode, keys as ValidKeySequence<typeof keys>, keybindAction(action))
                 count++
             } catch (error) {
@@ -721,7 +738,7 @@ function plainPending(value: string) {
     return value.includes("<") || value.includes(">") ? "" : value
 }
 
-function consumesKey(key: string, actions: VimeeAction[], ctx: VimContext, keybindPending: boolean) {
+function consumesKey(key: string, actions: HostAction[], ctx: VimContext, keybindPending: boolean) {
     if (actions.length > 0) return true
     if (keybindPending) return true
     if (ctx.phase !== "idle") return true

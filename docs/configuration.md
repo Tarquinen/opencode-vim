@@ -286,6 +286,10 @@ Any other action string is treated as a Vim key sequence. For example, this maps
 }
 ```
 
+Unlike other keys, `<CR>` in normal mode defaults to `"submit"` when no mapping is configured. A mode-specific mapping overrides that default. In insert mode, an unmapped `<CR>` passes through to OpenCode's `input_submit` and `input_newline` keybinds.
+
+When `input_submit` is not `"return"`, map `input_newline` to `"return"` for insert-mode newlines.
+
 ## Keymap Syntax
 
 Key sequences can contain printable ASCII characters, except literal spaces. Use `<Space>` for the space key.
@@ -311,6 +315,8 @@ Supported special keys:
 
 Ctrl key names must be lowercase. Use `<C-s>`, not `<C-S>`.
 
+`<CR>` can be mapped directly or end a sequence, but cannot start a multi-key sequence.
+
 Unsupported examples:
 
 ```jsonc
@@ -335,7 +341,7 @@ Use `kj` or `jk` to leave insert mode:
 }
 ```
 
-Submit the prompt with Enter in normal mode:
+Submit with `<CR>` in normal mode is the default, so this keymap is optional:
 
 ```jsonc
 "keymaps": {
