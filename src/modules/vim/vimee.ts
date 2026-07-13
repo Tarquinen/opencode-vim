@@ -5,13 +5,13 @@ import type { PromptContext } from "../../prompt/types"
 import { focusedInput, setInput, type EditBufferLike } from "./actions"
 import type { VimConfig } from "./config"
 import type { VimLog } from "./log"
-import { createPromptMap, derivePromptMap, hostOffset, hostPosition, type PromptMap } from "./map"
+import { charToDisplay, displayToChar, displayWidth, createPromptMap, derivePromptMap, hostOffset, hostPosition, type PromptMap } from "./map"
 import type { createVimState } from "./state"
 
 type VimState = ReturnType<typeof createVimState>
-type HostAction = VimeeAction | { type: "submit" }
-type HostKeybindAction = "normal" | "submit"
-type HostKeybindDefinition = KeybindDefinition & { hostAction?: HostKeybindAction }
+type HostAction = VimeeAction | { type: "submit" } | { type: "command"; command: string }
+type HostKeybindAction = "normal" | "submit" | "command"
+type HostKeybindDefinition = KeybindDefinition & { hostAction?: HostKeybindAction; command?: string }
 type HostRange = { start: number; end: number }
 
 const YANK_FLASH_MS = 250
@@ -29,6 +29,11 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     let yankFlashActive = false
     let pendingInsert = ""
     let nativeInsertUndoSaved = false
+    let historyText: string | undefined
+    const defaultHistoryKeys = {
+        k: !hasNormalKeyPrefix(config, "k"),
+        j: !hasNormalKeyPrefix(config, "j"),
+    }
 
     return {
         handle(event: KeyEvent, key: string, ctx: PromptContext) {
@@ -52,10 +57,24 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
             const input = focusedInput(ctx)
             const text = input?.plainText ?? ref.current.input
-            const offset = clamp(input?.cursorOffset ?? text.length, 0, text.length)
+            const dw = displayWidth(text)
+            const displayOff = clamp(input?.cursorOffset ?? dw, 0, dw)
+            const charOff = displayToChar(text, displayOff)
+
+            const canBrowseHistory = vim.phase === "idle" && vim.count === 0 && !keybinds?.isPending()
+            const historyCommand = canBrowseHistory ? defaultHistoryCommand(vimeeKey, text, historyText, defaultHistoryKeys) : undefined
+            if (historyCommand) {
+                const result = dispatchCommand(historyCommand, ctx)
+                historyText = result.ok ? (focusedInput(ctx)?.plainText ?? ref.current.input) : undefined
+                state.setPending("")
+                updateTimeout(ctx)
+                log("vimee.history", { key, command: historyCommand, handled: result.ok })
+                return true
+            }
+            historyText = undefined
 
             const map = mapForHostText(text, input)
-            const cursor = hostPosition(map, offset)
+            const cursor = hostPosition(map, displayOff)
 
             const wasPending = keybinds?.isPending() ?? false
             const pendingBefore = pendingInsert
@@ -68,45 +87,60 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 return true
             }
 
-            const hostEnd = vimeeKey === "e" ? endMotionOffset(map.hostText, offset, vim.count || 1) : undefined
+            const hostEnd = vimeeKey === "e" ? endMotionOffset(map.hostText, charOff, vim.count || 1) : undefined
             const shouldFlashYank = shouldFlashYankFor(vimeeKey)
             const visualYankRange = visualYankRangeFor(map)
             vimeeKey = textObjectAlias(vimeeKey, vim) ?? vimeeKey
             const textObjectHandled = handleTextObject(vimeeKey, ctx, map)
             if (textObjectHandled !== undefined) return textObjectHandled
-            const result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false, keybinds)
+            const resolved = keybinds?.resolve(vimeeKey, vim.mode, event.ctrl)
+            if (resolved?.status === "pending") {
+                vim = { ...vim, statusMessage: resolved.display }
+                state.setPending(resolved.display)
+                updateTimeout(ctx)
+                log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: [] })
+                return true
+            }
+            if (vimeeKey === "Enter" && state.mode() === "normal" && vim.phase === "idle" && !wasPending && resolved?.status !== "matched") {
+                ref.submit()
+                state.setPending("")
+                updateTimeout(ctx)
+                log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: ["submit"] })
+                return true
+            }
+
+            let result
+            if (resolved?.status === "matched") {
+                const actions = applyKeybind(resolved.definition, map)
+                result = { newCtx: vim, actions }
+            } else {
+                result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false)
+            }
             vim = result.newCtx
-            if (hostEnd !== undefined && result.actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
+            const actions = result.actions as HostAction[]
+            if (hostEnd !== undefined && actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
             let clampFinalCursor = true
-            const content = result.actions.find((action) => action.type === "content-change")?.content
+            const content = actions.find((action) => action.type === "content-change")?.content
             if (vimeeKey === "x" && content !== undefined) {
                 const next = nextMap(map, content)
-                const target = clamp(offset, 0, Math.max(0, next.hostText.length - 1))
-                if (offset < map.hostText.length - 1 && map.hostText[offset + 1] !== "\n" && hostOffset(next, vim.cursor, "previous") < target) {
+                const nextDW = displayWidth(next.hostText)
+                const target = clamp(displayOff, 0, Math.max(0, nextDW - 1))
+                if (charOff < map.hostText.length - 1 && map.hostText[charOff + 1] !== "\n" && hostOffset(next, vim.cursor, "previous") < target) {
                     vim = { ...vim, cursor: hostPosition(next, target) }
                     clampFinalCursor = false
                 }
             }
-            applyActions(result.actions as HostAction[], ctx, map, clampFinalCursor)
-            if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(result.actions), visualYankRange)
+            applyActions(actions, ctx, map, clampFinalCursor)
+            if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(actions), visualYankRange)
             syncMode(state, vim.mode)
 
-            if (key === "<CR>" && state.mode() === "normal" && result.actions.length === 0) {
-                const input = focusedInput(ctx)
-                if (input?.plainText && input.cursorOffset !== undefined) {
-                    input.cursorOffset = Math.min(input.cursorOffset + 1, input.plainText.length)
-                }
-                ref.submit()
-                return true
-            }
-
             const keybindPending = keybinds?.isPending() ?? false
-            if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, offset)
+            if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, charOff)
             pendingInsert = keybindPending && state.mode() === "insert" ? plainPending(vim.statusMessage) : ""
             state.setPending(pendingDisplay(vim, keybindPending))
             updateTimeout(ctx)
-            log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: result.actions.map((action) => action.type) })
-            return consumesKey(vimeeKey, result.actions, vim, keybindPending)
+            log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: actions.map((action) => action.type) })
+            return consumesKey(vimeeKey, actions, vim, keybindPending)
         },
         cleanup() {
             if (timer) clearTimeout(timer)
@@ -176,6 +210,9 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 case "submit":
                     ref.submit()
                     break
+                case "command":
+                    dispatchCommand(action.command, ctx)
+                    return
             }
         }
 
@@ -229,6 +266,9 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             case "submit":
                 ctx.prompt()?.submit()
                 return true
+            case "command":
+                dispatchCommand((definition as HostKeybindDefinition).command!, ctx)
+                return true
             default:
                 return false
         }
@@ -238,9 +278,10 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         const ref = ctx.prompt()
         const input = focusedInput(ctx)
         const text = input?.plainText ?? ref?.current.input ?? ""
-        const offset = clamp(input?.cursorOffset ?? text.length, 0, text.length)
 
         if (input && text.length > 0) {
+            const dw = displayWidth(text)
+            const offset = clamp(input?.cursorOffset ?? dw, 0, dw)
             input.cursorOffset = Math.max(0, offset - 1)
             clampNormalCursor(input)
         }
@@ -330,18 +371,19 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         state.setPending("")
     }
 
-    function flushPendingInsert(ctx: PromptContext, value: string, offset?: number) {
+    function flushPendingInsert(ctx: PromptContext, value: string, charOffset?: number) {
         if (!value || state.mode() !== "insert") return
         const ref = ctx.prompt()
         if (!ref) return
         const input = focusedInput(ctx)
         const text = input?.plainText ?? ref.current.input
-        const insertAt = clamp(offset ?? input?.cursorOffset ?? text.length, 0, text.length)
-        const currentOffset = input?.cursorOffset ?? insertAt
-        const next = text.slice(0, insertAt) + value + text.slice(insertAt)
+        const currentDisplayOff = input?.cursorOffset ?? 0
+        const currentCharOff = displayToChar(text, currentDisplayOff)
+        const insertAtChar = charOffset ?? currentCharOff
+        const next = text.slice(0, insertAtChar) + value + text.slice(insertAtChar)
         setInput(ref, next)
-        const nextOffset = currentOffset >= insertAt ? currentOffset + value.length : currentOffset
-        if (input) input.cursorOffset = nextOffset
+        const nextCharOff = currentCharOff >= insertAtChar ? currentCharOff + value.length : currentCharOff
+        if (input) input.cursorOffset = displayWidth(next.slice(0, nextCharOff))
     }
 
     function cursorOffset(map: PromptMap, position: CursorPosition) {
@@ -358,7 +400,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         if (!input?.gotoVisualLineEnd) return false
         clearVisualSelection(input)
         input.gotoVisualLineEnd()
-        vim = { ...vim, cursor: hostPosition(map, input.cursorOffset ?? map.hostText.length), mode: "insert", phase: "idle", count: 0, operator: null, statusMessage: "-- INSERT --" }
+        vim = { ...vim, cursor: hostPosition(map, input.cursorOffset ?? displayWidth(map.hostText)), mode: "insert", phase: "idle", count: 0, operator: null, statusMessage: "-- INSERT --" }
         nativeInsertUndoSaved = false
         syncMode(state, "insert")
         return true
@@ -458,14 +500,15 @@ function vimOffsetRange(map: PromptMap, left: number, right: number): HostRange 
 
 function hostRange(map: PromptMap, left: number, right: number): HostRange | undefined {
     if (!map.hostText) return undefined
-    const start = clamp(Math.min(left, right), 0, Math.max(0, map.hostText.length - 1))
-    const end = clamp(Math.max(left, right), 0, Math.max(0, map.hostText.length - 1))
+    const dw = displayWidth(map.hostText)
+    const start = clamp(Math.min(left, right), 0, Math.max(0, dw - 1))
+    const end = clamp(Math.max(left, right), 0, Math.max(0, dw - 1))
     return { start, end }
 }
 
 type YankAction = Extract<VimeeAction, { type: "yank" }>
 
-function yankAction(actions: VimeeAction[]): YankAction | undefined {
+function yankAction(actions: HostAction[]): YankAction | undefined {
     return actions.find((action): action is YankAction => action.type === "yank")
 }
 
@@ -522,32 +565,71 @@ function vimOffsetFromPosition(text: string, position: CursorPosition) {
 
 function hostFromVimOffset(map: PromptMap, offset: number, bias: "previous" | "next") {
     const current = clamp(offset, 0, map.vimText.length)
-    if (current === map.vimText.length) return map.hostText.length
+    if (current === map.vimText.length) return displayWidth(map.hostText)
 
     const host = map.vimToHost[current]
-    if (host !== undefined) return host
+    if (host !== undefined) return charToDisplay(map.hostText, host)
 
     if (bias === "previous") {
         for (let previous = current - 1; previous >= 0; previous--) {
             const previousHost = map.vimToHost[previous]
-            if (previousHost !== undefined) return previousHost
+            if (previousHost !== undefined) return charToDisplay(map.hostText, previousHost)
         }
     }
 
     for (let next = current + 1; next < map.vimToHost.length; next++) {
         const nextHost = map.vimToHost[next]
-        if (nextHost !== undefined) return nextHost
+        if (nextHost !== undefined) return charToDisplay(map.hostText, nextHost)
     }
-    return map.hostText.length
+    return displayWidth(map.hostText)
 }
 
 function clampNormalCursor(input: EditBufferLike) {
     const cursor = input.visualCursor
-    const eol = input.editorView?.getVisualEOL?.()
     const offset = input.cursorOffset
-    if (!cursor || !eol || offset === undefined) return
+    const text = input.plainText
+    if (!cursor || offset === undefined || text === undefined) return
     if (cursor.visualCol === 0) return
-    if (cursor.visualRow === eol.visualRow && (cursor.offset === eol.offset || offset === eol.offset)) input.cursorOffset = Math.max(0, offset - 1)
+    const dw = displayWidth(text)
+    if (offset >= dw) {
+        input.cursorOffset = Math.max(0, dw - 1)
+        return
+    }
+    const charIdx = displayToChar(text, offset)
+    if (charIdx < text.length && text[charIdx] === '\n') {
+        input.cursorOffset = Math.max(0, offset - 1)
+    }
+}
+
+function dispatchCommand(command: string, ctx: PromptContext) {
+    const input = focusedInput(ctx)
+    if (command === "prompt.history.previous" && input) input.cursorOffset = 0
+    if (command === "prompt.history.next" && input) input.cursorOffset = input.plainText?.length ?? 0
+
+    const result = ctx.api.keymap.dispatchCommand(command)
+
+    // The host currently checks history-next using character length, then leaves
+    // the cursor in that unit. Restore the display-width offset after dispatch.
+    if (command !== "prompt.history.next" || !result.ok) return result
+    const nextInput = focusedInput(ctx)
+    if (nextInput?.plainText !== undefined) nextInput.cursorOffset = displayWidth(nextInput.plainText)
+    return result
+}
+
+function defaultHistoryCommand(key: string, text: string, historyText: string | undefined, enabled: Record<"j" | "k", boolean>) {
+    if (key !== "j" && key !== "k") return
+    if (!enabled[key]) return
+    if (text.length > 0 && text !== historyText) return
+    return key === "k" ? "prompt.history.previous" : "prompt.history.next"
+}
+
+function hasNormalKeyPrefix(config: VimConfig, key: "j" | "k") {
+    for (const sequence of Object.keys(config.keymaps.normal ?? {})) {
+        try {
+            if (keyToken(parseKeySequence(sequence)[0] ?? "") === key) return true
+        } catch {}
+    }
+    return false
 }
 
 function endMotionOffset(text: string, offset: number, count: number) {
@@ -579,6 +661,8 @@ function createKeybinds(config: VimConfig, log: VimLog): KeybindMap | undefined 
         if (!keymaps) continue
         for (const [keys, action] of Object.entries(keymaps)) {
             try {
+                const tokens = parseKeySequence(keys)
+                if (tokens.length > 1 && tokens[0] === "<CR>") throw new Error("<CR> cannot start a multi-key mapping")
                 map.addKeybind(mode, keys as ValidKeySequence<typeof keys>, keybindAction(action))
                 count++
             } catch (error) {
@@ -591,6 +675,15 @@ function createKeybinds(config: VimConfig, log: VimLog): KeybindMap | undefined 
 }
 
 function keybindAction(action: string): HostKeybindDefinition {
+    if (action.startsWith("command:")) {
+        const command = action.slice(8).trim()
+        if (!command) throw new Error("Command name is required")
+        return {
+            execute: () => [{ type: "command", command } as unknown as VimeeAction],
+            hostAction: "command",
+            command,
+        }
+    }
     switch (action) {
         case "normal":
             return { keys: "<Esc>", hostAction: "normal" }
@@ -645,7 +738,7 @@ function plainPending(value: string) {
     return value.includes("<") || value.includes(">") ? "" : value
 }
 
-function consumesKey(key: string, actions: VimeeAction[], ctx: VimContext, keybindPending: boolean) {
+function consumesKey(key: string, actions: HostAction[], ctx: VimContext, keybindPending: boolean) {
     if (actions.length > 0) return true
     if (keybindPending) return true
     if (ctx.phase !== "idle") return true

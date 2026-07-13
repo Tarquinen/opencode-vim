@@ -8,18 +8,18 @@ Add `opencode-vim` to the `plugin` array in your OpenCode `tui.jsonc` file:
 
 ```jsonc
 {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-        [
-            "./plugin/opencode-vim",
-            {
-                "autoUpdate": true,
-                "vim": {
-                    "defaultMode": "insert",
-                },
-            },
-        ],
-    ],
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": [
+    [
+      "./plugin/opencode-vim",
+      {
+        "autoUpdate": true,
+        "vim": {
+          "defaultMode": "insert"
+        }
+      }
+    ]
+  ]
 }
 ```
 
@@ -29,41 +29,41 @@ If your plugin is installed somewhere else, change the plugin path to match your
 
 ```jsonc
 {
-    "$schema": "https://opencode.ai/tui.json",
-    "plugin": [
-        [
-            "./plugin/opencode-vim",
-            {
-                "autoUpdate": true,
-                "vim": {
-                    "defaultMode": "insert",
-                    "keymapTimeout": 500,
-                    "pendingDisplayDelay": 120,
-                    "cursorStyles": {
-                        "insert": {
-                            "style": "line",
-                            "blinking": true,
-                        },
-                        "normal": {
-                            "style": "block",
-                            "blinking": true,
-                        },
-                    },
-                    "debug": false,
-                    "debugPath": "/home/you/.cache/opencode/opencode-vim.log",
-                    "keymaps": {
-                        "insert": {
-                            "kj": "normal",
-                        },
-                        "normal": {
-                            "<CR>": "submit",
-                            "Y": "y$",
-                        },
-                    },
-                },
+  "$schema": "https://opencode.ai/tui.json",
+  "plugin": [
+    [
+      "./plugin/opencode-vim",
+      {
+        "autoUpdate": true,
+        "vim": {
+          "defaultMode": "insert",
+          "keymapTimeout": 500,
+          "pendingDisplayDelay": 120,
+          "cursorStyles": {
+            "insert": {
+              "style": "line",
+              "blinking": true
             },
-        ],
-    ],
+            "normal": {
+              "style": "block",
+              "blinking": true
+            }
+          },
+          "debug": false,
+          "debugPath": "/home/you/.cache/opencode/opencode-vim.log",
+          "keymaps": {
+            "insert": {
+              "kj": "normal"
+            },
+            "normal": {
+              "<CR>": "submit",
+              "Y": "y$"
+            }
+          }
+        }
+      }
+    ]
+  ]
 }
 ```
 
@@ -246,12 +246,14 @@ Use an absolute path in config. `~` is not expanded inside `debugPath`.
 
 ### `keymaps`
 
-Custom keymaps for insert mode and normal mode.
+Custom keymaps for each Vim mode.
 
 Allowed modes:
 
 - `"insert"`
 - `"normal"`
+- `"visual"`
+- `"visual-line"`
 
 Each keymap entry maps a key sequence to an action:
 
@@ -268,14 +270,13 @@ Each keymap entry maps a key sequence to an action:
 
 Supported built-in actions:
 
-| Action | Modes | Effect |
-|---|---|---|
-| `"submit"` | insert, normal | Submits the prompt |
-| `"normal"` | insert only | Exits insert mode, enters normal mode |
-| `"insert"` | normal only | Enters insert mode |
-| `"<vim keys>"` | normal only | Executes the configured Vim key sequence |
+- `"normal"` exits insert mode and enters normal mode.
+- `"insert"` enters insert mode.
+- `"submit"` submits the OpenCode prompt.
 
-For example, this maps `Y` to yank from the cursor to the end of the line:
+Use `"command:<name>"` to dispatch an active OpenCode command. See [Keymap Actions](./keymap-actions.md) for the full action and command reference.
+
+Any other action string is treated as a Vim key sequence. For example, this maps `Y` to yank from the cursor to the end of the line:
 
 ```jsonc
 "keymaps": {
@@ -285,9 +286,9 @@ For example, this maps `Y` to yank from the cursor to the end of the line:
 }
 ```
 
-Unlike other keys, `<CR>` in normal mode defaults to `"submit"` when no mapping is configured. In insert mode, if `<CR>` is unmapped and OpenCode's `input_submit` is not `return`, it inserts a newline instead of submitting.
+Unlike other keys, `<CR>` in normal mode defaults to `"submit"` when no mapping is configured. A mode-specific mapping overrides that default. In insert mode, an unmapped `<CR>` passes through to OpenCode's `input_submit` and `input_newline` keybinds.
 
-> **Note:** When `input_submit` is not `"return"`, make sure to also set `"input_newline": "return"` in the OpenCode `keybinds` config. Without it, `<CR>` in insert mode does nothing (neither submits nor inserts a newline).
+When `input_submit` is not `"return"`, map `input_newline` to `"return"` for insert-mode newlines.
 
 ## Keymap Syntax
 
@@ -314,6 +315,8 @@ Supported special keys:
 
 Ctrl key names must be lowercase. Use `<C-s>`, not `<C-S>`.
 
+`<CR>` can be mapped directly or end a sequence, but cannot start a multi-key sequence.
+
 Unsupported examples:
 
 ```jsonc
@@ -338,7 +341,7 @@ Use `kj` or `jk` to leave insert mode:
 }
 ```
 
-Submit with `<CR>` in normal mode is the default — this keymap is optional:
+Submit with `<CR>` in normal mode is the default, so this keymap is optional:
 
 ```jsonc
 "keymaps": {
@@ -414,7 +417,7 @@ Use a leader-style sequence:
 
 If a keymap does not work, check these first:
 
-- The mode is either `insert` or `normal`.
+- The mode is `insert`, `normal`, `visual`, or `visual-line`.
 - The key sequence does not contain a literal space.
 - Special keys use one of the supported names exactly.
 - Ctrl keys use lowercase letters, such as `<C-s>`.
