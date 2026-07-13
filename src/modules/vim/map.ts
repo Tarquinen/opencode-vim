@@ -1,6 +1,59 @@
 import type { CursorPosition } from "@vimee/core"
 import type { EditBufferLike } from "./actions"
 
+const WIDE_RANGES: [number, number][] = [
+    [0x1100, 0x115F], // Hangul Jamo
+    [0x2329, 0x232A],
+    [0x2E80, 0x303E], // CJK Radicals, Kangxi, CJK Symbols
+    [0x3040, 0x33BF], // Hiragana, Katakana, Bopomofo, etc.
+    [0x3400, 0x4DBF], // CJK Extension A
+    [0x4E00, 0xA4CF], // CJK Unified Ideographs, Yi
+    [0xA960, 0xA97F], // Hangul Jamo Extended-A
+    [0xAC00, 0xD7AF], // Hangul Syllables
+    [0xD7B0, 0xD7FF], // Hangul Jamo Extended-B
+    [0xF900, 0xFAFF], // CJK Compatibility Ideographs
+    [0xFE10, 0xFE19], // Vertical Forms
+    [0xFE30, 0xFE6F], // CJK Compatibility Forms
+    [0xFF01, 0xFF60], // Fullwidth Forms
+    [0xFFE0, 0xFFE6],
+    [0x1B000, 0x1B0FF], // Kana Supplement
+    [0x1B100, 0x1B12F], // Kana Extended-A
+    [0x20000, 0x2FFFF], // CJK Extension B-F
+    [0x30000, 0x3FFFF], // CJK Extension G-H
+]
+
+export function charDisplayWidth(char: string): number {
+    const code = char.charCodeAt(0)
+    if (code < 0x7F) return 1
+    for (const [start, end] of WIDE_RANGES) {
+        if (code >= start && code <= end) return 2
+    }
+    return 1
+}
+
+export function charToDisplay(text: string, charIndex: number): number {
+    let width = 0
+    const len = Math.min(charIndex, text.length)
+    for (let i = 0; i < len; i++) {
+        width += charDisplayWidth(text[i])
+    }
+    return width
+}
+
+export function displayToChar(text: string, displayOffset: number): number {
+    let width = 0
+    for (let i = 0; i < text.length; i++) {
+        const w = charDisplayWidth(text[i])
+        if (width + w > displayOffset) return i
+        width += w
+    }
+    return text.length
+}
+
+export function displayWidth(text: string): number {
+    return charToDisplay(text, text.length)
+}
+
 export type PromptMap = {
     hostText: string
     vimText: string
@@ -37,12 +90,14 @@ function preserveSynthetic(vimOffset: number, prefix: number, suffix: number, vi
     return vimOffset !== prefix - 1 && vimOffset !== vimLength - suffix
 }
 
-export function hostPosition(map: PromptMap, hostOffset: number): CursorPosition {
-    return positionFromOffset(map.vimText, map.hostToVim[clamp(hostOffset, 0, map.hostText.length)] ?? 0)
+export function hostPosition(map: PromptMap, hostDisplayOffset: number): CursorPosition {
+    const charIdx = displayToChar(map.hostText, hostDisplayOffset)
+    return positionFromOffset(map.vimText, map.hostToVim[clamp(charIdx, 0, map.hostText.length)] ?? 0)
 }
 
 export function hostOffset(map: PromptMap, position: CursorPosition, bias: "previous" | "next" = "next") {
-    return hostOffsetFromVimOffset(map, offsetFromPosition(map.vimText, position), bias)
+    const charIdx = hostOffsetFromVimOffset(map, offsetFromPosition(map.vimText, position), bias)
+    return charToDisplay(map.hostText, charIdx)
 }
 
 function buildPromptMap(hostText: string, wraps: number[]): PromptMap {
@@ -99,14 +154,14 @@ function visualWrapOffsets(input: EditBufferLike, text: string) {
     const wraps: number[] = []
     let previousRow: number | undefined
 
-    for (let offset = 0; offset <= text.length; offset++) {
-        input.cursorOffset = offset
+    for (let charIdx = 0; charIdx <= text.length; charIdx++) {
+        input.cursorOffset = charToDisplay(text, charIdx)
         const row = input.visualCursor?.visualRow
         if (row === undefined) {
             wraps.length = 0
             break
         }
-        if (previousRow !== undefined && row > previousRow && text[offset - 1] !== "\n") wraps.push(offset)
+        if (previousRow !== undefined && row > previousRow && text[charIdx - 1] !== "\n") wraps.push(charIdx)
         previousRow = row
     }
 
