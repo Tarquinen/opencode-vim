@@ -33,6 +33,12 @@ export function createVimState(defaultMode: VimMode, log: VimLog = () => {}) {
     }
 
     function notify() {
-        for (const listener of listeners) listener()
+        for (const listener of listeners) {
+            try {
+                listener()
+            } catch (error) {
+                log("state.listener.error", { error: error instanceof Error ? error.message : String(error) })
+            }
+        }
     }
 }

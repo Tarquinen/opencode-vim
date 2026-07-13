@@ -1,6 +1,37 @@
 import type { CursorPosition } from "@vimee/core"
 import type { EditBufferLike } from "./actions"
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
+
+function graphemeWidth(value: string) {
+    // Textarea offsets count newlines as one position; Bun.stringWidth counts them as zero.
+    return value === "\n" ? 1 : Bun.stringWidth(value)
+}
+
+export function charToDisplay(text: string, charIndex: number): number {
+    let width = 0
+    const limit = Math.max(0, Math.min(charIndex, text.length))
+    for (const part of graphemes.segment(text)) {
+        if (part.index + part.segment.length > limit) break
+        width += graphemeWidth(part.segment)
+    }
+    return width
+}
+
+export function displayToChar(text: string, displayOffset: number): number {
+    let width = 0
+    for (const part of graphemes.segment(text)) {
+        const next = width + graphemeWidth(part.segment)
+        if (next > displayOffset) return part.index
+        width = next
+    }
+    return text.length
+}
+
+export function displayWidth(text: string): number {
+    return charToDisplay(text, text.length)
+}
+
 export type PromptMap = {
     hostText: string
     vimText: string
@@ -37,12 +68,14 @@ function preserveSynthetic(vimOffset: number, prefix: number, suffix: number, vi
     return vimOffset !== prefix - 1 && vimOffset !== vimLength - suffix
 }
 
-export function hostPosition(map: PromptMap, hostOffset: number): CursorPosition {
-    return positionFromOffset(map.vimText, map.hostToVim[clamp(hostOffset, 0, map.hostText.length)] ?? 0)
+export function hostPosition(map: PromptMap, hostDisplayOffset: number): CursorPosition {
+    const charIdx = displayToChar(map.hostText, hostDisplayOffset)
+    return positionFromOffset(map.vimText, map.hostToVim[clamp(charIdx, 0, map.hostText.length)] ?? 0)
 }
 
 export function hostOffset(map: PromptMap, position: CursorPosition, bias: "previous" | "next" = "next") {
-    return hostOffsetFromVimOffset(map, offsetFromPosition(map.vimText, position), bias)
+    const charIdx = hostOffsetFromVimOffset(map, offsetFromPosition(map.vimText, position), bias)
+    return charToDisplay(map.hostText, charIdx)
 }
 
 function buildPromptMap(hostText: string, wraps: number[]): PromptMap {
@@ -99,14 +132,14 @@ function visualWrapOffsets(input: EditBufferLike, text: string) {
     const wraps: number[] = []
     let previousRow: number | undefined
 
-    for (let offset = 0; offset <= text.length; offset++) {
-        input.cursorOffset = offset
+    for (let charIdx = 0; charIdx <= text.length; charIdx++) {
+        input.cursorOffset = charToDisplay(text, charIdx)
         const row = input.visualCursor?.visualRow
         if (row === undefined) {
             wraps.length = 0
             break
         }
-        if (previousRow !== undefined && row > previousRow && text[offset - 1] !== "\n") wraps.push(offset)
+        if (previousRow !== undefined && row > previousRow && text[charIdx - 1] !== "\n") wraps.push(charIdx)
         previousRow = row
     }
 
