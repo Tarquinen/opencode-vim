@@ -246,12 +246,14 @@ Use an absolute path in config. `~` is not expanded inside `debugPath`.
 
 ### `keymaps`
 
-Custom keymaps for insert mode and normal mode.
+Custom keymaps for each Vim mode.
 
 Allowed modes:
 
 - `"insert"`
 - `"normal"`
+- `"visual"`
+- `"visual-line"`
 
 Each keymap entry maps a key sequence to an action:
 
@@ -271,6 +273,8 @@ Supported built-in actions:
 - `"normal"` exits insert mode and enters normal mode.
 - `"insert"` enters insert mode.
 - `"submit"` submits the OpenCode prompt.
+
+Use `"command:<name>"` to dispatch an active OpenCode command. See [Keymap Actions](./keymap-actions.md) for the full action and command reference.
 
 Any other action string is treated as a Vim key sequence. For example, this maps `Y` to yank from the cursor to the end of the line:
 
@@ -407,7 +411,7 @@ Use a leader-style sequence:
 
 If a keymap does not work, check these first:
 
-- The mode is either `insert` or `normal`.
+- The mode is `insert`, `normal`, `visual`, or `visual-line`.
 - The key sequence does not contain a literal space.
 - Special keys use one of the supported names exactly.
 - Ctrl keys use lowercase letters, such as `<C-s>`.

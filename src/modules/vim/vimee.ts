@@ -29,6 +29,11 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     let yankFlashActive = false
     let pendingInsert = ""
     let nativeInsertUndoSaved = false
+    let historyText: string | undefined
+    const defaultHistoryKeys = {
+        k: !hasNormalKeyPrefix(config, "k"),
+        j: !hasNormalKeyPrefix(config, "j"),
+    }
 
     return {
         handle(event: KeyEvent, key: string, ctx: PromptContext) {
@@ -64,6 +69,18 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             const dw = displayWidth(text)
             const displayOff = clamp(input?.cursorOffset ?? dw, 0, dw)
             const charOff = displayToChar(text, displayOff)
+
+            const canBrowseHistory = vim.phase === "idle" && vim.count === 0 && !keybinds?.isPending()
+            const historyCommand = canBrowseHistory ? defaultHistoryCommand(vimeeKey, text, historyText, defaultHistoryKeys) : undefined
+            if (historyCommand) {
+                const result = dispatchCommand(historyCommand, ctx)
+                historyText = result.ok ? (focusedInput(ctx)?.plainText ?? ref.current.input) : undefined
+                state.setPending("")
+                updateTimeout(ctx)
+                log("vimee.history", { key, command: historyCommand, handled: result.ok })
+                return true
+            }
+            historyText = undefined
 
             const map = mapForHostText(text, input)
             const cursor = hostPosition(map, displayOff)
@@ -574,13 +591,30 @@ function dispatchCommand(command: string, ctx: PromptContext) {
     if (command === "prompt.history.previous" && input) input.cursorOffset = 0
     if (command === "prompt.history.next" && input) input.cursorOffset = input.plainText?.length ?? 0
 
-    ctx.api.keymap.dispatchCommand(command)
+    const result = ctx.api.keymap.dispatchCommand(command)
 
     // The host currently checks history-next using character length, then leaves
     // the cursor in that unit. Restore the display-width offset after dispatch.
-    if (command !== "prompt.history.next") return
+    if (command !== "prompt.history.next" || !result.ok) return result
     const nextInput = focusedInput(ctx)
     if (nextInput?.plainText !== undefined) nextInput.cursorOffset = displayWidth(nextInput.plainText)
+    return result
+}
+
+function defaultHistoryCommand(key: string, text: string, historyText: string | undefined, enabled: Record<"j" | "k", boolean>) {
+    if (key !== "j" && key !== "k") return
+    if (!enabled[key]) return
+    if (text.length > 0 && text !== historyText) return
+    return key === "k" ? "prompt.history.previous" : "prompt.history.next"
+}
+
+function hasNormalKeyPrefix(config: VimConfig, key: "j" | "k") {
+    for (const sequence of Object.keys(config.keymaps.normal ?? {})) {
+        try {
+            if (keyToken(parseKeySequence(sequence)[0] ?? "") === key) return true
+        } catch {}
+    }
+    return false
 }
 
 function endMotionOffset(text: string, offset: number, count: number) {

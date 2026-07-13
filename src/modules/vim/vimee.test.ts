@@ -48,7 +48,62 @@ describe("vim command keymaps", () => {
     })
 })
 
-function createFixture(mode: VimMode, action: string, text = "text", log: VimLog = () => {}) {
+describe("vim prompt history", () => {
+    test("starts from an empty prompt and continues through history", () => {
+        const fixture = createFixture("normal", undefined, "")
+        const entries = ["newest", "older", ""]
+        fixture.dispatch = (command) => {
+            fixture.input.plainText = entries.shift() ?? ""
+            fixture.input.cursorOffset = command === "prompt.history.previous" ? 0 : fixture.input.plainText.length
+        }
+
+        expect(fixture.handle("k")).toBe(true)
+        expect(fixture.handle("k")).toBe(true)
+        expect(fixture.handle("j")).toBe(true)
+        expect(fixture.commands).toEqual([
+            "prompt.history.previous",
+            "prompt.history.previous",
+            "prompt.history.next",
+        ])
+    })
+
+    test("keeps normal movement for a nonempty prompt", () => {
+        const fixture = createFixture("normal", undefined, "text")
+
+        expect(fixture.handle("k")).toBe(true)
+        expect(fixture.handle("j")).toBe(true)
+        expect(fixture.commands).toEqual([])
+    })
+
+    test("stops history navigation after another normal key", () => {
+        const fixture = createFixture("normal", undefined, "")
+        fixture.dispatch = () => {
+            fixture.input.plainText = "recalled"
+        }
+
+        expect(fixture.handle("k")).toBe(true)
+        expect(fixture.handle("h")).toBe(true)
+        expect(fixture.handle("k")).toBe(true)
+        expect(fixture.commands).toEqual(["prompt.history.previous"])
+    })
+
+    test("prefers configured keymaps", () => {
+        const fixture = createFixture("normal", "command:test.run", "", () => {}, "k")
+
+        expect(fixture.handle()).toBe(true)
+        expect(fixture.commands).toEqual(["test.run"])
+    })
+
+    test("completes a pending keymap before history navigation", () => {
+        const fixture = createFixture("normal", "command:test.run", "", () => {}, "gk")
+
+        expect(fixture.handle("g")).toBe(true)
+        expect(fixture.handle("k")).toBe(true)
+        expect(fixture.commands).toEqual(["test.run"])
+    })
+})
+
+function createFixture(mode: VimMode, action: string | undefined, text = "text", log: VimLog = () => {}, mappedKey = "Q") {
     const input = {
         plainText: text,
         cursorOffset: 0,
@@ -66,7 +121,7 @@ function createFixture(mode: VimMode, action: string, text = "text", log: VimLog
         input,
         commands,
         dispatch: (_command: string) => {},
-        handle: () => adapter.handle({ name: "Q" } as KeyEvent, "Q", ctx),
+        handle: (key = mappedKey) => adapter.handle({ name: key } as KeyEvent, key, ctx),
     }
     const ctx = {
         api: {
@@ -75,13 +130,17 @@ function createFixture(mode: VimMode, action: string, text = "text", log: VimLog
                 dispatchCommand(command: string) {
                     commands.push(command)
                     fixture.dispatch(command)
+                    return { ok: true as const }
                 },
             },
         },
         prompt: () => prompt,
         requestRender() {},
     } as unknown as PromptContext
-    const config = createVimConfig({ defaultMode: mode, keymaps: { [mode]: { Q: action } } })
+    const config = createVimConfig({
+        defaultMode: mode,
+        keymaps: action ? { [mode]: { [mappedKey]: action } } : undefined,
+    })
     const adapter = createVimeeAdapter(createVimState(mode), config, log)
     return fixture
 }
