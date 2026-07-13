@@ -88,10 +88,17 @@ function VimKeyboard(props: { ctx: PromptContext; config: VimConfig; state: Retu
             return
         }
 
-        const consumed = vimee.handle(event, key, props.ctx)
+        const modeBefore = props.state.mode()
+        let consumed = false
+        try {
+            consumed = vimee.handle(event, key, props.ctx)
+        } finally {
+            if (consumed || props.state.mode() !== modeBefore) {
+                event.preventDefault()
+                event.stopPropagation()
+            }
+        }
         if (consumed) {
-            event.preventDefault()
-            event.stopPropagation()
             syncCursorStyle(true)
             props.ctx.requestRender()
         }
