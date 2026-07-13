@@ -167,7 +167,6 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                     break
                 case "cursor-move":
                     setCursor(input, currentMap, action.position)
-                    syncVisualCursor(input)
                     break
                 case "mode-change":
                     nativeInsertUndoSaved = false
@@ -180,17 +179,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                     ref.submit()
                     break
                 case "command":
-                    if (input) {
-                        const textLen = input.plainText?.length ?? 0
-                        if (action.command === "prompt.history.previous") {
-                            input.cursorOffset = 0
-                        } else if (action.command === "prompt.history.next") {
-                            input.cursorOffset = textLen
-                        }
-                        syncVisualCursor(input)
-                    }
-                    ctx.api.keymap.dispatchCommand(action.command)
-                    break
+                    dispatchCommand(action.command, ctx)
+                    return
             }
         }
 
@@ -245,20 +235,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 ctx.prompt()?.submit()
                 return true
             case "command":
-                {
-                    const input = focusedInput(ctx)
-                    if (input) {
-                        const textLen = input.plainText?.length ?? 0
-                        const cmd = (definition as HostKeybindDefinition).command!
-                        if (cmd === "prompt.history.previous") {
-                            input.cursorOffset = 0
-                        } else if (cmd === "prompt.history.next") {
-                            input.cursorOffset = textLen
-                        }
-                        syncVisualCursor(input)
-                    }
-                    ctx.api.keymap.dispatchCommand((definition as HostKeybindDefinition).command!)
-                }
+                dispatchCommand((definition as HostKeybindDefinition).command!, ctx)
                 return true
             default:
                 return false
@@ -592,17 +569,18 @@ function clampNormalCursor(input: EditBufferLike) {
     }
 }
 
-function syncVisualCursor(input: EditBufferLike | undefined) {
-    if (!input?.visualCursor || input.plainText === undefined) return
-    const text = input.plainText
-    const offset = input.cursorOffset ?? 0
-    const before = text.slice(0, offset)
-    const row = before.split('\n').length - 1
-    const lastNewline = before.lastIndexOf('\n')
-    const col = offset - lastNewline - 1
-    input.visualCursor.visualRow = row
-    input.visualCursor.visualCol = col
-    input.visualCursor.offset = offset
+function dispatchCommand(command: string, ctx: PromptContext) {
+    const input = focusedInput(ctx)
+    if (command === "prompt.history.previous" && input) input.cursorOffset = 0
+    if (command === "prompt.history.next" && input) input.cursorOffset = input.plainText?.length ?? 0
+
+    ctx.api.keymap.dispatchCommand(command)
+
+    // The host currently checks history-next using character length, then leaves
+    // the cursor in that unit. Restore the display-width offset after dispatch.
+    if (command !== "prompt.history.next") return
+    const nextInput = focusedInput(ctx)
+    if (nextInput?.plainText !== undefined) nextInput.cursorOffset = displayWidth(nextInput.plainText)
 }
 
 function endMotionOffset(text: string, offset: number, count: number) {
@@ -647,7 +625,8 @@ function createKeybinds(config: VimConfig, log: VimLog): KeybindMap | undefined 
 
 function keybindAction(action: string): HostKeybindDefinition {
     if (action.startsWith("command:")) {
-        const command = action.slice(8)
+        const command = action.slice(8).trim()
+        if (!command) throw new Error("Command name is required")
         return {
             execute: () => [{ type: "command", command } as unknown as VimeeAction],
             hostAction: "command",
