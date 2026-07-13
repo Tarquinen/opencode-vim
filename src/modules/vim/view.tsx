@@ -58,6 +58,8 @@ export function VimStatus(props: VimStatusProps) {
         unsubscribe()
         clearInterval(timer)
         if (pendingTimer) clearTimeout(pendingTimer)
+        modeText = undefined
+        pendingText = undefined
     })
 
     return (

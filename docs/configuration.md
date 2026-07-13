@@ -246,12 +246,14 @@ Use an absolute path in config. `~` is not expanded inside `debugPath`.
 
 ### `keymaps`
 
-Custom keymaps for insert mode and normal mode.
+Custom keymaps for each Vim mode.
 
 Allowed modes:
 
 - `"insert"`
 - `"normal"`
+- `"visual"`
+- `"visual-line"`
 
 Each keymap entry maps a key sequence to an action:
 
@@ -272,6 +274,8 @@ Supported built-in actions:
 - `"insert"` enters insert mode.
 - `"submit"` submits the OpenCode prompt.
 
+Use `"command:<name>"` to dispatch an active OpenCode command. See [Keymap Actions](./keymap-actions.md) for the full action and command reference.
+
 Any other action string is treated as a Vim key sequence. For example, this maps `Y` to yank from the cursor to the end of the line:
 
 ```jsonc
@@ -281,6 +285,10 @@ Any other action string is treated as a Vim key sequence. For example, this maps
   }
 }
 ```
+
+Unlike other keys, `<CR>` in normal mode defaults to `"submit"` when no mapping is configured. A mode-specific mapping overrides that default. In insert mode, an unmapped `<CR>` passes through to OpenCode's `input_submit` and `input_newline` keybinds.
+
+When `input_submit` is not `"return"`, map `input_newline` to `"return"` for insert-mode newlines.
 
 ## Keymap Syntax
 
@@ -307,6 +315,8 @@ Supported special keys:
 
 Ctrl key names must be lowercase. Use `<C-s>`, not `<C-S>`.
 
+`<CR>` can be mapped directly or end a sequence, but cannot start a multi-key sequence.
+
 Unsupported examples:
 
 ```jsonc
@@ -331,7 +341,7 @@ Use `kj` or `jk` to leave insert mode:
 }
 ```
 
-Submit the prompt with Enter in normal mode:
+Submit with `<CR>` in normal mode is the default, so this keymap is optional:
 
 ```jsonc
 "keymaps": {
@@ -407,7 +417,7 @@ Use a leader-style sequence:
 
 If a keymap does not work, check these first:
 
-- The mode is either `insert` or `normal`.
+- The mode is `insert`, `normal`, `visual`, or `visual-line`.
 - The key sequence does not contain a literal space.
 - Special keys use one of the supported names exactly.
 - Ctrl keys use lowercase letters, such as `<C-s>`.
