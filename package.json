@@ -1,39 +1,38 @@
 {
+  "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-vim",
   "version": "0.0.20",
+  "type": "module",
   "repository": {
     "type": "git",
     "url": "https://github.com/Tarquinen/opencode-vim"
   },
   "exports": {
-    "./tui": {
-      "import": "./tui.tsx"
-    }
+    "./tui": "./tui.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@vimee/core": "^0.3.0"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.4.3",
-    "@opentui/core": "^0.4.2",
-    "@opentui/keymap": "^0.4.2",
-    "@opentui/solid": "^0.4.2",
-    "solid-js": "^1.9.12"
+    "@opencode-ai/plugin": "0.0.0-next-17444",
+    "@opentui/core": ">=0.5.3",
+    "@opentui/solid": ">=0.5.3",
+    "solid-js": ">=1.9.0"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.14.44",
-    "@opentui/core": "^0.4.2",
-    "@opentui/keymap": "^0.4.2",
-    "@opentui/solid": "^0.4.2",
     "@types/bun": "^1.3.14",
-    "solid-js": "^1.9.12"
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
   },
   "files": [
     "assets/",
     "docs/",
     "src/",
     "README.md",
-    "tui.json.example",
-    "tui.tsx"
+    "tui.tsx",
+    "view.tsx"
   ]
 }
