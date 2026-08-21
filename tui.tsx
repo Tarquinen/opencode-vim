@@ -4,6 +4,7 @@ import type { KeyEvent } from "@opentui/core"
 import { onCleanup } from "solid-js"
 import { applyVimCursorStyle, focusedInput } from "./src/modules/vim/actions"
 import { createVimConfig } from "./src/modules/vim/config"
+import { editInput } from "./src/modules/vim/edit"
 import { keyNotation } from "./src/modules/vim/keys"
 import { createVimLog } from "./src/modules/vim/log"
 import { displayToChar } from "./src/modules/vim/map"
@@ -134,7 +135,8 @@ function createCompatContext(context: Context) {
       return isPromptActive(context)
     },
     set(value: { input: string }) {
-      context.renderer.currentFocusedEditor?.setText(value.input)
+      const input = context.renderer.currentFocusedEditor
+      if (input) editInput(input, value.input)
     },
     submit() {
       context.keymap.dispatch("prompt.submit")
