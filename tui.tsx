@@ -178,11 +178,11 @@ function focusedInputValue(context: Context) {
 
 function compatTheme(context: Context) {
   return {
-    background: context.theme.background.default,
-    info: context.theme.text.feedback.info.default,
-    success: context.theme.text.feedback.success.default,
-    warning: context.theme.text.feedback.warning.default,
-    textMuted: context.theme.text.subdued,
+    background: context.theme.background.base,
+    info: context.theme.text.feedback.info.base,
+    success: context.theme.text.feedback.success.base,
+    warning: context.theme.text.feedback.warning.base,
+    textMuted: context.theme.text.muted,
   }
 }
 
