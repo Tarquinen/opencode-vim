@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-vim",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "type": "module",
   "repository": {
     "type": "git",
