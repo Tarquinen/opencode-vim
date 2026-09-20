@@ -5,6 +5,7 @@ Vim-style editing for the OpenCode 2 prompt and dialog search fields.
 This branch supports normal, insert, visual, and visual-line editing, custom
 keymaps, prompt history, command dispatch, cursor styles, and `/vim` toggling.
 The mode indicator appears before the working directory in the prompt footer.
+Pending key sequences stay hidden so they do not shift the footer layout.
 
 Configure the local plugin in OpenCode 2's `cli.json`:
 

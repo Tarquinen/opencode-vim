@@ -45,10 +45,8 @@ function VimHost(props: { context: Context }) {
       footer.mode === "normal" ? (
         <VimStatus
           mode={state.mode}
-          pending={() => readablePending(state.pending())}
           enabled={enabled}
           theme={compatTheme(props.context)}
-          pendingDisplayDelay={config.pendingDisplayDelay}
         />
       ) : null,
   })
@@ -274,8 +272,4 @@ function isCompletionToken(context: Context) {
 
 function isArrowKey(key: string) {
   return key === "<Left>" || key === "<Down>" || key === "<Up>" || key === "<Right>"
-}
-
-function readablePending(sequence: string) {
-  return sequence ? sequence.replaceAll("><", " ") : undefined
 }
