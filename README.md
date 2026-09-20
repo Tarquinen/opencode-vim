@@ -2,80 +2,99 @@
 
 Vim-style editing for the OpenCode 2 prompt and dialog search fields.
 
-This branch supports normal, insert, visual, and visual-line editing, custom
-keymaps, prompt history, command dispatch, cursor styles, and `/vim` toggling.
-The mode indicator appears before the working directory in the prompt footer.
-Pending key sequences stay hidden so they do not shift the footer layout.
+![Demo](./assets/demo2.gif)
 
-Configure the local plugin in OpenCode 2's `cli.json`:
+## Installation
 
-```json
-{
-  "plugins": [
-    "opencode-vim@file:/home/dan/src/opencode-config/plugin/opencode-vim"
-  ]
-}
+Requires OpenCode 2. Install the published plugin:
+
+```sh
+opencode plugin add opencode-vim@latest
 ```
 
-Options use the V2 object form:
+This installs the package and adds it to `~/.config/opencode/cli.json`
+(or `$XDG_CONFIG_HOME/opencode/cli.json`). Restart the TUI after installation.
 
-```json
-{
-  "package": "opencode-vim@file:/home/dan/src/opencode-config/plugin/opencode-vim",
-  "options": {
-    "vim": {
-      "defaultMode": "insert",
-      "keymapTimeout": 500,
-      "keymaps": {
-        "insert": { "kj": "normal" },
-        "normal": { "Y": "y$" }
-      }
-    }
-  }
-}
+To update:
+
+```sh
+opencode plugin update opencode-vim@latest
 ```
 
-OpenCode 2 does not yet expose its prompt ref or low-level key interceptor to
-plugins. This adapter uses the public renderer in the V2 plugin context to
-bridge those capabilities to the existing Vim engine.
+See OpenCode's [plugin installation](https://opencode.ai/v2/docs/plugins#manage)
+and [CLI plugin configuration](https://opencode.ai/v2/docs/cli/plugins) docs.
+
+## Supported Keys
+
+Starts in insert mode. Press `Esc` to enter normal mode and `i` to type again.
+The current mode appears in the prompt footer. Pending key sequences stay hidden
+so they do not shift the layout.
+
+| Key | Behavior |
+| --- | --- |
+| `Esc`, `Ctrl+[` | Enter normal mode |
+| `i`, `a`, `A`, `o`, `O` | Enter insert mode |
+| `h`, `j`, `k`, `l`, `w`, `b`, `e`, `$`, `0` | Move through the prompt |
+| `x`, `d`, `c`, `y`, `p` | Delete, change, yank, and paste |
+| `u`, `Ctrl+r`, `.` | Undo, redo, and repeat the last change |
+| `v`, `V` | Visual and visual-line selection |
+| `3w`, `diw`, `ci"`, `yiq`, `dip`, `yib` | Counts and text objects |
+| `k`, `j` on an empty or recalled prompt | Browse previous and next prompts |
+| `Enter` in normal mode | Submit the prompt |
+| `/vim` | Toggle Vim mode on or off |
 
 ## Dialogs
 
 Searchable dialogs such as `/models`, the `Ctrl+P` command palette, and Settings
-support Vim editing in their search fields. Each new dialog starts in your
-configured `defaultMode`.
+start in your configured `defaultMode`.
 
-- In insert mode, type to filter. `Esc` (or your `kj` mapping) enters normal mode.
-- In normal mode, `j`/`k` move the selected list item. `h`/`l`, `x`, `dw`, `u`,
-  and other editing commands act on the search text. `i` returns to insert mode.
-- `Enter` selects the highlighted item; `Esc` in idle normal mode closes or goes
+- In insert mode, type to filter. `Esc` enters normal mode.
+- In normal mode, `j`/`k` select items; `h`/`l`, `x`, `dw`, `u`, and other editing
+  commands act on the search text. `i` returns to insert mode.
+- `Enter` selects the highlighted item. `Esc` in idle normal mode closes or goes
   back. Arrows, Tab, Home/End, and Page Up/Down keep their dialog behavior.
-- Dialog editing has separate mode and undo state from the main prompt.
 
-Normal-mode custom mappings take precedence over the dialog `j`/`k` defaults.
+Dialog editing preserves the main prompt's mode and undo history. Custom normal-mode
+mappings take precedence over the dialog `j`/`k` defaults.
 
-## Development and testing
+## Configuration
 
-```sh
-npm install
-npm test
-npm run typecheck
-npm run bench
+Replace the plugin's string entry in `cli.json` with an object to customize it.
+This example adds `kj` to leave insert mode, `Y` to yank to the end of the line,
+and `q` to start a new session:
+
+```json
+{
+  "$schema": "https://opencode.ai/v2/cli.json",
+  "plugins": [
+    {
+      "package": "opencode-vim@latest",
+      "options": {
+        "vim": {
+          "defaultMode": "insert",
+          "keymapTimeout": 500,
+          "keymaps": {
+            "insert": { "kj": "normal" },
+            "normal": {
+              "Y": "y$",
+              "q": "command:session.new"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
 ```
 
-Tests use Bun and OpenTUI's native headless renderer: real textarea input,
-cursor movement, selection, wrapping, attachment extmarks, and the mounted
-plugin footer. They do not contact an OpenCode server or a model. When `nvim`
-is installed, additional tests compare text and cursor results against headless
-Neovim with user configuration disabled.
+`defaultMode` defaults to `insert`; use `normal` to start in normal mode.
+`keymapTimeout` is the wait for a multi-key mapping, in milliseconds (default: 500).
 
-With an OpenCode source checkout and its dependencies installed, you can also
-test against its real dialog component and keyboard routing:
+Keymaps can use `normal`, `insert`, `submit`, a Vim sequence such as `y$`, or
+`command:<id>` for an active [OpenCode command](https://opencode.ai/v2/docs/cli/keybinds).
+Mappings are grouped by `insert`, `normal`, `visual`, or `visual-line` mode.
+Use notation such as `<Esc>`, `<CR>`, and `<C-s>` for special keys.
 
-```sh
-OPENCODE_SOURCE=/path/to/opencode npm test -- test/opencode-dialog.test.tsx
-```
-
-The benchmark measures wrap mapping and normal-mode navigation on prompts of
-1,000, 5,000, and 10,000 characters. Wrapping follows the textarea's visual
-lines; those cases are tested separately from Neovim's logical-line behavior.
+Cursor styles can be set under `options.vim.cursorStyles`, for example
+`"normal": { "style": "block", "blinking": false }`. Available styles are
+`block`, `line`, `underline`, and `default`.
