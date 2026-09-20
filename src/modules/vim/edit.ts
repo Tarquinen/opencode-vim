@@ -7,10 +7,12 @@ type Input = {
     cursorOffset: number
     setSelection: (start: number, end: number) => void
     insertText: (text: string) => void
+    clearSelection: () => unknown
 }
 
 export function editInput(input: Input, value: string) {
     if (input.plainText === value) return
+    input.clearSelection()
 
     const before = [...graphemes.segment(input.plainText)]
     const after = [...graphemes.segment(value)]

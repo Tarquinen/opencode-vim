@@ -1,4 +1,4 @@
-import type { RGBA } from "@opentui/core"
+import type { CursorStyleOptions, LineInfo, RGBA } from "@opentui/core"
 import type { VimCursorStyle } from "./config"
 
 type PromptInfo = {
@@ -25,11 +25,14 @@ export type PromptContext = {
 }
 
 export type EditBufferLike = {
+    isDestroyed?: boolean
+    width?: number
+    wrapMode?: string
     cursorOffset?: number
     plainText?: string
     visualCursor?: VisualCursorLike
-    editorView?: { getVisualEOL?: () => VisualCursorLike | undefined; setSelection?: (start: number, end: number, bgColor?: RGBA, fgColor?: RGBA) => void; resetSelection?: () => void }
-    cursorStyle?: VimCursorStyle
+    editorView?: { getLogicalLineInfo?: () => LineInfo; getVisualEOL?: () => VisualCursorLike | undefined; setSelection?: (start: number, end: number, bgColor?: RGBA, fgColor?: RGBA) => void; resetSelection?: () => void }
+    cursorStyle?: CursorStyleOptions
     selectionBg?: RGBA
     selectionFg?: RGBA
     moveCursorLeft?: () => boolean
@@ -37,6 +40,7 @@ export type EditBufferLike = {
     moveCursorUp?: () => boolean
     moveCursorDown?: () => boolean
     setSelection?: (start: number, end: number) => void
+    insertText?: (text: string) => void
     setSelectionInclusive?: (start: number, end: number) => void
     clearSelection?: () => void
     gotoVisualLineEnd?: () => boolean

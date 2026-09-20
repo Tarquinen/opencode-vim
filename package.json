@@ -11,7 +11,9 @@
     "./tui": "./tui.tsx"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --conditions=browser --preload @opentui/solid/preload",
+    "bench": "bun test/benchmark.ts"
   },
   "dependencies": {
     "@vimee/core": "^0.3.0"

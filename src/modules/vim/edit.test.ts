@@ -32,6 +32,7 @@ function createFixture(plainText: string) {
     let cursorOffset = 0
     const input = {
         plainText,
+        clearSelection() {},
         get cursorOffset() {
             return cursorOffset
         },

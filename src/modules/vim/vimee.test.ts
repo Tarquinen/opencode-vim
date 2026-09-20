@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { KeyEvent } from "@opentui/core"
-import type { PromptContext } from "../../prompt/types"
+import type { PromptContext } from "./actions"
 import { createVimConfig } from "./config"
 import type { VimLog } from "./log"
 import { createVimState, type VimMode } from "./state"

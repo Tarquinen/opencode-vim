@@ -1,9 +1,10 @@
 import type { KeyEvent } from "@opentui/core"
-import { TextBuffer, createInitialContext, createKeybindMap, parseKeySequence, processKeystroke, resetContext } from "@vimee/core"
+import { TextBuffer, createInitialContext, createKeybindMap, parseKeySequence, processKeystroke, resetContext, resolveMotion } from "@vimee/core"
 import type { CursorPosition, KeybindDefinition, KeybindMap, MotionRange, Operator, ValidKeySequence, VimAction as VimeeAction, VimContext, VimMode as VimeeMode } from "@vimee/core"
 import { focusedInput, setInput, type EditBufferLike, type PromptContext } from "./actions"
 import type { VimConfig } from "./config"
 import type { VimLog } from "./log"
+import { createGraphemeCodec } from "./graphemes"
 import { charToDisplay, displayToChar, displayWidth, createPromptMap, derivePromptMap, hostOffset, hostPosition, type PromptMap } from "./map"
 import type { createVimState } from "./state"
 
@@ -18,8 +19,9 @@ const YANK_FLASH_MS = 250
 export type VimeeAdapter = ReturnType<typeof createVimeeAdapter>
 
 export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimLog) {
+    const codec = createGraphemeCodec()
     let buffer = new TextBuffer("")
-    let activeMap = createPromptMap("")
+    let activeMap = createPromptMap("", undefined, codec)
     const maps = new Map([[activeMap.vimText, activeMap]])
     let vim = createInitialContext({ line: 0, col: 0 })
     const keybinds = createKeybinds(config, log)
@@ -27,24 +29,36 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     let yankTimer: ReturnType<typeof setTimeout> | undefined
     let yankFlashActive = false
     let pendingInsert = ""
+    let pendingTarget: { input: EditBufferLike; offset: number } | undefined
+    let pendingContext: PromptContext | undefined
     let nativeInsertUndoSaved = false
     let historyText: string | undefined
+    let activeInput: EditBufferLike | undefined
+    let mapWidth: number | undefined
+    let mapWrapMode: string | undefined
     const defaultHistoryKeys = {
         k: !hasNormalKeyPrefix(config, "k"),
         j: !hasNormalKeyPrefix(config, "j"),
     }
+    const appendMapped = hasNormalKeyPrefix(config, "A")
 
     return {
+        attach,
+        suspend,
+        isPending: () => vim.phase !== "idle" || vim.count > 0 || !!keybinds?.isPending(),
         handle(event: KeyEvent, key: string, ctx: PromptContext) {
             const ref = ctx.prompt()
             if (!ref) return false
+            const input = focusedInput(ctx)
+            attach(ctx)
 
             let vimeeKey = keyForVimee(event, key)
             if (!vimeeKey) return false
+            vimeeKey = codec.encode(vimeeKey)
 
             if (state.mode() === "insert") {
                 if (vimeeKey === "Escape") {
-                    cancelPendingInsert(ctx, undefined, false)
+                    cancelPendingInsert(ctx)
                     enterNormal(ctx)
                     state.setPending("")
                     updateTimeout(ctx)
@@ -54,7 +68,6 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 return handleInsertKeybind(event, vimeeKey, ctx)
             }
 
-            const input = focusedInput(ctx)
             const text = input?.plainText ?? ref.current.input
             const dw = displayWidth(text)
             const displayOff = clamp(input?.cursorOffset ?? dw, 0, dw)
@@ -79,14 +92,14 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             const pendingBefore = pendingInsert
             sync(map, cursor)
 
-            if (vimeeKey === "A" && appendVisualLine(input, map)) {
+            if (vimeeKey === "A" && vim.mode === "normal" && vim.phase === "idle" && !wasPending && !appendMapped && appendVisualLine(input, map)) {
                 state.setPending("")
                 updateTimeout(ctx)
                 log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: ["mode-change"] })
                 return true
             }
 
-            const hostEnd = vimeeKey === "e" ? endMotionOffset(map.hostText, charOff, vim.count || 1) : undefined
+            const hostEnd = vimeeKey === "e" && vim.phase === "idle" ? charToDisplay(map.hostText, endMotionOffset(map.hostText, charOff, vim.count || 1)) : undefined
             const shouldFlashYank = shouldFlashYankFor(vimeeKey)
             const visualYankRange = visualYankRangeFor(map)
             vimeeKey = textObjectAlias(vimeeKey, vim) ?? vimeeKey
@@ -113,14 +126,14 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 const actions = applyKeybind(resolved.definition, map)
                 result = { newCtx: vim, actions }
             } else {
-                result = processKeystroke(vimeeKey, vim, buffer, event.ctrl, false)
+                result = processKey(vimeeKey, event.ctrl)
             }
             vim = result.newCtx
             const actions = result.actions as HostAction[]
             if (hostEnd !== undefined && actions.every((action) => action.type === "cursor-move") && hostEnd > hostOffset(map, vim.cursor, "previous")) vim = { ...vim, cursor: hostPosition(map, hostEnd) }
             let clampFinalCursor = true
             const content = actions.find((action) => action.type === "content-change")?.content
-            if (vimeeKey === "x" && content !== undefined) {
+            if (vimeeKey === "x" && state.mode() === "normal" && content !== undefined) {
                 const next = nextMap(map, content)
                 const nextDW = displayWidth(next.hostText)
                 const target = clamp(displayOff, 0, Math.max(0, nextDW - 1))
@@ -142,9 +155,38 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             return consumesKey(vimeeKey, actions, vim, keybindPending)
         },
         cleanup() {
-            if (timer) clearTimeout(timer)
-            if (yankTimer) clearTimeout(yankTimer)
+            suspend()
+            maps.clear()
         },
+    }
+
+    function attach(ctx: PromptContext) {
+        const input = focusedInput(ctx)
+        if (activeInput === input) return
+        suspend()
+        activeInput = input
+        activeMap = createPromptMap(input?.plainText ?? ctx.prompt()?.current.input ?? "", input, codec)
+        maps.clear()
+        rememberMap(activeMap)
+        buffer = new TextBuffer(activeMap.vimText)
+        nativeInsertUndoSaved = false
+        vim = { ...resetContext(vim), cursor: hostPosition(activeMap, input?.cursorOffset ?? 0), mode: state.mode() }
+        mapWidth = input?.width
+        mapWrapMode = input?.wrapMode
+    }
+
+    function suspend() {
+        if (pendingContext) cancelPendingInsert(pendingContext)
+        if (timer) clearTimeout(timer)
+        timer = undefined
+        keybinds?.cancel()
+        cancelYankFlash()
+        if (activeInput && !activeInput.isDestroyed) clearVisualSelection(activeInput)
+        if (isVisualMode(state.mode())) state.setMode("normal")
+        vim = resetContext(vim)
+        state.setPending("")
+        pendingTarget = undefined
+        pendingContext = undefined
     }
 
     function sync(map: PromptMap, cursor: CursorPosition) {
@@ -153,20 +195,43 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     }
 
     function mapForHostText(text: string, input: ReturnType<typeof focusedInput>) {
-        if (activeMap.hostText === text) return activeMap
-        activeMap = createPromptMap(text, input)
+        const textChanged = activeMap.hostText !== text
+        if (!textChanged && mapWidth === input?.width && mapWrapMode === input?.wrapMode) return activeMap
+        if (textChanged && state.mode() === "insert") recordNativeChange(text)
+        activeMap = createPromptMap(text, input, codec)
+        mapWidth = input?.width
+        mapWrapMode = input?.wrapMode
+        if (textChanged && state.mode() !== "insert") maps.clear()
         rememberMap(activeMap)
-        if (state.mode() === "insert") {
+        if (textChanged && state.mode() === "insert") {
             if (!nativeInsertUndoSaved) {
                 buffer.saveUndoPoint(vim.cursor)
                 nativeInsertUndoSaved = true
             }
             buffer.replaceContent(activeMap.vimText)
-        } else {
+        } else if (textChanged) {
             buffer = new TextBuffer(activeMap.vimText)
             nativeInsertUndoSaved = false
+        } else {
+            buffer.replaceContent(activeMap.vimText)
         }
         return activeMap
+    }
+
+    function recordNativeChange(text: string) {
+        const before = codec.encode(activeMap.hostText)
+        const after = codec.encode(text)
+        const start = codec.encode(activeMap.hostText.slice(0, displayToChar(activeMap.hostText, hostOffset(activeMap, vim.cursor)))).length
+        let prefix = 0
+        while (prefix < start && prefix < after.length && before[prefix] === after[prefix]) prefix++
+        let suffix = 0
+        while (suffix < before.length - start && suffix < after.length - prefix && before[before.length - suffix - 1] === after[after.length - suffix - 1]) suffix++
+        const keys = [...vim.pendingChange]
+        if (!keys.length) keys.push("i")
+        for (let index = prefix; index < start; index++) keys.push("Backspace")
+        for (let index = start; index < before.length - suffix; index++) keys.push("Delete")
+        for (const key of after.slice(prefix, after.length - suffix)) keys.push(key === "\n" ? "Enter" : key === "\t" ? "Tab" : key)
+        vim = { ...vim, pendingChange: keys }
     }
 
     function rememberMap(map: PromptMap) {
@@ -200,7 +265,11 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                     setCursor(input, currentMap, action.position)
                     break
                 case "mode-change":
-                    nativeInsertUndoSaved = false
+                    nativeInsertUndoSaved = action.mode === "insert" && actions.some((item) => item.type === "content-change")
+                    if (action.mode === "insert") {
+                        cancelYankFlash()
+                        if (input) clearVisualSelection(input)
+                    }
                     syncMode(state, action.mode)
                     break
                 case "quit":
@@ -219,7 +288,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         syncVisualSelection(input, currentMap, ctx)
     }
 
-    function handleInsertKeybind(event: KeyEvent, key: string, ctx: PromptContext) {
+    function handleInsertKeybind(event: KeyEvent, key: string, ctx: PromptContext): boolean {
         if (!keybinds?.hasKeybinds("insert") && !keybinds?.isPending()) return false
 
         const wasPending = keybinds.isPending()
@@ -228,7 +297,12 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
         switch (resolved.status) {
             case "pending":
-                pendingInsert = plainPending(resolved.display)
+                if (!wasPending) {
+                    const input = focusedInput(ctx)
+                    pendingTarget = input ? { input, offset: input.cursorOffset ?? 0 } : undefined
+                    pendingContext = ctx
+                }
+                pendingInsert = codec.decode(plainPending(resolved.display))
                 state.setPending(resolved.display)
                 updateTimeout(ctx)
                 return true
@@ -253,7 +327,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 pendingInsert = ""
                 state.setPending("")
                 updateTimeout(ctx)
-                return false
+                return wasPending ? handleInsertKeybind(event, key, ctx) : false
         }
     }
 
@@ -277,15 +351,20 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         const ref = ctx.prompt()
         const input = focusedInput(ctx)
         const text = input?.plainText ?? ref?.current.input ?? ""
+        const map = mapForHostText(text, input)
 
         if (input && text.length > 0) {
             const dw = displayWidth(text)
             const offset = clamp(input?.cursorOffset ?? dw, 0, dw)
-            input.cursorOffset = Math.max(0, offset - 1)
+            const charOffset = displayToChar(text, offset)
+            if (charOffset > 0 && text[charOffset - 1] !== "\n") {
+                input.cursorOffset = charToDisplay(text, displayToChar(text, Math.max(0, offset - 1)))
+            }
             clampNormalCursor(input)
         }
 
-        vim = { ...resetContext(vim), mode: "normal", statusMessage: "" }
+        const lastChange = nativeInsertUndoSaved ? [...vim.pendingChange, "Escape"] : vim.lastChange
+        vim = { ...resetContext(vim), cursor: hostPosition(map, input?.cursorOffset ?? 0), mode: "normal", statusMessage: "", lastChange, pendingChange: [] }
         nativeInsertUndoSaved = false
         syncMode(state, "normal")
     }
@@ -307,11 +386,95 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
         let actions: HostAction[] = []
         for (const token of parseKeySequence(definition.keys)) {
-            const result = processKeystroke(keyToken(token), vim, buffer, tokenCtrl(token), false)
+            const result = processKey(codec.encode(keyToken(token)), tokenCtrl(token))
             vim = result.newCtx
             actions = [...actions, ...(result.actions as HostAction[])]
         }
         return actions
+    }
+
+    function processKey(key: string, ctrl = false): { newCtx: VimContext; actions: HostAction[] } {
+        let wordRange: MotionRange | undefined
+        if (!ctrl && vim.mode !== "insert" && (key === "w" || key === "W") && (vim.phase === "idle" || vim.phase === "operator-pending")) {
+            wordRange = forwardWordRange(key, vim.cursor, buffer, vim.count || 1)
+            if (vim.phase === "idle") {
+                const cursor = { ...wordRange.end, col: Math.min(wordRange.end.col, Math.max(0, buffer.getLineLength(wordRange.end.line) - 1)) }
+                return { newCtx: { ...resetContext(vim), cursor }, actions: [{ type: "cursor-move", position: cursor }] }
+            }
+        }
+        if (key === "." && !ctrl && vim.mode === "normal" && vim.phase === "idle" && vim.lastChange.length) {
+            // A repeated insert/change is one undo step, including native typing.
+            const original = buffer
+            const before = buffer.getContent()
+            const cursor = vim.cursor
+            const keys = [...vim.lastChange]
+            if (vim.count) {
+                while (/^[0-9]$/.test(keys[0] ?? "")) keys.shift()
+                keys.unshift(...String(vim.count))
+            }
+            vim = { ...vim, count: 0 }
+            const actions: HostAction[] = []
+            buffer = new TextBuffer(before)
+            try {
+                for (const token of keys) {
+                    const result = processKey(token)
+                    vim = result.newCtx
+                    actions.push(...result.actions)
+                }
+                if (buffer.getContent() !== before) {
+                    original.saveUndoPoint(cursor)
+                    original.replaceContent(buffer.getContent())
+                }
+            } finally {
+                buffer = original
+            }
+            return { newCtx: { ...vim, lastChange: keys, pendingChange: [] }, actions }
+        }
+
+        let range: MotionRange | undefined
+        const operator = vim.operator
+        if (!ctrl && operator && textObjectOperator(operator)) {
+            if (vim.phase === "operator-pending") {
+                const count = vim.count || 1
+                if (key === "l" || key === "ArrowRight") {
+                    // Vimee 0.3 treats l as inclusive; Vim's operator motion is exclusive.
+                    range = { start: vim.cursor, end: { line: vim.cursor.line, col: Math.min(buffer.getLineLength(vim.cursor.line), vim.cursor.col + count) }, inclusive: false, linewise: false }
+                } else if (key === operator) {
+                    range = { start: { line: vim.cursor.line, col: 0 }, end: { line: Math.min(buffer.getLineCount() - 1, vim.cursor.line + count - 1), col: 0 }, inclusive: true, linewise: true }
+                } else if (operator === "c" && key === "w" && /\S/.test(buffer.getLine(vim.cursor.line)[vim.cursor.col] ?? "")) {
+                    range = resolveMotion("e", { ...vim.cursor, col: vim.cursor.col - 1 }, buffer, count, vim.count > 0, vim)?.range
+                    if (range) range.start = vim.cursor
+                } else if (wordRange) {
+                    range = wordRange
+                    if (operator === "d" && range.end.line > range.start.line && /\S/.test(buffer.getLine(range.start.line)[range.start.col] ?? "") && range.end.col === Math.max(0, buffer.getLine(range.end.line).search(/\S/))) {
+                        range.end = { line: range.end.line - 1, col: buffer.getLineLength(range.end.line - 1) }
+                    }
+                } else if (operator === "c") {
+                    const motion = resolveMotion(key, vim.cursor, buffer, count, vim.count > 0, vim)
+                    if (motion?.range.linewise) range = motion.range
+                }
+            } else if (vim.phase === "text-object-pending" && vim.textObjectModifier) {
+                range = resolvePromptTextObject(vim.textObjectModifier, key, vim.cursor, buffer) ?? undefined
+            }
+        }
+        if (range && operator) {
+            const keys: string[] = []
+            if (vim.count) keys.push(...String(vim.count))
+            for (const token of vim.pendingChange) {
+                if (!/^[0-9]$/.test(token)) keys.push(token)
+            }
+            keys.push(key)
+            const result = executeTextObject(operator, range, buffer, vim)
+            if (operator === "y") result.context.pendingChange = []
+            else if (result.context.mode === "insert") result.context.pendingChange = keys
+            else { result.context.lastChange = keys; result.context.pendingChange = [] }
+            return { newCtx: result.context, actions: result.actions }
+        }
+
+        // The engine saves undo points for yanks too. Run read-only operations
+        // against a disposable buffer so they cannot alter the editing history.
+        const yanking = operator === "y" || (isVisualMode(vim.mode) && key === "y") || (vim.mode === "normal" && key === "Y")
+        return processKeystroke(key, vim, yanking ? new TextBuffer(buffer.getContent()) : buffer, ctrl, false)
     }
 
     function handleTextObject(key: string, ctx: PromptContext, map: PromptMap) {
@@ -331,15 +494,10 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         }
         if (!textObjectOperator(vim.operator)) return undefined
 
-        const originalCursor = vim.cursor
-        const result = executeTextObject(vim.operator, range, buffer, vim)
-        if (vim.operator === "y") {
-            result.context = { ...result.context, cursor: originalCursor }
-            result.actions = result.actions.map((action) => (action.type === "cursor-move" ? { ...action, position: originalCursor } : action))
-        }
-        vim = result.context
+        const result = processKey(key)
+        vim = result.newCtx
         applyActions(result.actions, ctx, map)
-        if (flashRange) flashYank(ctx, activeMap, { type: "yank", text: result.yankedText }, flashRange)
+        if (flashRange) flashYank(ctx, activeMap, result.actions.find((action): action is YankAction => action.type === "yank"), flashRange)
         syncMode(state, vim.mode)
         state.setPending("")
         updateTimeout(ctx)
@@ -367,11 +525,23 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         keybinds.cancel()
         if (flush) flushPendingInsert(ctx, pendingInsert, offset)
         pendingInsert = ""
+        pendingTarget = undefined
+        pendingContext = undefined
         state.setPending("")
     }
 
     function flushPendingInsert(ctx: PromptContext, value: string, charOffset?: number) {
         if (!value || state.mode() !== "insert") return
+        if (pendingTarget?.input.isDestroyed) return
+        if (pendingTarget?.input.insertText && !pendingTarget.input.isDestroyed) {
+            const { input, offset } = pendingTarget
+            const cursor = input.cursorOffset ?? 0
+            input.clearSelection?.()
+            input.cursorOffset = offset
+            input.insertText!(value)
+            input.cursorOffset = cursor >= offset ? cursor + displayWidth(value) : cursor
+            return
+        }
         const ref = ctx.prompt()
         if (!ref) return
         const input = focusedInput(ctx)
@@ -399,7 +569,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         if (!input?.gotoVisualLineEnd) return false
         clearVisualSelection(input)
         input.gotoVisualLineEnd()
-        vim = { ...vim, cursor: hostPosition(map, input.cursorOffset ?? displayWidth(map.hostText)), mode: "insert", phase: "idle", count: 0, operator: null, statusMessage: "-- INSERT --" }
+        vim = { ...vim, cursor: hostPosition(map, input.cursorOffset ?? displayWidth(map.hostText)), mode: "insert", phase: "idle", count: 0, operator: null, pendingChange: ["A"], statusMessage: "-- INSERT --" }
         nativeInsertUndoSaved = false
         syncMode(state, "insert")
         return true
@@ -457,6 +627,30 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         if (isVisualMode(vim.mode)) return key === "y"
         return vim.operator === "y"
     }
+}
+
+function forwardWordRange(key: string, start: CursorPosition, buffer: TextBuffer, count: number): MotionRange {
+    let { line, col } = start
+    for (let index = 0; index < count; index++) {
+        const text = buffer.getLine(line)
+        const kind = wordClass(text[col], key === "W")
+        while (col < text.length && wordClass(text[col], key === "W") === kind) col++
+        while (col < text.length && /\s/.test(text[col])) col++
+        while (col >= buffer.getLineLength(line) && line < buffer.getLineCount() - 1) {
+            line++
+            col = 0
+            const next = buffer.getLine(line)
+            if (!next.length) break
+            while (col < next.length && /\s/.test(next[col])) col++
+            if (col < next.length) break
+        }
+    }
+    return { start, end: { line, col }, linewise: false, inclusive: false }
+}
+
+function wordClass(char: string | undefined, big: boolean) {
+    if (!char || /\s/.test(char)) return "space"
+    return big || /\w/.test(char) ? "word" : "punctuation"
 }
 
 function visualCharRange(map: PromptMap, anchor: CursorPosition, cursor: CursorPosition): HostRange | undefined {
@@ -591,12 +785,12 @@ function clampNormalCursor(input: EditBufferLike) {
     if (cursor.visualCol === 0) return
     const dw = displayWidth(text)
     if (offset >= dw) {
-        input.cursorOffset = Math.max(0, dw - 1)
+        input.cursorOffset = charToDisplay(text, displayToChar(text, Math.max(0, dw - 1)))
         return
     }
     const charIdx = displayToChar(text, offset)
     if (charIdx < text.length && text[charIdx] === '\n') {
-        input.cursorOffset = Math.max(0, offset - 1)
+        input.cursorOffset = charToDisplay(text, displayToChar(text, Math.max(0, offset - 1)))
     }
 }
 
@@ -622,7 +816,7 @@ function defaultHistoryCommand(key: string, text: string, historyText: string | 
     return key === "k" ? "prompt.history.previous" : "prompt.history.next"
 }
 
-function hasNormalKeyPrefix(config: VimConfig, key: "j" | "k") {
+function hasNormalKeyPrefix(config: VimConfig, key: string) {
     for (const sequence of Object.keys(config.keymaps.normal ?? {})) {
         try {
             if (keyToken(parseKeySequence(sequence)[0] ?? "") === key) return true
@@ -696,6 +890,7 @@ function keybindAction(action: string): HostKeybindDefinition {
 }
 
 function keyForVimee(event: KeyEvent, key: string) {
+    if (key === "<C-[>") return "Escape"
     if (event.ctrl) return event.name?.toLowerCase()
     const token = keyToken(key)
     return token.startsWith("<") ? undefined : token
@@ -727,10 +922,12 @@ function syncMode(state: VimState, mode: VimContext["mode"]) {
 }
 
 function pendingDisplay(ctx: VimContext, keybindPending: boolean) {
-    if (ctx.phase === "operator-pending") return ctx.operator ?? ""
-    if (ctx.phase === "text-object-pending") return ctx.textObjectModifier ?? ""
+    const count = ctx.count > 0 ? String(ctx.count) : ""
+    if (ctx.phase === "operator-pending") return count + (ctx.operator ?? "")
+    if (ctx.phase === "text-object-pending") return count + (ctx.operator ?? "") + (ctx.textObjectModifier ?? "")
+    if (ctx.phase === "char-pending") return count + (ctx.operator ?? "") + (ctx.charCommand ?? "")
     if (keybindPending) return ctx.statusMessage
-    return ""
+    return count
 }
 
 function plainPending(value: string) {
@@ -770,7 +967,7 @@ function quoteRange(modifier: "i" | "a", cursor: CursorPosition, buffer: TextBuf
         start: { line: cursor.line, col: start },
         end: { line: cursor.line, col: Math.max(start, end) },
         linewise: false,
-        inclusive: true,
+        inclusive: end >= start,
     }
 }
 
@@ -862,7 +1059,7 @@ function quotePair(cursor: CursorPosition, buffer: TextBuffer, quote: string) {
 }
 
 function executeTextObject(operator: Operator, range: MotionRange, buffer: TextBuffer, ctx: VimContext) {
-    buffer.saveUndoPoint(ctx.cursor)
+    if (operator !== "y") buffer.saveUndoPoint(ctx.cursor)
     const result = range.linewise ? executeLinewiseTextObject(operator, range, buffer) : executeCharwiseTextObject(operator, range, buffer)
     const registers = ctx.selectedRegister ? { ...ctx.registers, [ctx.selectedRegister]: result.yankedText } : ctx.registers
     const context = {
@@ -887,9 +1084,9 @@ function executeLinewiseTextObject(operator: Operator, range: MotionRange, buffe
     }
 
     buffer.deleteLines(startLine, lineCount)
-    if (buffer.getLineCount() === 0) buffer.insertLine(0, "")
+    if (operator === "c") buffer.insertLine(startLine, "")
+    else if (buffer.getLineCount() === 0) buffer.insertLine(0, "")
     const line = Math.min(startLine, buffer.getLineCount() - 1)
-    if (operator === "c") buffer.insertLine(line, "")
     return {
         actions: [{ type: "content-change", content: buffer.getContent() }] as VimeeAction[],
         cursor: { line, col: 0 },

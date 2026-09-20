@@ -1,10 +1,13 @@
 import type { CursorPosition } from "@vimee/core"
 import type { EditBufferLike } from "./actions"
+import { createGraphemeCodec, type GraphemeCodec } from "./graphemes"
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
 function graphemeWidth(value: string) {
     // Textarea offsets count newlines as one position; Bun.stringWidth counts them as zero.
+    // OpenTUI's edit buffer gives tabs a fixed two-column width by default.
+    if (value === "\t") return 2
     return value === "\n" ? 1 : Bun.stringWidth(value)
 }
 
@@ -33,14 +36,15 @@ export function displayWidth(text: string): number {
 }
 
 export type PromptMap = {
+    codec: GraphemeCodec
     hostText: string
     vimText: string
     hostToVim: number[]
     vimToHost: Array<number | undefined>
 }
 
-export function createPromptMap(hostText: string, input?: EditBufferLike): PromptMap {
-    return buildPromptMap(hostText, input ? visualWrapOffsets(input, hostText) : [])
+export function createPromptMap(hostText: string, input?: EditBufferLike, codec = createGraphemeCodec()): PromptMap {
+    return buildPromptMap(hostText, input ? visualWrapOffsets(input, hostText) : [], codec)
 }
 
 export function derivePromptMap(map: PromptMap, vimText: string): PromptMap {
@@ -57,10 +61,10 @@ export function derivePromptMap(map: PromptMap, vimText: string): PromptMap {
             continue
         }
 
-        hostText += vimText[vimOffset]
+        hostText += map.codec.decode(vimText[vimOffset])
     }
 
-    return buildPromptMapFromSynthetic(hostText, vimText, synthetic)
+    return buildPromptMapFromSynthetic(hostText, vimText, synthetic, map.codec)
 }
 
 function preserveSynthetic(vimOffset: number, prefix: number, suffix: number, vimLength: number, inserted: string) {
@@ -78,30 +82,30 @@ export function hostOffset(map: PromptMap, position: CursorPosition, bias: "prev
     return charToDisplay(map.hostText, charIdx)
 }
 
-function buildPromptMap(hostText: string, wraps: number[]): PromptMap {
+function buildPromptMap(hostText: string, wraps: number[], codec: GraphemeCodec): PromptMap {
     const hostToVim: number[] = []
     const vimToHost: Array<number | undefined> = []
     const wrapOffsets = new Set(wraps.filter((offset) => offset > 0 && offset < hostText.length && hostText[offset - 1] !== "\n"))
     let vimText = ""
     let vimOffset = 0
 
-    for (let hostOffset = 0; hostOffset < hostText.length; hostOffset++) {
+    for (const { index: hostOffset, segment } of graphemes.segment(hostText)) {
         if (wrapOffsets.has(hostOffset)) {
             vimText += "\n"
             vimToHost[vimOffset] = undefined
             vimOffset++
         }
-        hostToVim[hostOffset] = vimOffset
-        vimText += hostText[hostOffset]
+        for (let index = hostOffset; index < hostOffset + segment.length; index++) hostToVim[index] = vimOffset
+        vimText += codec.encode(segment)
         vimToHost[vimOffset] = hostOffset
         vimOffset++
     }
 
     hostToVim[hostText.length] = vimOffset
-    return { hostText, vimText, hostToVim, vimToHost }
+    return { hostText, vimText, hostToVim, vimToHost, codec }
 }
 
-function buildPromptMapFromSynthetic(hostText: string, vimText: string, synthetic: Set<number>): PromptMap {
+function buildPromptMapFromSynthetic(hostText: string, vimText: string, synthetic: Set<number>, codec: GraphemeCodec): PromptMap {
     const hostToVim: number[] = []
     const vimToHost: Array<number | undefined> = []
     let hostOffset = 0
@@ -112,13 +116,13 @@ function buildPromptMapFromSynthetic(hostText: string, vimText: string, syntheti
             continue
         }
 
-        hostToVim[hostOffset] = vimOffset
         vimToHost[vimOffset] = hostOffset
-        hostOffset++
+        const length = codec.decode(vimText[vimOffset]).length
+        for (let index = 0; index < length; index++) hostToVim[hostOffset++] = vimOffset
     }
 
     hostToVim[hostText.length] = vimText.length
-    return { hostText, vimText, hostToVim, vimToHost }
+    return { hostText, vimText, hostToVim, vimToHost, codec }
 }
 
 function previousOffset(map: PromptMap, vimOffset: number, vimLength: number, prefix: number, suffix: number) {
@@ -128,22 +132,18 @@ function previousOffset(map: PromptMap, vimOffset: number, vimLength: number, pr
 }
 
 function visualWrapOffsets(input: EditBufferLike, text: string) {
-    const original = input.cursorOffset
     const wraps: number[] = []
-    let previousRow: number | undefined
-
-    for (let charIdx = 0; charIdx <= text.length; charIdx++) {
-        input.cursorOffset = charToDisplay(text, charIdx)
-        const row = input.visualCursor?.visualRow
-        if (row === undefined) {
-            wraps.length = 0
-            break
+    const lines = input.editorView?.getLogicalLineInfo?.()
+    if (!lines) return wraps
+    let line = 1
+    let offset = 0
+    for (const part of graphemes.segment(text)) {
+        while (line < lines.lineStartCols.length && lines.lineStartCols[line] <= offset) {
+            if (lines.lineWraps[line] > 0) wraps.push(part.index)
+            line++
         }
-        if (previousRow !== undefined && row > previousRow && text[charIdx - 1] !== "\n") wraps.push(charIdx)
-        previousRow = row
+        offset += graphemeWidth(part.segment)
     }
-
-    input.cursorOffset = original
     return wraps
 }
 
