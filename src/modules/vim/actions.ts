@@ -1,14 +1,38 @@
-import type { RGBA } from "@opentui/core"
-import type { TuiPromptInfo, TuiPromptRef } from "@opencode-ai/plugin/tui"
-import type { PromptContext } from "../../prompt/types"
+import type { CursorStyleOptions, LineInfo, RGBA } from "@opentui/core"
 import type { VimCursorStyle } from "./config"
 
+type PromptInfo = {
+    input: string
+    mode: string
+    parts: unknown[]
+}
+
+type PromptRef = {
+    current: PromptInfo
+    set: (value: PromptInfo) => void
+    submit: () => void
+    blur: () => void
+}
+
+export type PromptContext = {
+    api: {
+        renderer: { currentFocusedRenderable?: unknown }
+        keymap: { dispatchCommand: (command: string) => { ok: boolean } }
+        theme: { current: { warning: RGBA; info: RGBA; background: RGBA } }
+    }
+    prompt: () => PromptRef | undefined
+    requestRender: () => void
+}
+
 export type EditBufferLike = {
+    isDestroyed?: boolean
+    width?: number
+    wrapMode?: string
     cursorOffset?: number
     plainText?: string
     visualCursor?: VisualCursorLike
-    editorView?: { getVisualEOL?: () => VisualCursorLike | undefined; setSelection?: (start: number, end: number, bgColor?: RGBA, fgColor?: RGBA) => void; resetSelection?: () => void }
-    cursorStyle?: VimCursorStyle
+    editorView?: { getLogicalLineInfo?: () => LineInfo; getVisualEOL?: () => VisualCursorLike | undefined; setSelection?: (start: number, end: number, bgColor?: RGBA, fgColor?: RGBA) => void; resetSelection?: () => void }
+    cursorStyle?: CursorStyleOptions
     selectionBg?: RGBA
     selectionFg?: RGBA
     moveCursorLeft?: () => boolean
@@ -16,6 +40,7 @@ export type EditBufferLike = {
     moveCursorUp?: () => boolean
     moveCursorDown?: () => boolean
     setSelection?: (start: number, end: number) => void
+    insertText?: (text: string) => void
     setSelectionInclusive?: (start: number, end: number) => void
     clearSelection?: () => void
     gotoVisualLineEnd?: () => boolean
@@ -43,7 +68,7 @@ export function focusedInput(ctx: PromptContext): EditBufferLike | undefined {
     return focused
 }
 
-export function setInput(ref: TuiPromptRef, input: string) {
+export function setInput(ref: PromptRef, input: string) {
     ref.set(toPromptInfo(ref, input))
 }
 
@@ -51,7 +76,7 @@ function hasEditBufferMethods(input: EditBufferLike) {
     return typeof input.moveCursorLeft === "function" || typeof input.moveCursorRight === "function" || typeof input.moveCursorUp === "function" || typeof input.moveCursorDown === "function" || typeof input.gotoLineEnd === "function"
 }
 
-function toPromptInfo(ref: TuiPromptRef, input: string): TuiPromptInfo {
+function toPromptInfo(ref: PromptRef, input: string): PromptInfo {
     return {
         input,
         mode: ref.current.mode,

@@ -1,5 +1,7 @@
 import type { KeyEvent } from "@opentui/core"
 
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
+
 const NAMED_KEYS: Record<string, string> = {
     escape: "<Esc>",
     esc: "<Esc>",
@@ -15,6 +17,8 @@ const NAMED_KEYS: Record<string, string> = {
     right: "<Right>",
     home: "<Home>",
     end: "<End>",
+    pageup: "<PageUp>",
+    pagedown: "<PageDown>",
 }
 
 export function keyNotation(event: KeyEvent) {
@@ -23,7 +27,7 @@ export function keyNotation(event: KeyEvent) {
 
     if (event.ctrl) return `<C-${ctrlKey(name)}>`
     if (event.meta) return `<M-${name}>`
-    if (name.length === 1) return event.shift ? name.toUpperCase() : name
+    if ([...graphemes.segment(name)].length === 1) return event.shift ? name.toUpperCase() : name
     return NAMED_KEYS[name] ?? `<${name}>`
 }
 
