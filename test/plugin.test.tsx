@@ -2,9 +2,14 @@ import { afterEach, expect, test } from "bun:test"
 import { InputRenderable, RGBA, TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { render, type JSX } from "@opentui/solid"
+import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
+import { Plugin } from "@opencode/plugin/tui"
 import { createSignal } from "solid-js"
-import plugin from "../tui"
 import type { VimOptions } from "../src/modules/vim/config"
+
+const entrypoint = process.env.OPENCODE_VIM_TEST_ENTRYPOINT
+if (entrypoint) ensureRuntimePluginSupport({ additional: { "@opencode/plugin/tui": { Plugin } } })
+const { default: plugin }: typeof import("../tui") = await import(entrypoint ?? "../tui")
 
 let dispose: (() => void) | undefined
 afterEach(() => { dispose?.(); dispose = undefined })
@@ -100,6 +105,27 @@ test("mode status, colors and toggle update without polling", async () => {
     expect(f.captureCharFrame()).not.toContain("NORMAL")
     f.mockInput.pressKey("X", { shift: true })
     expect(f.input.plainText).toContain("X")
+})
+
+test("insert-mode startup updates the status on Escape and kj", async () => {
+    const f = await mount({ defaultMode: "insert", keymaps: { insert: { kj: "normal" } } })
+    expect(f.captureCharFrame()).toContain("INSERT")
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("NORMAL")
+    expect(f.captureCharFrame()).not.toContain("INSERT")
+    expect(f.input.cursorStyle.style).toBe("block")
+    f.mockInput.pressKey("i")
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("INSERT")
+    f.mockInput.pressKey("k")
+    f.mockInput.pressKey("j")
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("NORMAL")
+    expect(f.captureCharFrame()).not.toContain("INSERT")
+    f.mockInput.pressKey("v")
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("VISUAL")
 })
 
 test("focus changes restore the editor's original cursor", async () => {

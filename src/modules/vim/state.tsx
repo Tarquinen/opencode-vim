@@ -1,3 +1,5 @@
+// Keep this module as TSX so OpenCode's plugin loader rewrites its Solid import
+// to the host runtime shared by the footer and cursor effects.
 import { createSignal } from "solid-js"
 import type { VimLog } from "./log"
 
