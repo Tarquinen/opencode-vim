@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { Plugin } from "@opencode-ai/plugin/tui"
+import { Plugin } from "@opencode/plugin/tui"
 import type { KeyEvent } from "@opentui/core"
 import { onCleanup } from "solid-js"
 import { applyVimCursorStyle, focusedInput } from "./src/modules/vim/actions"
