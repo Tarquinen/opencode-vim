@@ -34,7 +34,9 @@ so they do not shift the layout.
 | --- | --- |
 | `Esc`, `Ctrl+[` | Enter normal mode |
 | `i`, `a`, `A`, `o`, `O` | Enter insert mode |
-| `h`, `j`, `k`, `l`, `w`, `b`, `e`, `$`, `0` | Move through the prompt |
+| `h`, `l`, `w`, `b`, `e`, `$`, `0` | Move through the prompt |
+| `j`, `k`, Up, Down | Move through wrapped rows; counts use actual lines |
+| `gj`, `gk`, `g0`, `g^`, `g$` | Move through wrapped screen rows |
 | `x`, `d`, `c`, `y`, `p` | Delete, change, yank, and paste |
 | `u`, `Ctrl+r`, `.` | Undo, redo, and repeat the last change |
 | `v`, `V` | Visual and visual-line selection |
@@ -42,6 +44,13 @@ so they do not shift the layout.
 | `k`, `j` on an empty or recalled prompt | Browse previous and next prompts |
 | `Enter` in normal mode | Submit the prompt |
 | `/vim` | Toggle Vim mode on or off |
+
+Navigation follows LazyVim: plain `j`/`k` and Up/Down move through wrapped screen
+rows in normal and visual modes. Counts such as `1j` or `3k` move through actual
+newline-separated lines; `gj`/`gk` always use screen rows, including with counts.
+Wrapping is visual only: `0`/`$`, `A`, `dd`, `yy`, `V`, and operators such as `dj`
+still operate on actual lines.
+Resizing the prompt does not change its text or undo history.
 
 ## Dialogs
 

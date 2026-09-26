@@ -26,12 +26,10 @@ export type PromptContext = {
 
 export type EditBufferLike = {
     isDestroyed?: boolean
-    width?: number
-    wrapMode?: string
     cursorOffset?: number
     plainText?: string
     visualCursor?: VisualCursorLike
-    editorView?: { getLogicalLineInfo?: () => LineInfo; getVisualEOL?: () => VisualCursorLike | undefined; setSelection?: (start: number, end: number, bgColor?: RGBA, fgColor?: RGBA) => void; resetSelection?: () => void }
+    editorView?: { getLogicalLineInfo?: () => LineInfo; setSelection?: (start: number, end: number, bgColor?: RGBA, fgColor?: RGBA) => void; resetSelection?: () => void }
     cursorStyle?: CursorStyleOptions
     selectionBg?: RGBA
     selectionFg?: RGBA
@@ -43,7 +41,6 @@ export type EditBufferLike = {
     insertText?: (text: string) => void
     setSelectionInclusive?: (start: number, end: number) => void
     clearSelection?: () => void
-    gotoVisualLineEnd?: () => boolean
     gotoLineEnd?: () => void
 }
 
