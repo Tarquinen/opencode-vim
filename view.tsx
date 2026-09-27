@@ -14,7 +14,7 @@ type VimStatusProps = {
 
 export function VimStatus(props: VimStatusProps) {
   return (
-    <box paddingRight={1} flexDirection="row">
+    <box paddingRight={1} flexDirection="row" flexShrink={0}>
       <text fg={props.mode() === "insert" ? props.theme.success : props.theme.warning}>
         {props.enabled() ? modeLabel(props.mode()) : ""}
       </text>
