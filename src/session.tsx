@@ -9,18 +9,19 @@ import { keyNotation } from "./modules/vim/keys"
 import { displayWidth } from "./modules/vim/map"
 import { createVimState } from "./modules/vim/state"
 import { createVimeeAdapter } from "./modules/vim/vimee"
-import { createTranscriptSelection, readableMessage, type ReadableMessage } from "./transcript"
+import { createTranscriptSelection } from "./transcript"
+import type { TranscriptItem } from "./transcript-items"
 
 export const SESSION_MODE = "opencode-vim.session"
 
 export function createSessionMode(context: Context, config: VimConfig, onYank: (text: string) => void) {
   const [active, setActive] = createSignal(false)
-  const [selectedID, setSelectedID] = createSignal<string>()
-  const [reading, setReading] = createSignal<ReadableMessage>()
+  const [reading, setReading] = createSignal<TranscriptItem>()
   const [notice, setNotice] = createSignal("")
   const positions = new Map<string, number>()
   const clipboard = createClipboard({ host: createHostClipboard(), terminal: createRendererClipboardAdapter(context.renderer) })
   let sessionID = ""
+  let selectedID: string | undefined
   let prompt: Context["renderer"]["currentFocusedEditor"] = null
   let transcript: ReturnType<typeof createTranscriptSelection> | undefined
   let popMode: (() => void) | undefined
@@ -30,8 +31,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
   let noticeTimer: ReturnType<typeof setTimeout> | undefined
 
   function selected() {
-    const message = context.data.session.message.list(sessionID).find((message) => message.id === selectedID())
-    return message && readableMessage(message)
+    return transcript?.get(selectedID)
   }
 
   function close() {
@@ -68,10 +68,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     setNotice("")
     popMode = context.keymap.mode.push(SESSION_MODE)
     transcript = createTranscriptSelection(context, sessionID, (id) => {
-      if (id === selectedID()) return
-      setSelectedID(id)
-      // Geometry is read after layout; footer updates need the following frame.
-      queueMicrotask(() => { if (!disposed) context.renderer.requestRender() })
+      selectedID = id
     })
     setActive(true)
     prompt?.blur()
@@ -99,7 +96,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     noticeTimer = setTimeout(() => setNotice(""), 1500)
   }
 
-  function openMessage(message: ReadableMessage) {
+  function openMessage(message: TranscriptItem) {
     transcript?.focus()
     setReading(message)
     context.ui.dialog.show(() => (
@@ -136,6 +133,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     } else if (key === "g" || key === "y") prefix = key
     else if (key === "<CR>") {
       transcript?.sync()
+      if (transcript?.toggle()) return
       const message = selected()
       if (message) openMessage(message)
     }
@@ -162,7 +160,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     active, enter, close,
     Status() {
       return <text fg={context.theme.text.feedback.warning.base}>
-        {notice() || `SESSION · ${selected()?.author ?? "No message selected"} · j/k · Enter read · yy copy · s prompt`}
+        {notice() || "SESSION · Enter open · s prompt"}
       </text>
     },
   }
@@ -171,7 +169,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
 function MessageReader(props: {
   context: Context
   config: VimConfig
-  message: ReadableMessage
+  message: TranscriptItem
   offset: number
   copy: (text: string) => void
   notice: () => string

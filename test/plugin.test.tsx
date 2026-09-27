@@ -14,12 +14,12 @@ const { default: plugin }: typeof import("../tui") = await import(entrypoint ?? 
 let dispose: (() => void) | undefined
 afterEach(() => { dispose?.(); dispose = undefined })
 
-type TestMessage = { id: string; type: "user" | "assistant"; time: { created: number }; text?: string; content?: Array<{ type: string; text: string }> }
+type TestMessage = { id: string; type: "user" | "assistant"; time: { created: number }; text?: string; content?: Array<{ type: string; text: string; id?: string; name?: string }> }
 function message(id: number, text: string, type: "user" | "assistant" = "assistant"): TestMessage {
     return { id: String(id), type, time: { created: id }, ...(type === "user" ? { text } : { content: [{ type: "text", text }] }) }
 }
 
-async function mount(options: VimOptions = {}, session?: { messages: TestMessage[]; older?: TestMessage[]; window?: { start: number; end?: number } }) {
+async function mount(options: VimOptions = {}, session?: { messages: TestMessage[]; older?: TestMessage[]; window?: { start: number; end?: number }; group?: string[] }) {
     const screen = await createTestRenderer({ width: session ? 80 : 40, height: session ? 16 : 8, kittyKeyboard: true })
     const input = new TextareaRenderable(screen.renderer, { id: "prompt", height: 3, width: 40, initialValue: "hello" })
     screen.renderer.root.add(input)
@@ -40,6 +40,7 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
     const [slack, setSlack] = createSignal(0)
     const [windowStart, setWindowStart] = createSignal(session?.window?.start ?? 0)
     const [windowEnd, setWindowEnd] = createSignal(session?.window?.end)
+    const [groupExpanded, setGroupExpanded] = createSignal(false)
     let transcript: ScrollBoxRenderable | undefined
     let targetID: string | undefined
     let navigationID: string | undefined
@@ -140,12 +141,29 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
                     <Show when={session}>
                         <scrollbox ref={(value) => { transcript = value }} id="native-transcript" height={10} width={76} left={2}>
                             <For each={messages().slice(windowStart(), windowEnd())}>{(item) => (
-                                <For each={item.type === "user" ? [{ text: item.text! }] : item.content ?? []}>{(part, index) => (
-                                    <box id={index() === 0 ? item.id : `session-part:${item.id}:text:${index()}`}
+                                <Show when={!session?.group?.includes(item.id)} fallback={
+                                    <Show when={item.id === session?.group?.[0]}>
+                                        <box id={item.id} marginTop={1} flexShrink={0}>
+                                            <box>
+                                                <box onMouseUp={() => setGroupExpanded(!groupExpanded())}>
+                                                    <box flexDirection="row"><text>→</text><text>Explored: 2 reads</text></box>
+                                                </box>
+                                                <Show when={groupExpanded()}>
+                                                    <For each={messages().filter((entry) => session?.group?.includes(entry.id))}>{(entry) => (
+                                                        <box><text>{entry.content![0].text}</text></box>
+                                                    )}</For>
+                                                </Show>
+                                            </box>
+                                        </box>
+                                    </Show>
+                                }>
+                                <For each={item.type === "user" ? [{ type: "message", text: item.text! }] : item.content ?? []}>{(part, index) => (
+                                    <box id={index() === 0 ? item.id : `session-part:${item.id}:${part.type === "tool" ? (part as { id: string }).id : `${part.type}:${item.content!.slice(0, index()).filter((other) => other.type === part.type).length}`}`}
                                         marginTop={1} flexShrink={0}>
                                         <text>{part.text}</text>
                                     </box>
                                 )}</For>
+                                </Show>
                             )}</For>
                             <Show when={slack()}>{(height) => <box id="session-navigation-slack" height={height()} flexShrink={0} />}</Show>
                         </scrollbox>
@@ -438,7 +456,7 @@ test("s marks the existing transcript without changing its layout or opening a r
     const before = f.captureCharFrame().split("\n").slice(0, 10).join("\n")
     await f.keys("s")
     expect(f.hostMode()).toBe("opencode-vim.session")
-    expect(f.captureCharFrame()).toContain("SESSION")
+    expect(f.captureCharFrame()).toContain("SESSION · Enter open · s prompt")
     expect(f.captureCharFrame()).toContain("▎Answer")
     expect(f.reader()).toBeUndefined()
     expect({ y: row.y, height: row.height, width: row.width, scroll: f.transcript().scrollTop }).toEqual(layout)
@@ -481,7 +499,7 @@ test("message navigation uses native history loading and marks newly mounted mes
     expect(f.dispatched).not.toContain("session.message.previous")
     await f.keys("gg")
     expect(f.captureCharFrame()).toContain("▎First")
-    expect(f.captureCharFrame()).toContain("SESSION · You")
+    expect(f.captureCharFrame()).toContain("SESSION · Enter open · s prompt")
     await f.keys("2j")
     expect(f.captureCharFrame()).toContain("▎Third")
     f.setMessages([...recent, message(6, "Sixth")])
@@ -649,7 +667,7 @@ test("replacing the message modal disposes its keys without closing the replacem
 test("empty sessions use the native transcript and can be exited", async () => {
     const f = await mount({}, { messages: [] })
     await f.keys("s")
-    expect(f.captureCharFrame()).toContain("No message selected")
+    expect(f.captureCharFrame()).toContain("SESSION · Enter open · s prompt")
     expect(f.reader()).toBeUndefined()
     await f.keys("k")
     await f.renderOnce()
@@ -711,18 +729,25 @@ test("switching sessions closes the reader and removes its selection marker", as
     expect(f.captureCharFrame()).not.toContain("▎")
 })
 
-test("native marker covers all message parts, clips to the viewport, and excludes navigation slack", async () => {
+test("native marker selects one text part at a time and clips to the viewport", async () => {
     const reply = message(1, "First part")
     reply.content!.push({ type: "text", text: "Second part\nThird line" })
     const f = await mount({}, { messages: [reply, message(2, "Next message", "user")] })
     await f.keys("sgg")
     const frame = f.captureCharFrame()
     expect(frame).toContain("▎First part")
-    expect(frame).toContain("▎Second part")
-    expect(frame).toContain("▎Third line")
+    expect(frame).not.toContain("▎Second part")
+    expect(frame).not.toContain("▎Third line")
     expect(frame).not.toContain("▎Next message")
     await f.keys("yy")
-    expect(f.copied.at(-1)).toBe("First part\n\nSecond part\nThird line")
+    expect(f.copied.at(-1)).toBe("First part")
+    await f.keys("jyy")
+    expect(f.captureCharFrame()).toContain("▎Second part")
+    expect(f.captureCharFrame()).toContain("▎Third line")
+    expect(f.copied.at(-1)).toBe("Second part\nThird line")
+    f.mockInput.pressEnter()
+    expect(f.reader().plainText).toBe("Second part\nThird line")
+    f.mockInput.pressEscape()
     await f.keys("G")
     const lines = f.captureCharFrame().split("\n")
     expect(lines.filter((line) => line.includes("▎"))).toHaveLength(1)
@@ -737,6 +762,51 @@ test("native marker covers all message parts, clips to the viewport, and exclude
     f.mockInput.pressEnter()
     expect(f.reader().plainText).toContain("row 0")
     expect(f.reader().plainText).toContain("row 29")
+})
+
+test("collapsed tool groups expand in place and individual calls can be read and copied", async () => {
+    const first = message(1, "Read first.ts\nFirst output")
+    first.content![0] = { type: "tool", id: "tool-1", name: "read", text: "Read first.ts\nFirst output" }
+    const second = message(2, "Read second.ts\nSecond output")
+    second.content![0] = { type: "tool", id: "tool-2", name: "read", text: "Read second.ts\nSecond output" }
+    const f = await mount({}, { messages: [first, second, message(3, "Done")], group: ["1", "2"] })
+    await f.keys("sk")
+    expect(f.captureCharFrame()).toContain("▎→Explored: 2 reads")
+    expect(f.captureCharFrame()).toContain("SESSION · Enter open · s prompt")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+    expect(f.captureCharFrame()).toContain("First output")
+    await f.keys("jyy")
+    expect(f.copied.at(-1)).toBe("Read first.ts\nFirst output")
+    expect(f.captureCharFrame()).toContain("▎First output")
+    expect(f.captureCharFrame()).not.toContain("▎Second output")
+    f.mockInput.pressEnter()
+    expect(f.reader().plainText).toBe("Read first.ts\nFirst output")
+    f.mockInput.pressEscape()
+    await f.keys("jyy")
+    expect(f.copied.at(-1)).toBe("Read second.ts\nSecond output")
+    await f.keys("2k")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).not.toContain("First output")
+    await f.keys("jyy")
+    expect(f.copied.at(-1)).toBe("Done")
+})
+
+test("text, reasoning and standalone tools are separate stops within one message", async () => {
+    const reply = message(1, "Start")
+    reply.content!.push({ type: "reasoning", text: "Check something" },
+        { type: "tool", id: "shell-1", name: "shell", text: "$ pwd\n/work" }, { type: "text", text: "Finished" })
+    const f = await mount({}, { messages: [reply] })
+    await f.keys("skyy")
+    expect(f.copied.at(-1)).toBe("$ pwd\n/work")
+    await f.keys("kyy")
+    expect(f.copied.at(-1)).toBe("Check something")
+    await f.keys("kyy")
+    expect(f.copied.at(-1)).toBe("Start")
+    await f.keys("3jyy")
+    expect(f.copied.at(-1)).toBe("Finished")
 })
 
 test("session mode starts on the latest message when several messages share the viewport", async () => {
@@ -816,21 +886,21 @@ test("visible message selection is immediate and off-screen selections still scr
     expect(f.transcript().scrollTop).toBeGreaterThan(0)
 })
 
-test("latest selection works before layout with no user in cache and skips non-text messages", async () => {
+test("latest selection includes reasoning-only messages before the next layout", async () => {
     const thinking = message(3, "Still thinking")
     thinking.content![0].type = "reasoning"
     const f = await mount({}, { messages: [message(1, "Old answer"), message(2, "Newest answer"), thinking] })
     await f.scrollTranscript(0)
     f.mockInput.pressKey("s")
     f.mockInput.pressEnter() // The native scroll has not completed yet.
-    expect(f.reader().plainText).toBe("Newest answer")
+    expect(f.reader().plainText).toBe("Still thinking")
     f.mockInput.pressEscape()
     await f.renderOnce()
-    expect(f.captureCharFrame()).toContain("▎Newest answer")
+    expect(f.captureCharFrame()).toContain("▎Still thinking")
     await f.keys("k")
-    expect(f.captureCharFrame()).toContain("▎Old answer")
+    expect(f.captureCharFrame()).toContain("▎Newest answer")
     await f.keys("yy")
-    expect(f.copied.at(-1)).toBe("Old answer")
+    expect(f.copied.at(-1)).toBe("Newest answer")
 })
 
 test("moving back down through messages scrolls at the bottom edge without navigation padding", async () => {
@@ -869,7 +939,7 @@ test("moving back down through messages scrolls at the bottom edge without navig
     expect(f.captureCharFrame()).toContain("▎Second reply")
 })
 
-test("scrolling down reveals all parts of a short message at the bottom edge", async () => {
+test("scrolling down reveals individual text parts at the bottom edge", async () => {
     const reply = message(2, "First part\nFirst end")
     reply.content!.push({ type: "text", text: "Second part\nSecond end" })
     const f = await mount({}, { messages: [
@@ -878,9 +948,13 @@ test("scrolling down reveals all parts of a short message at the bottom edge", a
     await f.keys("sgg")
     await f.keys("j")
     const scroll = f.transcript()
+    const first = scroll.getRenderable("2")!
+    expect(first.y + first.height).toBe(scroll.viewport.y + scroll.viewport.height)
+    expect(f.captureCharFrame()).toContain("▎First part")
+    expect(f.captureCharFrame()).not.toContain("▎Second end")
+    await f.keys("j")
     const last = scroll.getRenderable("session-part:2:text:1")!
     expect(last.y + last.height).toBe(scroll.viewport.y + scroll.viewport.height)
-    expect(f.captureCharFrame()).toContain("▎First part")
     expect(f.captureCharFrame()).toContain("▎Second end")
     expect(scroll.getRenderable("session-navigation-slack")).toBeUndefined()
 })
