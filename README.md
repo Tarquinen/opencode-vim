@@ -27,15 +27,6 @@ to navigate, `Enter` to open an item, and `s` to return to the prompt.
 
 Use `/vim` to toggle the plugin on or off.
 
-## Development
-
-Run `npm ci` and `bun run build` before loading this checkout as a local plugin.
-Rebuild after changing source files. The published entrypoint compiles JSX and
-uses OpenCode's shared UI runtime.
-
-`bun run test` checks both source loading and the packed npm plugin under
-`node_modules`, including mode updates, session browsing, clipboard and cleanup.
-
 ## Documentation
 
 - [Keybindings and modes](./docs/vim-behavior.md)
