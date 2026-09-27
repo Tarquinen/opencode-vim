@@ -135,9 +135,11 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
                 },
                 set: setDialogOptions,
                 clear() {
-                    dialog()?.onClose?.()
-                    setDialog(undefined)
-                    setHostMode(modalReturnMode)
+                    if (dialog()) {
+                        dialog()?.onClose?.()
+                        setDialog(undefined)
+                        setHostMode(modalReturnMode)
+                    }
                     setTimeout(() => {
                         if (!dialog() && modalReturnFocus && !modalReturnFocus.isDestroyed) modalReturnFocus.focus()
                     }, 1)
@@ -1018,6 +1020,40 @@ test("replacing the message modal disposes its keys without closing the replacem
     expect(f.dialog()).toBeDefined()
     expect(f.captureCharFrame()).toContain("Another dialog")
     f.clearModal()
+})
+
+test.each(["s", "escape"])("leaving the reader with Escape then %s keeps prompt focus after deferred refocus", async (exit) => {
+    const f = await mount({}, { messages: [message(1, "Answer")] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    f.mockInput.pressEscape()
+    if (exit === "escape") f.mockInput.pressEscape()
+    else f.mockInput.pressKey(exit)
+    expect(f.hostMode()).toBe("base")
+    expect(f.renderer.currentFocusedEditor?.id).toBe(f.input.id)
+    await Bun.sleep(10)
+    expect(f.renderer.currentFocusedEditor?.id).toBe(f.input.id)
+    await f.keys("iX")
+    expect(f.input.plainText).toBe("Xhello")
+    f.mockInput.pressEscape()
+    await f.keys("s")
+    expect(f.hostMode()).toBe("opencode-vim.session")
+})
+
+test("a later host dialog.clear cannot refocus an exited session browser", async () => {
+    const f = await mount({}, { messages: [message(1, "Answer")] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.keys("s")
+    await Bun.sleep(10)
+    expect(f.renderer.currentFocusedEditor?.id).toBe(f.input.id)
+    // Native session scrolling clears dialogs even when none are open.
+    f.clearModal()
+    await Bun.sleep(10)
+    expect(f.hostMode()).toBe("base")
+    expect(f.renderer.currentFocusedEditor?.id).toBe(f.input.id)
+    await f.keys("iX")
+    expect(f.input.plainText).toBe("Xhello")
 })
 
 test("empty sessions use the native transcript and can be exited", async () => {

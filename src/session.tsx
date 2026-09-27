@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { Context } from "@opencode/plugin/tui/context"
-import { type KeyEvent, type TextareaRenderable } from "@opentui/core"
+import { BoxRenderable, type KeyEvent, type TextareaRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js"
 import type { PromptContext } from "./modules/vim/actions"
@@ -23,6 +23,7 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
   let sessionID = ""
   let selectedID: string | undefined
   let prompt: Context["renderer"]["currentFocusedEditor"] = null
+  let focusTarget: BoxRenderable | undefined
   let transcript: ReturnType<typeof createTranscriptSelection> | undefined
   let popMode: (() => void) | undefined
   let prefix = ""
@@ -47,23 +48,17 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
   function close() {
     if (!active()) return
     clearYankFlash()
-    const wasReading = Boolean(reading())
-    if (wasReading) context.ui.dialog.clear()
+    if (reading()) context.ui.dialog.clear()
     setActive(false)
     context.renderer.removePostProcessFn(draw)
     popMode?.()
     popMode = undefined
+    focusTarget?.destroy()
+    focusTarget = undefined
     transcript = undefined
-    const savedPrompt = prompt
-    const savedSessionID = sessionID
-    function restorePrompt() {
-      const route = context.ui.router.current()
-      if (!active() && context.keymap.mode.current() === "base" && route.type === "session"
-        && route.sessionID === savedSessionID && savedPrompt && !savedPrompt.isDestroyed) savedPrompt.focus()
-    }
-    restorePrompt()
-    // Restore after the dialog's deferred refocus, or it steals focus back.
-    if (wasReading) setTimeout(restorePrompt, 1)
+    const route = context.ui.router.current()
+    if (context.keymap.mode.current() === "base" && route.type === "session"
+      && route.sessionID === sessionID && prompt && !prompt.isDestroyed) prompt.focus()
     prompt = null
     context.renderer.requestRender()
   }
@@ -82,7 +77,13 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     })
     setActive(true)
     prompt?.blur()
-    transcript.focus()
+    // Dialogs remember their previous focus, even after they close. Own that
+    // target so destroying it on exit prevents a later refocus from stealing input.
+    focusTarget = new BoxRenderable(context.renderer, {
+      id: "vim-session-focus", position: "absolute", width: 0, height: 0, focusable: true,
+    })
+    context.renderer.root.add(focusTarget)
+    focusTarget.focus()
     transcript.latest()
     context.renderer.addPostProcessFn(draw)
     context.renderer.requestRender()
@@ -102,7 +103,7 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
   }
 
   function openMessage(message: TranscriptItem) {
-    transcript?.focus()
+    focusTarget?.focus()
     setReading(message)
     context.ui.dialog.show(() => (
       <MessageReader context={context} config={config} message={message} offset={positions.get(message.id) ?? 0}

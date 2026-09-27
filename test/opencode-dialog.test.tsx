@@ -38,7 +38,7 @@ test.skipIf(!process.env.OPENCODE_SOURCE)("OpenCode dialogs: Vim filtering and t
     const selected: string[] = []
     const moved: string[] = []
     let ref: { filter: string; selected?: { value: string } } | undefined
-    let dialog: { stack: unknown[] } | undefined
+    let dialog: { stack: unknown[]; clear(): void } | undefined
     let screen: Awaited<ReturnType<typeof testRender>> | undefined
     let showSession = () => {}
     let prompt: TextareaRenderable | undefined
@@ -158,6 +158,7 @@ test.skipIf(!process.env.OPENCODE_SOURCE)("OpenCode dialogs: Vim filtering and t
         expect(reader()!.hasSelection()).toBe(false)
         screen.mockInput.pressEscape()
         await screen.waitFor(() => dialog!.stack.length === 0)
+        await screen.waitFor(() => screen!.renderer.currentFocusedRenderable?.id === "vim-session-focus")
         screen.mockInput.pressEnter()
         expect(reader()!.cursorOffset).toBe(5)
         screen.mockInput.pressKey("c", { ctrl: true })
@@ -169,6 +170,26 @@ test.skipIf(!process.env.OPENCODE_SOURCE)("OpenCode dialogs: Vim filtering and t
         await new Promise((resolve) => setTimeout(resolve, 10))
         expect(screen.renderer.currentFocusedEditor).toBe(prompt!)
         expect(prompt!.plainText).toBe("Draft")
+        // Native scroll commands clear even an already-closed dialog.
+        dialog!.clear()
+        await Bun.sleep(10)
+        expect(screen.renderer.currentFocusedEditor?.id).toBe(prompt!.id)
+        screen.mockInput.pressKey("i")
+        screen.mockInput.pressKey("x")
+        expect(prompt!.plainText).toBe("xDraft")
+        screen.mockInput.pressEscape()
+
+        for (const exit of ["s", "escape"]) {
+            screen.mockInput.pressKey("s")
+            screen.mockInput.pressEnter()
+            expect(dialog!.stack).toHaveLength(1)
+            screen.mockInput.pressEscape()
+            if (exit === "escape") screen.mockInput.pressEscape()
+            else screen.mockInput.pressKey(exit)
+            await Bun.sleep(10)
+            expect(dialog!.stack).toHaveLength(0)
+            expect(screen.renderer.currentFocusedEditor?.id).toBe(prompt!.id)
+        }
     } finally {
         screen?.renderer.destroy()
         await rm(directory, { recursive: true, force: true })

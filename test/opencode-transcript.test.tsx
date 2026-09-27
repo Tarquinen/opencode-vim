@@ -152,7 +152,6 @@ test.skipIf(!process.env.OPENCODE_SOURCE).each([true, false])("native transcript
         setFirstRow(2)
         await screen.flush()
         bridge = createTranscriptSelection(context!, "session-1", () => {})
-        bridge.focus()
         bridge.latest()
         expect(current().text).toBe("Done")
         bridge.move("previous", 1)
