@@ -172,7 +172,7 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
       const x = view.scroll.x - 1
       if (x < 0) return
       for (let y = top; y < bottom; y++) {
-        buffer.drawText("▎", x, y, context.theme.text.feedback.warning.base, context.theme.background.base)
+        buffer.drawText("▎", x, y, context.theme.text.feedback.info.base, context.theme.background.base)
       }
     },
   }

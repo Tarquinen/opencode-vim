@@ -175,7 +175,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
   return {
     active, enter, close,
     Status() {
-      return <text fg={context.theme.text.feedback.warning.base}>
+      return <text fg={context.theme.text.feedback.info.base}>
         {notice() || `SESSION · Enter open · yy copy · ${config.sessionKey} prompt`}
       </text>
     },
