@@ -20,6 +20,9 @@ opencode plugin update opencode-vim@latest
 
 Press `Esc` to enter normal mode and `i` to type again in insert mode.
 
+Vim yanks and cuts use your system clipboard. Press `p` or `P` to paste, including
+text copied from another application. Named registers stay separate.
+
 In a session, press `s` from normal mode to browse messages and tools. Use `j`/`k`
 to navigate, `Enter` to open an item, and `s` to return to the prompt.
 

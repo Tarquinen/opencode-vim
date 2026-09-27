@@ -9,7 +9,7 @@ import { charToDisplay, displayToChar, displayWidth, createPromptMap, hostFromVi
 import type { createVimState } from "./state"
 
 type VimState = ReturnType<typeof createVimState>
-type HostAction = VimeeAction | { type: "submit" } | { type: "command"; command: string }
+type HostAction = VimeeAction & { register?: string } | { type: "submit" } | { type: "command"; command: string }
 type HostKeybindAction = "normal" | "submit" | "command"
 type HostKeybindDefinition = KeybindDefinition & { hostAction?: HostKeybindAction; command?: string }
 type HostRange = { start: number; end: number }
@@ -21,6 +21,7 @@ export type VimeeAdapter = ReturnType<typeof createVimeeAdapter>
 type AdapterOptions = {
     readOnly?: boolean
     onYank?: (text: string) => void
+    readClipboard?: () => Promise<string>
 }
 
 export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimLog, options: AdapterOptions = {}) {
@@ -40,6 +41,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     let activeInput: EditBufferLike | undefined
     let preferredColumn: number | undefined
     let preferredScreen = false
+    let generation = 0
     const defaultHistoryKeys = {
         k: !hasNormalKeyPrefix(config, "k"),
         j: !hasNormalKeyPrefix(config, "j"),
@@ -50,7 +52,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         suspend,
         setRegister(text: string) { vim = { ...vim, register: codec.encode(text) } },
         isPending: () => vim.phase !== "idle" || vim.count > 0 || !!keybinds?.isPending(),
-        handle(event: KeyEvent, key: string, ctx: PromptContext) {
+        handle(event: KeyEvent, key: string, ctx: PromptContext): boolean | Promise<boolean> {
             const ref = ctx.prompt()
             if (!ref) return false
             const input = focusedInput(ctx)
@@ -122,33 +124,60 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 return true
             }
 
-            let result
-            if (resolved?.status === "matched") {
-                const actions = applyKeybind(resolved.definition, ctx, map)
-                result = { newCtx: vim, actions }
-            } else {
-                // Match LazyVim's uncounted j/k and arrow mappings in normal/visual mode.
-                // Apply this at the input boundary so custom mapping sequences stay literal.
-                if (!event.ctrl && vim.phase === "idle" && vim.count === 0 && (vimeeKey === "j" || vimeeKey === "k" || vimeeKey === "ArrowDown" || vimeeKey === "ArrowUp")) {
-                    vim = processKey("g").newCtx
-                }
-                result = processKey(vimeeKey, event.ctrl)
+            const commandKey = vimeeKey
+            const definition = resolved?.status === "matched" ? resolved.definition : undefined
+            if (options.readClipboard && needsClipboard(commandKey, event.ctrl, definition)) {
+                const before = generation
+                return options.readClipboard().then((text) => {
+                    // A focus change, mouse move or external edit cancels a pending put.
+                    if (before !== generation || input?.isDestroyed || input?.plainText !== map.hostText || input?.cursorOffset !== displayOff) return false
+                    vim = { ...vim, register: codec.encode(text) }
+                    return finish()
+                })
             }
-            vim = result.newCtx
-            const actions = result.actions as HostAction[]
-            if (resolved?.status !== "matched") applyActions(actions, ctx, map)
-            if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(actions), visualYankRange)
-            syncMode(state, vim.mode)
+            return finish()
 
-            const keybindPending = keybinds?.isPending() ?? false
-            if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, charOff)
-            pendingInsert = keybindPending && state.mode() === "insert" ? plainPending(vim.statusMessage) : ""
-            state.setPending(pendingDisplay(vim, keybindPending))
-            updateTimeout(ctx)
-            log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: actions.map((action) => action.type) })
-            return consumesKey(vimeeKey, actions, vim, keybindPending)
+            function finish() {
+                let result
+                if (resolved?.status === "matched") {
+                    const actions = applyKeybind(resolved.definition, ctx, map)
+                    result = { newCtx: vim, actions }
+                } else {
+                    // Match LazyVim's uncounted j/k and arrow mappings in normal/visual mode.
+                    // Apply this at the input boundary so custom mapping sequences stay literal.
+                    if (!event.ctrl && vim.phase === "idle" && vim.count === 0 && (commandKey === "j" || commandKey === "k" || commandKey === "ArrowDown" || commandKey === "ArrowUp")) {
+                        vim = processKey("g").newCtx
+                    }
+                    result = processKey(commandKey, event.ctrl)
+                }
+                vim = result.newCtx
+                const actions = result.actions as HostAction[]
+                if (resolved?.status !== "matched") applyActions(actions, ctx, map)
+                if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(actions), visualYankRange)
+                syncMode(state, vim.mode)
+
+                const keybindPending = keybinds?.isPending() ?? false
+                if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, charOff)
+                pendingInsert = keybindPending && state.mode() === "insert" ? plainPending(vim.statusMessage) : ""
+                state.setPending(pendingDisplay(vim, keybindPending))
+                updateTimeout(ctx)
+                log("vimee.key", { key, vimeeKey, mode: vim.mode, phase: vim.phase, cursor: vim.cursor, actions: actions.map((action) => action.type) })
+                return consumesKey(commandKey, actions, vim, keybindPending)
+            }
         },
         cleanup: suspend,
+    }
+
+    function needsClipboard(key: string, ctrl: boolean, definition?: KeybindDefinition) {
+        if (definition) {
+            if ("execute" in definition) return false
+            return parseKeySequence(definition.keys).some((token) => ["p", "P", ".", "@"].includes(token))
+        }
+        if (ctrl) return false
+        if (vim.phase === "macro-execute-pending") return true
+        if (vim.phase !== "idle" || vim.selectedRegister) return false
+        if (key === "p" || key === "P") return true
+        return key === "." && vim.lastChange.some((token) => ["p", "P", "@"].includes(token))
     }
 
     function attach(ctx: PromptContext) {
@@ -163,6 +192,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     }
 
     function suspend() {
+        generation++
         preferredColumn = undefined
         if (pendingContext) cancelPendingInsert(pendingContext)
         if (timer) clearTimeout(timer)
@@ -234,7 +264,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                     setCursor(input, currentMap, action.position)
                     break
                 case "yank":
-                    options.onYank?.(codec.decode(action.text))
+                    if (!action.register) options.onYank?.(codec.decode(action.text))
                     break
                 case "mode-change":
                     nativeInsertUndoSaved = action.mode === "insert" && actions.some((item) => item.type === "content-change")
@@ -369,10 +399,16 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     }
 
     function processKey(key: string, ctrl = false): { newCtx: VimContext; actions: HostAction[] } {
+        const register = vim.selectedRegister
         const moving = !ctrl && vim.mode !== "insert" && (vim.phase === "idle" || vim.phase === "operator-pending" || vim.phase === "g-pending")
         const vertical = moving && (key === "j" || key === "k" || key === "ArrowDown" || key === "ArrowUp")
         const lineEnd = moving && key === "$" && vim.phase === "idle"
         const result = processKeyInner(key, ctrl)
+        if (register) {
+            for (const action of result.actions) {
+                if (action.type === "yank") action.register = register
+            }
+        }
         if (result.actions.some((action) => action.type === "content-change" || action.type === "mode-change")) preferredColumn = undefined
         else if (!vertical && result.actions.some((action) => action.type === "cursor-move")) preferredColumn = lineEnd ? Infinity : undefined
         return result

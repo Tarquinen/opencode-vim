@@ -31,7 +31,16 @@ LazyVim; counts such as `3j` and operator motions such as `dj` use actual lines.
 
 Text objects include words and quotes, plus `iq`/`aq` for the nearest quote pair,
 `ip`/`ap` for paragraphs, and `ib`/`ab` or `iB`/`aB` for parentheses or braces.
-Prompt yanks use Vim's register; `p` pastes them back into the prompt.
+Yanks and cuts (`y`, `d`, `c`, `x`) write to the system clipboard. `p` and `P`
+read its current text, including text copied from another application. Counts,
+linewise puts, undo, and dot repeat still use Vim's editing behavior.
+
+Named registers such as `"ayiw` and `"ap` stay separate from the system clipboard.
+When clipboard access is unavailable, puts use the last copied text shared by
+the prompt, dialogs, and session reader. Over SSH, copying uses the terminal's
+clipboard support; `p` uses this fallback because OpenTUI cannot read the remote
+client's clipboard. Use your terminal's paste shortcut for external text there.
+Use OpenCode's normal paste shortcut for images and attachment handling.
 
 ## Session mode
 
@@ -59,7 +68,7 @@ Inside the modal, use Vim motions to move, `v` or `V` to select, and `y` to copy
 mode, `s` returns directly to the prompt. The modal keeps a snapshot of the item
 while you read it, even if the response is still streaming.
 
-Session yanks go to both the clipboard and the prompt's Vim register, so `p`
+Session yanks go to both the clipboard and the shared fallback, so `p`
 pastes into the prompt. Yanks briefly highlight the copied text. Your prompt text,
 cursor, and undo history are preserved.
 

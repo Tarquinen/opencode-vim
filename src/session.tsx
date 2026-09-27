@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import type { Context } from "@opencode/plugin/tui/context"
-import { createClipboard, createHostClipboard, createRendererClipboardAdapter, type KeyEvent, type TextareaRenderable } from "@opentui/core"
+import { type KeyEvent, type TextareaRenderable } from "@opentui/core"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js"
 import type { PromptContext } from "./modules/vim/actions"
@@ -11,15 +11,15 @@ import { createVimState } from "./modules/vim/state"
 import { createVimeeAdapter, YANK_FLASH_MS } from "./modules/vim/vimee"
 import { createTranscriptSelection } from "./transcript"
 import type { TranscriptItem } from "./transcript-items"
+import type { VimClipboard } from "./clipboard"
 
 export const SESSION_MODE = "opencode-vim.session"
 
-export function createSessionMode(context: Context, config: VimConfig, onYank: (text: string) => void) {
+export function createSessionMode(context: Context, config: VimConfig, clipboard: VimClipboard) {
   const [active, setActive] = createSignal(false)
   const [reading, setReading] = createSignal<TranscriptItem>()
   const [notice, setNotice] = createSignal("")
   const positions = new Map<string, number>()
-  const clipboard = createClipboard({ host: createHostClipboard(), terminal: createRendererClipboardAdapter(context.renderer) })
   let sessionID = ""
   let selectedID: string | undefined
   let prompt: Context["renderer"]["currentFocusedEditor"] = null
@@ -94,15 +94,10 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
   }
 
   async function copy(text: string) {
-    onYank(text)
-    let message = "Copied"
-    try {
-      const result = await clipboard.writeText(text.replaceAll("\0", ""), { destination: "all-available", selection: "clipboard" })
-      if (result.host.status !== "written" && result.terminal.status !== "attempted") message = "Yanked · clipboard unavailable"
-    } catch { message = "Yanked · clipboard unavailable" }
+    const copied = await clipboard.write(text)
     if (disposed) return
     if (noticeTimer) clearTimeout(noticeTimer)
-    setNotice(message)
+    setNotice(copied ? "Copied" : "Yanked · clipboard unavailable")
     noticeTimer = setTimeout(() => setNotice(""), 1500)
   }
 
@@ -169,7 +164,6 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     close()
     if (noticeTimer) clearTimeout(noticeTimer)
     context.renderer.keyInput.off("keypress", onKey)
-    void clipboard.dispose()
   })
 
   return {

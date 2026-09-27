@@ -1,6 +1,6 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
-import { InputRenderable, type CursorStyleOptions, type KeyEvent } from "@opentui/core"
+import { InputRenderable, KeyEvent, PasteEvent, type CursorStyleOptions } from "@opentui/core"
 import { createEffect, createSignal, onCleanup } from "solid-js"
 import { applyVimCursorStyle, focusedInput } from "./src/modules/vim/actions"
 import { createVimConfig } from "./src/modules/vim/config"
@@ -12,6 +12,7 @@ import { createVimState } from "./src/modules/vim/state"
 import { createVimeeAdapter } from "./src/modules/vim/vimee"
 import { VimStatus } from "./view"
 import { SESSION_MODE, createSessionMode } from "./src/session"
+import { createVimClipboard } from "./src/clipboard"
 
 type Context = Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0]
 
@@ -26,10 +27,12 @@ function VimHost(props: { context: Context }) {
   const config = createVimConfig(props.context.options)
   const normalMappings = Object.keys(config.keymaps.normal ?? {})
   const log = createVimLog(config)
+  const clipboard = createVimClipboard(props.context.renderer)
+  const clipboardOptions = { onYank: (text: string) => { void clipboard.write(text) }, readClipboard: clipboard.read }
   const state = createVimState(config.defaultMode, log)
-  const vimee = createVimeeAdapter(state, config, log)
+  const vimee = createVimeeAdapter(state, config, log, clipboardOptions)
   const dialogState = createVimState(config.defaultMode, log)
-  const dialogVimee = createVimeeAdapter(dialogState, config, log)
+  const dialogVimee = createVimeeAdapter(dialogState, config, log, clipboardOptions)
   const [dialogFocused, setDialogFocused] = createSignal(false)
   const promptVim = { state, vimee }
   const dialogVim = { state: dialogState, vimee: dialogVimee }
@@ -40,7 +43,8 @@ function VimHost(props: { context: Context }) {
   let cursorMode = ""
   let cursorInput: typeof props.context.renderer.currentFocusedEditor = null
   let originalCursorStyle: CursorStyleOptions | undefined
-  const session = createSessionMode(props.context, config, (text) => vimee.setRegister(text))
+  const session = createSessionMode(props.context, config, clipboard)
+  let pendingKeys: Array<KeyEvent | PasteEvent> | undefined
 
   const removeStatus = props.context.ui.slot({
     prepend: "prompt.footer",
@@ -70,6 +74,7 @@ function VimHost(props: { context: Context }) {
             draft.enabled = next
           })
           if (!next) {
+            pendingKeys = undefined
             session.close()
             vimee.suspend()
             dialogVimee.suspend()
@@ -83,6 +88,12 @@ function VimHost(props: { context: Context }) {
 
   const onKey = (event: KeyEvent) => {
     if (!enabled() || event.defaultPrevented) return
+    if (pendingKeys) {
+      pendingKeys.push(new KeyEvent(event))
+      event.preventDefault()
+      event.stopPropagation()
+      return
+    }
     if (props.context.keymap.mode.current() === SESSION_MODE) return
     const kind = inputKind(props.context)
     if (!kind) return
@@ -120,7 +131,29 @@ function VimHost(props: { context: Context }) {
     const before = state.mode()
     let consumed = false
     try {
-      consumed = vimee.handle(event as never, key, ctx as never)
+      const result = vimee.handle(event as never, key, ctx as never)
+      if (typeof result === "boolean") consumed = result
+      else {
+        consumed = true
+        const queued: Array<KeyEvent | PasteEvent> = []
+        pendingKeys = queued
+        const input = props.context.renderer.currentFocusedEditor
+        void result.then((handled) => {
+          if (pendingKeys !== queued) return
+          pendingKeys = undefined
+          if (!handled) return
+          syncCursor(true)
+          // Replay through the host too: a queued i may be followed by native typing.
+          for (const event of queued) {
+            if (!enabled() || props.context.renderer.currentFocusedEditor !== input) break
+            if (event instanceof PasteEvent) props.context.renderer.keyInput.emit("paste", event)
+            else props.context.renderer.keyInput.emit("keypress", event)
+          }
+        }).catch((error) => {
+          if (pendingKeys === queued) pendingKeys = undefined
+          log("vim.clipboard.paste.error", { error: String(error) })
+        })
+      }
     } finally {
       if (consumed || state.mode() !== before) {
         event.preventDefault()
@@ -131,20 +164,37 @@ function VimHost(props: { context: Context }) {
   }
 
   const onFocus = () => {
+    pendingKeys = undefined
     vimee.suspend()
     dialogVimee.suspend()
     syncCursor()
   }
+  const onPaste = (event: PasteEvent) => {
+    if (!pendingKeys || event.defaultPrevented) return
+    pendingKeys.push(new PasteEvent(event.bytes, event.metadata))
+    event.preventDefault()
+    event.stopPropagation()
+  }
   props.context.renderer.keyInput.prependListener("keypress", onKey)
+  props.context.renderer.keyInput.prependListener("paste", onPaste)
   props.context.renderer.on("focused_editor", onFocus)
   createEffect(() => syncCursor())
+  let route = props.context.ui.router.current()
+  createEffect(() => {
+    const next = props.context.ui.router.current()
+    if (next !== route && pendingKeys) onFocus()
+    route = next
+  })
   onCleanup(() => {
+    pendingKeys = undefined
     removeStatus()
     session.close()
     props.context.renderer.keyInput.off("keypress", onKey)
+    props.context.renderer.keyInput.off("paste", onPaste)
     props.context.renderer.off("focused_editor", onFocus)
     vimee.cleanup()
     dialogVimee.cleanup()
+    void clipboard.dispose()
     restoreCursor()
   })
 
