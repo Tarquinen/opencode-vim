@@ -6,8 +6,6 @@ import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-suppor
 import { createSignal, For, Show } from "solid-js"
 import { createTranscriptSelection } from "../src/transcript"
 
-// Exercise real GroupAnchor/EntryAnchor trees, including nested low-verbosity
-// groups. These nodes deliberately have no public message/part IDs.
 test.skipIf(!process.env.OPENCODE_SOURCE)("native transcript groups expose individual tools and reasoning", async () => {
     const solid = await import("solid-js")
     const store = await import("solid-js/store")
@@ -82,7 +80,7 @@ test.skipIf(!process.env.OPENCODE_SOURCE)("native transcript groups expose indiv
         const current = () => bridge.sync()!.selected!
         const items = () => bridge.sync()!.ranges
         expect(current().text).toBe("Done")
-        expect(items()).toHaveLength(4) // User, reasoning group, tool group, response.
+        expect(items()).toHaveLength(4)
         bridge.move("previous", 1)
         expect(current().text).toBe("Explored: 2 reads")
         expect(bridge.toggle()).toBe(true)
@@ -94,7 +92,6 @@ test.skipIf(!process.env.OPENCODE_SOURCE)("native transcript groups expose indiv
         bridge.move("next", 1)
         expect(current().text).toContain("Read second.ts")
         expect(bridge.toggle()).toBe(false)
-        // External disclosure changes move the selection back to its group.
         setExpanded({})
         await screen.flush()
         expect(current().text).toBe("Explored: 2 reads")

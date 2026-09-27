@@ -62,8 +62,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
         && route.sessionID === savedSessionID && savedPrompt && !savedPrompt.isDestroyed) savedPrompt.focus()
     }
     restorePrompt()
-    // The dialog restores its previous focus on the next tick. Leaving session
-    // mode should restore the prompt after that, rather than the transcript.
+    // Restore after the dialog's deferred refocus, or it steals focus back.
     if (wasReading) setTimeout(restorePrompt, 1)
     prompt = null
     context.renderer.requestRender()
@@ -220,14 +219,12 @@ function MessageReader(props: {
     requestRender: () => context.renderer.requestRender(),
   }
   const onKey = (event: KeyEvent) => {
-    // A different dialog/editor can temporarily take focus.
     if (context.renderer.currentFocusedEditor !== input) return
     const key = readerKey(context, event, "modal")
     if (!key) return
     event.preventDefault()
     event.stopPropagation()
-    // OpenCode's default Ctrl+C handler clears the focused editor. This buffer
-    // is read-only, so dismiss the message instead.
+    // The host's Ctrl+C clears the editor unless we intercept it.
     if (key === "<C-c>") { props.back(); return }
     if (key === "s" && state.mode() === "normal" && !adapter.isPending()) { props.close(); return }
     if ((key === "<Esc>" || key === "<C-[>") && state.mode() === "normal" && !adapter.isPending()) {

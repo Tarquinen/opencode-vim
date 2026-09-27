@@ -1,5 +1,4 @@
-// Native transcript structure lives here: SessionRowView, GroupAnchor and
-// EntryAnchor in OpenCode's routes/session/{rows,group-view,anchor-view}.tsx.
+// Mirrors OpenCode's routes/session/{rows,group-view,anchor-view}.tsx.
 // TSX keeps OpenTUI classes shared with the host under the runtime loader.
 import type { Context } from "@opencode/plugin/tui/context"
 import { MarkdownRenderable, TextBufferRenderable, type Renderable } from "@opentui/core"
@@ -34,13 +33,11 @@ function parts(messages: Message[]) {
             : part.type === "tool" && ["read", "glob", "grep", "webfetch", "websearch"].includes(part.name.toLowerCase())
               ? "exploration" : undefined })
       }
-      // A completed turn's footer terminates a native group before the next
-      // assistant message, even when their parts have the same group kind.
+      // Turn footers prevent groups from spanning into the next assistant turn.
       if ((message.finish && message.finish !== "tool-calls" && message.finish !== "unknown") || message.error || message.retry) {
         result.push({ id: `footer:${message.id}`, messageID: message.id, kind: "footer", author: "", text: "" })
       }
     } else {
-      // Non-content messages also delimit native groups, even if they render no text.
       result.push({ id: message.id, messageID: message.id, kind: "message", author: message.type === "user" ? "You" : message.type,
         text: message.type === "user" ? message.text : "" })
     }
@@ -48,7 +45,6 @@ function parts(messages: Message[]) {
   return result
 }
 
-// Prefer original Markdown, including code fences, over its rendered children.
 function textOf(node: Renderable): string {
   if (!node.visible) return ""
   if (node instanceof MarkdownRenderable) return node.content
@@ -68,8 +64,7 @@ function textOf(node: Renderable): string {
 function groupAt(node: Renderable) {
   const header = node.getChildren()[0]
   if (!header) return
-  // InlineToolRow contains the icon and label in a horizontal row. Do not
-  // interpret arbitrary tool output or Markdown as a disclosure control.
+  // InlineToolRow's icon/label pair distinguishes disclosures from tool output.
   const cells = header.getChildren()[0]?.getChildren() ?? []
   if (cells.length < 2 || !cells.every((cell) => cell instanceof TextBufferRenderable)) return
   const label = cells.slice(1).map((cell) => (cell as TextBufferRenderable).plainText).join(" ").trim()
@@ -103,8 +98,7 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
     ranges.push({ id, author: info.label, text: info.label, node: info.header,
       top: info.header.y, bottom: info.header.y + info.header.height, toggle: info.header, parentID })
     let children = info.children
-    // Reasoning/activity/instruction bodies have a padding/gap wrapper;
-    // exploration's EntryAnchors are direct children of the GroupAnchor.
+    // Only exploration groups have EntryAnchors directly under GroupAnchor.
     if (info.kind !== "exploration" && children.length) {
       children = [...children[0].getChildren(), ...children.slice(1)]
     }
@@ -118,8 +112,7 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
   for (const row of rows) {
     if (row.id === "session-navigation-slack") break
     if (!row.visible || !row.height) continue
-    // A group can consume the first parts of a later message without claiming
-    // that message's boundary ID. Its next standalone row then owns that ID.
+    // Groups can consume a message's first parts without claiming its row ID.
     let index = sources.findIndex((part) => part.id === row.id)
     if (index === -1) index = sources.findIndex((part, position) => position >= cursor && part.messageID === row.id)
     if (index !== -1) cursor = index
@@ -133,8 +126,7 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
     if (index === -1 && !info && sources[cursor]?.group && container) index = cursor
     if (anchor && info) {
       group(anchor)
-      // A collapsed group can span several stored assistant messages. Count
-      // its source extent only to detect whether newer cached rows are unmounted.
+      // Track grouped sources to detect newer cached rows that aren't mounted yet.
       while (cursor < sources.length) {
         const part = sources[cursor]
         if (info.kind === "activity" ? part.kind !== "tool" && part.kind !== "reasoning" : part.group !== info.kind) break
@@ -142,10 +134,10 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
       }
     } else if (index !== -1) {
       const source = sources[index]
-      // With grouping disabled, the GroupAnchor holds individual EntryAnchors.
       if (source.kind === "footer") {
         lastSource = cursor++
       } else if (source.group && container && anchor.getChildren().length) {
+        // With grouping disabled, the GroupAnchor holds individual EntryAnchors.
         for (const child of anchor.getChildren()) {
           add(child, sources[cursor])
           cursor++
@@ -156,7 +148,6 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
         lastSource = cursor++
       }
     }
-    // Anonymous footers and usage summaries are not separate content items.
   }
   let last = sources.length - 1
   while (last >= 0 && (sources[last].kind === "message" || sources[last].kind === "footer") && !sources[last].text) last--

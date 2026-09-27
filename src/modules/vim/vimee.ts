@@ -58,8 +58,6 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
             let vimeeKey = keyForVimee(event, key)
             if (!vimeeKey) return false
-            // The reader only admits motions, selection, and yanks to the engine.
-            // Character-search and text-object arguments may themselves be editing keys.
             if (options.readOnly && !readOnlyKey(vimeeKey, event.ctrl, vim)) {
                 vim = resetContext(vim)
                 state.setPending("")

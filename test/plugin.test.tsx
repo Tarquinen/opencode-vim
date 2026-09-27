@@ -70,8 +70,6 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
             mode: { current: hostMode, push(mode: string) { const previous = hostMode(); setHostMode(mode); return () => setHostMode(previous) } },
             commands, dispatch(command: string) {
                 dispatched.push(command)
-                // Model the host command boundary: the host owns history, mounted
-                // rows and scrolling. The plugin cannot call the history API itself.
                 if (command === "session.first" || command === "session.last" || command.startsWith("session.line.")) {
                     targetID = navigationID = undefined
                     setSlack(0)
@@ -190,7 +188,7 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
     screen.renderer.keyInput.on("keypress", (event) => {
         if (event.defaultPrevented || !dialog()) return
         if (event.name === "escape") context.ui.dialog.clear()
-        // Match the native dialog shortcut: reader handling must prevent this.
+        // Native Ctrl+C clears a focused editor.
         if (event.ctrl && event.name === "c") screen.renderer.currentFocusedEditor?.setText("")
     })
     plugin.setup(context as unknown as Parameters<typeof plugin.setup>[0])
@@ -215,7 +213,7 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
             targetID = undefined
         }
         await screen.renderOnce()
-        await screen.renderOnce() // Footer selection follows the post-layout marker.
+        await screen.renderOnce()
     }
     await renderOnce()
     dispose = () => screen.renderer.destroy()
@@ -609,7 +607,7 @@ test("reader blocks edits, custom editing maps and bracketed paste", async () =>
     expect(f.reader().plainText).toBe(text)
     expect(f.captureCharFrame()).toContain("MESSAGE")
     await f.keys("0fs")
-    expect(f.reader()).toBeDefined() // s is a find target while f is pending.
+    expect(f.reader()).toBeDefined()
     await f.keys("0yiw")
     expect(f.copied.at(-1)).toBe("six")
     await f.keys("j")
@@ -914,7 +912,7 @@ test("visible message selection is immediate and off-screen selections still scr
     ] })
     await f.scrollTranscript("bottom")
     const top = f.transcript().scrollTop
-    await f.keys("skyy") // No intervening layout is required for an in-place selection.
+    await f.keys("skyy")
     expect(f.copied.at(-1)).toBe("Latest question")
     expect(f.transcript().scrollTop).toBe(top)
     expect(f.dispatched).toEqual([])
@@ -923,7 +921,7 @@ test("visible message selection is immediate and off-screen selections still scr
     expect(f.transcript().scrollTop).toBe(top)
     await f.keys("gg")
     expect(f.captureCharFrame()).not.toContain("Latest reply")
-    await f.keys("ss") // Entering from older history must still reveal the latest reply.
+    await f.keys("ss")
     expect(f.captureCharFrame()).toContain("▎Latest reply")
     expect(f.transcript().scrollTop).toBeGreaterThan(0)
 })
@@ -934,7 +932,7 @@ test("latest selection includes reasoning-only messages before the next layout",
     const f = await mount({}, { messages: [message(1, "Old answer"), message(2, "Newest answer"), thinking] })
     await f.scrollTranscript(0)
     f.mockInput.pressKey("s")
-    f.mockInput.pressEnter() // The native scroll has not completed yet.
+    f.mockInput.pressEnter()
     expect(f.reader().plainText).toBe("Still thinking")
     f.mockInput.pressEscape()
     await f.renderOnce()
@@ -1040,7 +1038,7 @@ test("older-history compensation finishes before selecting a newly loaded messag
     expect(scroll.getRenderable("session-navigation-slack")).toBeUndefined()
     expect(f.dispatched).toEqual(["session.line.up"])
     await f.keys("gg")
-    await f.keys("k") // No older messages remain; reversing direction must still work.
+    await f.keys("k")
     await f.keys("jyy")
     expect(f.copied.at(-1)).toBe("Previous reply")
 })

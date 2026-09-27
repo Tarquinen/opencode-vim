@@ -40,7 +40,7 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     if (navigation.from && from === -1) { navigation = undefined; return }
     const target = navigation.latest ? ranges.length - 1 : from + navigation.offset
     const loading = navigation.loading
-    // Wait for OpenCode's ordinary history scrolling to compensate for new rows.
+    // OpenCode compensates for prepended rows after two animation frames.
     if (loading && context.renderer.frameId < loading.frame) {
       context.renderer.requestRender()
       return
@@ -106,7 +106,6 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     const top = scroll.viewport.y
     const bottom = top + scroll.viewport.height
     let selected = ranges.find((range) => range.id === requestedID)
-    // A mouse collapse removes its children. Keep selection on their group.
     if (!selected && requestedID) {
       for (const id of selectedParents) {
         selected = ranges.find((range) => range.id === id)
@@ -159,8 +158,7 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
         const foreground = context.theme.background.base.buffer
         const background = context.theme.text.feedback.info.base.buffer
         const colors = buffer.buffers
-        // Recolor existing cells so Markdown, wide graphemes and their layout
-        // stay intact. Each cell's foreground/background has four RGBA channels.
+        // Change only colors to preserve wide-character continuation cells.
         for (let y = top; y < bottom; y++) {
           for (let x = left; x < right; x++) {
             const offset = (y * buffer.width + x) * 4

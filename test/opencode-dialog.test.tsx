@@ -134,8 +134,6 @@ test.skipIf(!process.env.OPENCODE_SOURCE)("OpenCode dialogs: Vim filtering and t
         screen.mockInput.pressEscape()
         expect(dialog!.stack).toHaveLength(0)
 
-        // Use the real dialog owner and mode stack for the reader, including its
-        // delayed focus restoration and default Escape/Ctrl+C shortcuts.
         showSession()
         await screen.flush()
         prompt!.focus()
