@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from "bun:test"
-import { InputRenderable, RGBA, TextareaRenderable } from "@opentui/core"
+import { InputRenderable, RGBA, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import { render, type JSX } from "@opentui/solid"
 import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
 import { Plugin } from "@opencode/plugin/tui"
-import { createSignal } from "solid-js"
+import { createSignal, For, Show } from "solid-js"
 import type { VimOptions } from "../src/modules/vim/config"
 
 const entrypoint = process.env.OPENCODE_VIM_TEST_ENTRYPOINT
@@ -14,10 +14,16 @@ const { default: plugin }: typeof import("../tui") = await import(entrypoint ?? 
 let dispose: (() => void) | undefined
 afterEach(() => { dispose?.(); dispose = undefined })
 
-async function mount(options: VimOptions = {}) {
-    const screen = await createTestRenderer({ width: 40, height: 8, kittyKeyboard: true })
+type TestMessage = { id: string; type: "user" | "assistant"; time: { created: number }; text?: string; content?: Array<{ type: string; text: string }> }
+function message(id: number, text: string, type: "user" | "assistant" = "assistant"): TestMessage {
+    return { id: String(id), type, time: { created: id }, ...(type === "user" ? { text } : { content: [{ type: "text", text }] }) }
+}
+
+async function mount(options: VimOptions = {}, session?: { messages: TestMessage[]; older?: TestMessage[]; window?: { start: number; end?: number } }) {
+    const screen = await createTestRenderer({ width: session ? 80 : 40, height: session ? 16 : 8, kittyKeyboard: true })
     const input = new TextareaRenderable(screen.renderer, { id: "prompt", height: 3, width: 40, initialValue: "hello" })
     screen.renderer.root.add(input)
+    if (session) { input.position = "absolute"; input.top = 11 }
     input.focus() // Plugin loading must also work after the prompt already has focus.
     const [enabled, setEnabled] = createSignal(true)
     const [success, setSuccess] = createSignal(RGBA.fromHex("#00ff00"))
@@ -25,6 +31,20 @@ async function mount(options: VimOptions = {}) {
     const [mounted, setMounted] = createSignal(true)
     const [hostMode, setHostMode] = createSignal("base")
     const [commands, setCommands] = createSignal([{ id: "prompt.submit" }])
+    const [route, setRoute] = createSignal<{ type: "home" } | { type: "session"; sessionID: string }>(session ? { type: "session", sessionID: "session-1" } : { type: "home" })
+    const [messages, setMessages] = createSignal(session?.messages ?? [])
+    const [slack, setSlack] = createSignal(0)
+    const [windowStart, setWindowStart] = createSignal(session?.window?.start ?? 0)
+    const [windowEnd, setWindowEnd] = createSignal(session?.window?.end)
+    let transcript: ScrollBoxRenderable | undefined
+    let targetID: string | undefined
+    let navigationID: string | undefined
+    let pendingScroll: { position: number | "bottom" } | { height?: number; delta: number } | undefined
+    let older = session?.older ?? []
+    const copied: string[] = []
+    // Never touch the real desktop clipboard during tests.
+    Object.defineProperty(screen.renderer, "capabilities", { value: { remote: true, osc52_support: "supported" } })
+    screen.renderer.copyToClipboardOSC52 = (text) => { copied.push(text); return true }
     const dispatched: string[] = []
     const [footer, setFooter] = createSignal<() => JSX.Element>(() => null)
     let toggle: () => void = () => {}
@@ -32,7 +52,7 @@ async function mount(options: VimOptions = {}) {
         renderer: screen.renderer,
         options: { defaultMode: "normal", pendingDisplayDelay: 0, ...options },
         get theme() {
-            return { background: { base: RGBA.fromHex("#000000") }, text: { muted: RGBA.fromHex("#888888"), feedback: {
+            return { background: { base: RGBA.fromHex("#000000") }, text: { base: RGBA.fromHex("#ffffff"), muted: RGBA.fromHex("#888888"), feedback: {
                 success: { base: success() }, warning: { base: RGBA.fromHex("#ffff00") }, info: { base: RGBA.fromHex("#00ffff") },
             } } }
         },
@@ -41,14 +61,71 @@ async function mount(options: VimOptions = {}) {
         }] },
         keymap: {
             pending,
-            mode: { current: hostMode },
-            commands, dispatch(command: string) { dispatched.push(command) },
+            mode: { current: hostMode, push(mode: string) { const previous = hostMode(); setHostMode(mode); return () => setHostMode(previous) } },
+            commands, dispatch(command: string) {
+                dispatched.push(command)
+                // Model the host command boundary: the host owns history, mounted
+                // rows and scrolling. The plugin cannot call the history API itself.
+                if (command === "session.first" || command === "session.last" || command.startsWith("session.line.")) {
+                    targetID = navigationID = undefined
+                    setSlack(0)
+                    const delta = command === "session.line.up" ? -1 : 1
+                    const before = transcript?.scrollHeight ?? 0
+                    if (command === "session.first") {
+                        setMessages([...older, ...messages()]); older = []
+                        setWindowStart(0); setWindowEnd(undefined)
+                        pendingScroll = { position: 0 }
+                    } else if (command === "session.last") {
+                        setWindowEnd(undefined)
+                        pendingScroll = { position: "bottom" }
+                    } else if (delta < 0 && transcript && transcript.scrollTop <= transcript.viewport.height) {
+                        if (windowStart()) setWindowStart(0)
+                        else if (older.length) { setMessages([...older, ...messages()]); older = [] }
+                        // OpenCode compensates for prepended rows after layout.
+                        pendingScroll = { height: before, delta }
+                    } else if (delta > 0 && (windowEnd() ?? messages().length) < messages().length) {
+                        setWindowEnd(undefined)
+                        pendingScroll = { delta }
+                    } else transcript?.scrollBy(delta)
+                    return
+                }
+                const index = messages().findIndex((item) => item.id === navigationID)
+                if ((command === "session.first" || (command === "session.message.previous" && index === 0)) && older.length) {
+                    setMessages([...older, ...messages()]); older = []
+                }
+                const navigable = messages().filter((item) => item.type === "user" ? item.text?.trim()
+                    : item.content?.some((part) => part.type === "text" && part.text.trim()))
+                const current = navigable.findIndex((item) => item.id === navigationID)
+                if (command === "session.message.previous") navigationID = navigable[Math.max(0, current - 1)]?.id
+                else if (command === "session.message.next") navigationID = navigable[Math.min(navigable.length - 1, current + 1)]?.id
+                else if (command === "session.first") navigationID = navigable[0]?.id
+                else if (command === "session.last") navigationID = navigable.at(-1)?.id
+                else if (command === "session.messages_last_user") navigationID = navigable.findLast((item) => item.type === "user")?.id
+                else return
+                targetID = navigationID
+            },
             layer(fn: () => { commands: Array<{ run: () => void }> }) { toggle = fn().commands[0].run },
         },
+        data: { session: { message: { list: messages } } },
         ui: {
-            router: { current: () => ({ type: "home" }) }, toast: { show() {} },
-            slot(slot: { append?: string; render: (props: { mode: string }) => JSX.Element }) {
-                if (slot.append === "app") void render(() => <>{mounted() ? slot.render({ mode: "normal" }) : null}{footer()()}</>, screen.renderer)
+            router: { current: route }, toast: { show() {} },
+            slot(slot: { append?: string; render: (props: any) => JSX.Element }) {
+                if (slot.append === "app") void render(() => <>
+                    <Show when={session}>
+                        <scrollbox ref={(value) => { transcript = value }} id="native-transcript" height={10} width={76} left={2}>
+                            <For each={messages().slice(windowStart(), windowEnd())}>{(item) => (
+                                <For each={item.type === "user" ? [{ text: item.text! }] : item.content ?? []}>{(part, index) => (
+                                    <box id={index() === 0 ? item.id : `session-part:${item.id}:text:${index()}`}
+                                        marginTop={1} flexShrink={0}>
+                                        <text>{part.text}</text>
+                                    </box>
+                                )}</For>
+                            )}</For>
+                            <Show when={slack()}>{(height) => <box id="session-navigation-slack" height={height()} flexShrink={0} />}</Show>
+                        </scrollbox>
+                    </Show>
+                    {mounted() ? slot.render({ mode: "normal" }) : null}{footer()()}
+                </>, screen.renderer)
                 else setFooter(() => () => slot.render({ mode: "normal" }))
                 return () => setFooter(() => () => null)
             },
@@ -56,8 +133,35 @@ async function mount(options: VimOptions = {}) {
     }
     plugin.setup(context as unknown as Parameters<typeof plugin.setup>[0])
     await screen.renderOnce()
+    transcript?.scrollTo(transcript.scrollHeight)
+    async function renderOnce() {
+        await screen.renderOnce()
+        if (pendingScroll && transcript) {
+            const action = pendingScroll
+            pendingScroll = undefined
+            if ("delta" in action) transcript.scrollBy((action.height === undefined ? 0 : transcript.scrollHeight - action.height) + action.delta)
+            else transcript.scrollTo(action.position === "bottom" ? transcript.scrollHeight : action.position)
+        }
+        if (targetID && transcript) {
+            const row = transcript.getRenderable(targetID)
+            if (row) {
+                const top = transcript.scrollTop + row.y - transcript.viewport.y
+                setSlack(Math.max(0, top + transcript.viewport.height - (transcript.scrollHeight - slack())))
+                await screen.renderOnce()
+                transcript.scrollTo(top)
+            }
+            targetID = undefined
+        }
+        await screen.renderOnce()
+        await screen.renderOnce() // Footer selection follows the post-layout marker.
+    }
+    await renderOnce()
     dispose = () => screen.renderer.destroy()
+    let dialogReturnMode = "base"
+    let dialogReturnInput = screen.renderer.currentFocusedEditor
     function openDialog(value = "", kind: "select" | "prompt" | "other" = "select") {
+        dialogReturnMode = hostMode()
+        dialogReturnInput = screen.renderer.currentFocusedEditor
         input.blur()
         setHostMode("modal")
         setCommands(kind === "select"
@@ -70,11 +174,25 @@ async function mount(options: VimOptions = {}) {
     }
     function closeDialog(editor: InputRenderable) {
         editor.destroy()
-        setHostMode("base")
+        setHostMode(dialogReturnMode)
         setCommands([{ id: "prompt.submit" }])
-        input.focus()
+        dialogReturnInput?.focus()
     }
-    return { ...screen, input, toggle, setSuccess, setPending, openDialog, closeDialog, dispatched, unmount: () => setMounted(false) }
+    return { ...screen, renderOnce, input, toggle, setSuccess, setPending, openDialog, closeDialog, dispatched, hostMode, setRoute,
+        setMessages, copied, transcript: () => transcript!,
+        async scrollTranscript(position: number | "bottom") {
+            navigationID = undefined
+            setSlack(0)
+            await screen.renderOnce()
+            transcript!.scrollTo(position === "bottom" ? transcript!.scrollHeight : position)
+            await renderOnce()
+        },
+        async keys(keys: string) {
+            for (const key of keys) screen.mockInput.pressKey(key, { shift: key !== key.toLowerCase() })
+            await renderOnce()
+        },
+        reader: () => screen.renderer.root.findDescendantById("vim-session-message") as TextareaRenderable,
+        unmount: () => setMounted(false) }
 }
 
 test("plugin intercepts keys before an already-focused textarea", async () => {
@@ -164,7 +282,7 @@ test("unmount removes handlers and restores native editing", async () => {
     expect(f.input.hasSelection()).toBe(true)
     f.unmount()
     await f.renderOnce()
-    expect(f.renderer.keyInput.listenerCount("keypress")).toBe(listeners - 1)
+    expect(f.renderer.keyInput.listenerCount("keypress")).toBe(listeners - 2)
     expect(f.input.hasSelection()).toBe(false)
     expect(f.captureCharFrame()).not.toContain("VISUAL")
     f.mockInput.pressKey("x")
@@ -264,4 +382,444 @@ test("unrelated modal input keeps native behavior", async () => {
     f.mockInput.pressKey("j")
     expect(editor.value).toBe("xj")
     expect(f.dispatched).toEqual([])
+})
+
+test("s marks the existing transcript without changing its layout or opening a reader", async () => {
+    const f = await mount({}, { messages: [message(1, "Question", "user"), message(2, "Answer")] })
+    await f.keys("lx")
+    const offset = f.input.cursorOffset
+    const row = f.transcript().getRenderable("2")!
+    const layout = { y: row.y, height: row.height, width: row.width, scroll: f.transcript().scrollTop }
+    const before = f.captureCharFrame().split("\n").slice(0, 10).join("\n")
+    await f.keys("s")
+    expect(f.hostMode()).toBe("opencode-vim.session")
+    expect(f.captureCharFrame()).toContain("SESSION")
+    expect(f.captureCharFrame()).toContain("▎Answer")
+    expect(f.reader()).toBeUndefined()
+    expect({ y: row.y, height: row.height, width: row.width, scroll: f.transcript().scrollTop }).toEqual(layout)
+    expect(f.captureCharFrame().split("\n").slice(0, 10).join("\n").replaceAll("▎", " ")).toBe(before)
+    await f.keys("s")
+    expect(f.hostMode()).toBe("base")
+    expect(f.captureCharFrame()).not.toContain("▎")
+    expect(f.renderer.currentFocusedEditor).toBe(f.input)
+    expect(f.input.cursorOffset).toBe(offset)
+    expect(f.captureCharFrame()).toContain("NORMAL")
+    await f.keys("u")
+    expect(f.input.plainText).toBe("hello")
+})
+
+test("s only opens from idle prompt normal mode and respects mappings", async () => {
+    const f = await mount({ keymaps: { normal: { ss: "x" } } }, { messages: [message(1, "Answer")] })
+    await f.keys("ss")
+    expect(f.hostMode()).toBe("base")
+    expect(f.input.plainText).toBe("ello")
+    await f.keys("is")
+    expect(f.hostMode()).toBe("base")
+    expect(f.input.plainText).toBe("sello")
+    f.mockInput.pressEscape()
+    await f.keys("fs")
+    expect(f.hostMode()).toBe("base")
+    f.openDialog("search")
+    await f.keys("s")
+    expect(f.hostMode()).toBe("modal")
+})
+
+test("message navigation uses native history loading and marks newly mounted messages", async () => {
+    const recent = [message(4, "Fourth"), message(5, "Fifth")]
+    const f = await mount({}, { messages: recent, older: [message(1, "First", "user"), message(2, "Second"), message(3, "Third")] })
+    await f.keys("s")
+    expect(f.captureCharFrame()).toContain("▎Fifth")
+    f.dispatched.length = 0
+    await f.keys("2k")
+    expect(f.captureCharFrame()).toContain("▎Third")
+    expect(f.dispatched).toContain("session.line.up")
+    expect(f.dispatched).not.toContain("session.message.previous")
+    await f.keys("gg")
+    expect(f.captureCharFrame()).toContain("▎First")
+    expect(f.captureCharFrame()).toContain("SESSION · You")
+    await f.keys("2j")
+    expect(f.captureCharFrame()).toContain("▎Third")
+    f.setMessages([...recent, message(6, "Sixth")])
+    await f.renderOnce()
+    await f.keys("G")
+    expect(f.captureCharFrame()).toContain("▎Sixth")
+    expect(f.reader()).toBeUndefined()
+})
+
+test("whole-message yank preserves Markdown and can be pasted in the prompt", async () => {
+    const text = "# Heading\n\n```ts\nconst 中 = '👍🏽'\n```"
+    const f = await mount({}, { messages: [message(1, text)] })
+    await f.keys("syy")
+    expect(f.copied).toEqual([text])
+    await f.keys("s$p")
+    expect(f.input.plainText).toBe("hello" + text)
+})
+
+test("entering a message reveals a cursor, supports visual yanks and returns in steps", async () => {
+    const f = await mount({}, { messages: [message(1, "one two\nsecond line")] })
+    await f.keys("s")
+    f.dispatched.length = 0
+    const scroll = f.transcript().scrollTop
+    f.mockInput.pressEnter()
+    await f.keys("wvll")
+    expect(f.reader().showCursor).toBe(true)
+    expect(f.reader().getSelectedText()).toBe("two")
+    expect(f.captureCharFrame()).toContain("VISUAL")
+    await f.keys("y")
+    expect(f.copied).toEqual(["two"])
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+    expect(f.transcript().scrollTop).toBe(scroll)
+    f.mockInput.pressEnter()
+    expect(f.reader().cursorOffset).toBe(4)
+    await f.keys("Vjy")
+    expect(f.copied.at(-1)).toBe("one two\nsecond line\n")
+    f.mockInput.pressEscape()
+    f.mockInput.pressEscape()
+    expect(f.hostMode()).toBe("base")
+    expect(f.input.plainText).toBe("hello")
+    expect(f.dispatched).toEqual([])
+})
+
+test("reader blocks edits, custom editing maps and bracketed paste", async () => {
+    const text = "six words here\nmore words"
+    const f = await mount({ keymaps: { normal: { j: "dd", Q: "insert" } } }, { messages: [message(1, text)] })
+    await f.keys("s")
+    await f.mockInput.pasteBracketedText("MUTATION")
+    f.mockInput.pressEnter()
+    await f.keys("iaAoOdDcxpru.Q")
+    await f.mockInput.pasteBracketedText("MUTATION")
+    expect(f.reader().plainText).toBe(text)
+    expect(f.captureCharFrame()).toContain("MESSAGE")
+    await f.keys("0fs")
+    expect(f.reader()).toBeDefined() // s is a find target while f is pending.
+    await f.keys("0yiw")
+    expect(f.copied.at(-1)).toBe("six")
+    await f.keys("j")
+    expect(f.reader().cursorOffset).toBeGreaterThan(0)
+    expect(f.reader().plainText).toBe(text)
+    await f.keys("s")
+    expect(f.reader()).toBeUndefined()
+    expect(f.hostMode()).toBe("base")
+})
+
+test("streaming updates do not move a selection, and browsing refreshes the text", async () => {
+    const f = await mount({}, { messages: [message(1, "hello")] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.keys("vll")
+    f.setMessages([message(1, "hello world")])
+    await f.renderOnce()
+    expect(f.reader().plainText).toBe("hello")
+    expect(f.reader().getSelectedText()).toBe("hel")
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.reader().showCursor).toBe(true)
+    expect(f.reader().hasSelection()).toBe(false)
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+    expect(f.captureCharFrame()).toContain("▎hello world")
+})
+
+test("paging a long message scrolls the viewport and retains its position", async () => {
+    const text = Array.from({ length: 100 }, (_, index) => `line ${index + 1}`).join("\n")
+    const f = await mount({}, { messages: [message(1, text)] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    f.mockInput.pressKey("d", { ctrl: true })
+    f.mockInput.pressKey("f", { ctrl: true })
+    await f.renderOnce()
+    expect(f.reader().scrollY).toBeGreaterThan(0)
+    const offset = f.reader().cursorOffset
+    f.mockInput.pressEscape()
+    f.mockInput.pressEnter()
+    expect(f.reader().cursorOffset).toBe(offset)
+    f.mockInput.pressKey("u", { ctrl: true })
+    expect(f.reader().cursorOffset).toBeLessThan(offset)
+})
+
+test("empty sessions use the native transcript and can be exited", async () => {
+    const f = await mount({}, { messages: [] })
+    await f.keys("s")
+    expect(f.captureCharFrame()).toContain("No message selected")
+    expect(f.reader()).toBeUndefined()
+    await f.keys("k")
+    await f.renderOnce()
+    expect(f.dispatched).toEqual(["session.line.up"])
+    await f.keys("s")
+    expect(f.renderer.currentFocusedEditor).toBe(f.input)
+})
+
+test("disabling or unloading Vim removes the native marker and reader", async () => {
+    const f = await mount({}, { messages: [message(1, "Answer")] })
+    const listeners = f.renderer.keyInput.listenerCount("keypress")
+    await f.keys("s")
+    f.toggle()
+    await f.renderOnce()
+    expect(f.hostMode()).toBe("base")
+    expect(f.captureCharFrame()).not.toContain("▎")
+    expect(f.renderer.keyInput.listenerCount("keypress")).toBe(listeners)
+    f.toggle()
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    f.unmount()
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+    expect(f.renderer.keyInput.listenerCount("keypress")).toBe(listeners - 2)
+})
+
+test("session browsing and reading yield to dialogs, then restore their focus", async () => {
+    const f = await mount({}, { messages: [message(1, "Answer")] })
+    await f.keys("s")
+    f.dispatched.length = 0
+    const browsingDialog = f.openDialog("search")
+    await f.keys("j")
+    expect(f.dispatched).toEqual(["dialog.select.next"])
+    expect(f.captureCharFrame()).not.toContain("▎")
+    f.closeDialog(browsingDialog)
+    f.mockInput.pressEnter()
+    expect(f.renderer.currentFocusedEditor).toBe(f.reader())
+    expect(f.reader().showCursor).toBe(true)
+    const editor = f.openDialog("models")
+    await f.keys("0is")
+    expect(editor.value).toBe("smodels")
+    expect(f.reader().plainText).toBe("Answer")
+    f.closeDialog(editor)
+    await f.keys("l")
+    expect(f.reader().cursorOffset).toBe(1)
+    await f.keys("s")
+    expect(f.reader()).toBeUndefined()
+    expect(f.renderer.currentFocusedEditor).toBe(f.input)
+})
+
+test("switching sessions closes the reader and removes its selection marker", async () => {
+    const f = await mount({}, { messages: [message(1, "Answer")] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    f.setRoute({ type: "session", sessionID: "other-session" })
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+    expect(f.hostMode()).toBe("base")
+    expect(f.captureCharFrame()).not.toContain("▎")
+})
+
+test("native marker covers all message parts, clips to the viewport, and excludes navigation slack", async () => {
+    const reply = message(1, "First part")
+    reply.content!.push({ type: "text", text: "Second part\nThird line" })
+    const f = await mount({}, { messages: [reply, message(2, "Next message", "user")] })
+    await f.keys("sgg")
+    const frame = f.captureCharFrame()
+    expect(frame).toContain("▎First part")
+    expect(frame).toContain("▎Second part")
+    expect(frame).toContain("▎Third line")
+    expect(frame).not.toContain("▎Next message")
+    await f.keys("yy")
+    expect(f.copied.at(-1)).toBe("First part\n\nSecond part\nThird line")
+    await f.keys("G")
+    const lines = f.captureCharFrame().split("\n")
+    expect(lines.filter((line) => line.includes("▎"))).toHaveLength(1)
+
+    f.setMessages([message(2, Array.from({ length: 30 }, (_, i) => `row ${i}`).join("\n"), "user")])
+    await f.renderOnce()
+    f.transcript().scrollTo(5)
+    await f.renderOnce()
+    const scrolled = f.captureCharFrame().split("\n")
+    expect(scrolled.slice(0, 10).every((line) => line.includes("▎"))).toBe(true)
+    expect(scrolled.slice(10).some((line) => line.includes("▎"))).toBe(false)
+    f.mockInput.pressEnter()
+    expect(f.reader().plainText).toContain("row 0")
+    expect(f.reader().plainText).toContain("row 29")
+})
+
+test("session mode starts on the latest message when several messages share the viewport", async () => {
+    const f = await mount({}, { messages: [
+        message(1, "First question", "user"), message(2, "First answer"),
+        message(3, "Latest question", "user"), message(4, "Latest answer"),
+    ] })
+    await f.scrollTranscript("bottom")
+    expect(f.captureCharFrame()).toContain("First question")
+    expect(f.captureCharFrame()).toContain("Latest answer")
+    const before = f.captureCharFrame().split("\n").slice(0, 10).join("\n")
+    const scroll = f.transcript().scrollTop
+    const height = f.transcript().scrollHeight
+    const positions = f.transcript().getChildren().map((row) => [row.id, row.y, row.height])
+    await f.keys("s")
+    expect(f.captureCharFrame()).toContain("▎Latest answer")
+    expect(f.captureCharFrame()).not.toContain("▎First question")
+    expect(f.captureCharFrame().split("\n").slice(0, 10).join("\n").replaceAll("▎", " ")).toBe(before)
+    expect(f.transcript().scrollTop).toBe(scroll)
+    expect(f.transcript().scrollHeight).toBe(height)
+    expect(f.transcript().getChildren().map((row) => [row.id, row.y, row.height])).toEqual(positions)
+    expect(f.dispatched).toEqual([])
+    f.mockInput.pressEnter()
+    expect(f.reader().plainText).toBe("Latest answer")
+    f.mockInput.pressEscape()
+    await f.keys("k")
+    expect(f.captureCharFrame()).toContain("▎Latest question")
+    expect(f.transcript().scrollTop).toBe(scroll)
+    expect(f.dispatched).toEqual([])
+    await f.keys("yy")
+    expect(f.copied.at(-1)).toBe("Latest question")
+    await f.keys("gg")
+    expect(f.captureCharFrame()).toContain("▎First question")
+    await f.keys("ss")
+    expect(f.captureCharFrame()).toContain("▎Latest answer")
+    await f.keys("k")
+    await f.keys("yy")
+    expect(f.copied.at(-1)).toBe("Latest question")
+})
+
+test("a partially visible latest reply is highlighted without scrolling or changing sticky mode", async () => {
+    const text = Array.from({ length: 30 }, (_, index) => `Reply line ${index}`).join("\n")
+    const f = await mount({}, { messages: [message(1, "Question", "user"), message(2, text)] })
+    await f.scrollTranscript("bottom")
+    f.transcript().stickyScroll = true
+    await f.renderOnce()
+    const top = f.transcript().scrollTop
+    const before = f.captureCharFrame().split("\n").slice(0, 10).join("\n")
+    expect(before).not.toContain("Reply line 0")
+    await f.keys("s")
+    expect(f.transcript().scrollTop).toBe(top)
+    expect(f.transcript().stickyScroll).toBe(true)
+    expect(f.captureCharFrame().split("\n").slice(0, 10).join("\n").replaceAll("▎", " ")).toBe(before)
+    expect(f.dispatched).toEqual([])
+    await f.keys("yy")
+    expect(f.copied.at(-1)).toBe(text)
+})
+
+test("visible message selection is immediate and off-screen selections still scroll into view", async () => {
+    const f = await mount({}, { messages: [
+        message(1, Array.from({ length: 20 }, (_, index) => `Old line ${index}`).join("\n"), "user"),
+        message(2, "Visible reply"), message(3, "Latest question", "user"), message(4, "Latest reply"),
+    ] })
+    await f.scrollTranscript("bottom")
+    const top = f.transcript().scrollTop
+    await f.keys("skyy") // No intervening layout is required for an in-place selection.
+    expect(f.copied.at(-1)).toBe("Latest question")
+    expect(f.transcript().scrollTop).toBe(top)
+    expect(f.dispatched).toEqual([])
+    await f.keys("jG")
+    expect(f.captureCharFrame()).toContain("▎Latest reply")
+    expect(f.transcript().scrollTop).toBe(top)
+    await f.keys("gg")
+    expect(f.captureCharFrame()).not.toContain("Latest reply")
+    await f.keys("ss") // Entering from older history must still reveal the latest reply.
+    expect(f.captureCharFrame()).toContain("▎Latest reply")
+    expect(f.transcript().scrollTop).toBeGreaterThan(0)
+})
+
+test("latest selection works before layout with no user in cache and skips non-text messages", async () => {
+    const thinking = message(3, "Still thinking")
+    thinking.content![0].type = "reasoning"
+    const f = await mount({}, { messages: [message(1, "Old answer"), message(2, "Newest answer"), thinking] })
+    await f.scrollTranscript(0)
+    f.mockInput.pressKey("s")
+    f.mockInput.pressEnter() // The native scroll has not completed yet.
+    expect(f.reader().plainText).toBe("Newest answer")
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("▎Newest answer")
+    await f.keys("k")
+    expect(f.captureCharFrame()).toContain("▎Old answer")
+    await f.keys("yy")
+    expect(f.copied.at(-1)).toBe("Old answer")
+})
+
+test("moving back down through messages scrolls at the bottom edge without navigation padding", async () => {
+    const f = await mount({}, { messages: [
+        message(1, Array.from({ length: 15 }, (_, index) => `Earlier line ${index}`).join("\n"), "user"),
+        message(2, "Second reply\nSecond middle\nSecond end"),
+        message(3, "Third question\nThird middle\nThird end", "user"),
+        message(4, "Latest reply\nLatest middle\nLatest end"),
+    ] })
+    const scroll = f.transcript()
+    const height = scroll.scrollHeight
+    const bottom = scroll.viewport.y + scroll.viewport.height
+    const initial = scroll.scrollTop
+    await f.keys("s3k")
+    expect(f.captureCharFrame()).toContain("▎Earlier line 0")
+    for (const id of ["2", "3", "4"]) {
+        await f.keys("j")
+        const row = scroll.getRenderable(id)!
+        expect(row.y).toBeGreaterThan(scroll.viewport.y)
+        expect(row.y + row.height).toBe(bottom)
+        expect(scroll.scrollHeight).toBe(height)
+        expect(scroll.getRenderable("session-navigation-slack")).toBeUndefined()
+    }
+    expect(scroll.scrollTop).toBe(initial)
+    expect(f.captureCharFrame()).toContain("Third question")
+    expect(f.captureCharFrame()).toContain("▎Latest end")
+    expect(f.dispatched).toEqual([])
+    await f.keys("3k")
+    await f.keys("3j")
+    expect(scroll.scrollTop).toBe(initial)
+    await f.keys("gg")
+    await f.keys("G")
+    expect(scroll.scrollTop).toBe(initial)
+    expect(scroll.scrollHeight).toBe(height)
+    await f.keys("3kj")
+    expect(f.captureCharFrame()).toContain("▎Second reply")
+})
+
+test("scrolling down reveals all parts of a short message at the bottom edge", async () => {
+    const reply = message(2, "First part\nFirst end")
+    reply.content!.push({ type: "text", text: "Second part\nSecond end" })
+    const f = await mount({}, { messages: [
+        message(1, Array.from({ length: 20 }, (_, index) => `Old ${index}`).join("\n"), "user"), reply,
+    ] })
+    await f.keys("sgg")
+    await f.keys("j")
+    const scroll = f.transcript()
+    const last = scroll.getRenderable("session-part:2:text:1")!
+    expect(last.y + last.height).toBe(scroll.viewport.y + scroll.viewport.height)
+    expect(f.captureCharFrame()).toContain("▎First part")
+    expect(f.captureCharFrame()).toContain("▎Second end")
+    expect(scroll.getRenderable("session-navigation-slack")).toBeUndefined()
+})
+
+test("windowed messages mount through ordinary scrolling and return to the natural bottom", async () => {
+    const f = await mount({}, { messages: [
+        message(1, "Oldest question", "user"),
+        message(2, Array.from({ length: 20 }, (_, index) => `Older reply ${index}`).join("\n")),
+        message(3, "Visible question", "user"),
+        message(4, Array.from({ length: 20 }, (_, index) => `Visible reply ${index}`).join("\n")),
+        message(5, "Latest reply"),
+    ], window: { start: 2, end: 4 } })
+    await f.keys("s")
+    expect(f.captureCharFrame()).toContain("▎Latest reply")
+    expect(f.dispatched).toEqual(["session.line.down"])
+    await f.keys("3k")
+    expect(f.dispatched).toContain("session.line.up")
+    await f.keys("yy")
+    expect(f.copied.at(-1)).toContain("Older reply 0")
+    expect(f.captureCharFrame()).toContain("▎Older reply")
+    await f.keys("3j")
+    const scroll = f.transcript()
+    expect(scroll.getRenderable("5")!.y + 1).toBe(scroll.viewport.y + scroll.viewport.height)
+    expect(scroll.scrollTop).toBe(scroll.scrollHeight - scroll.viewport.height)
+    expect(scroll.getRenderable("session-navigation-slack")).toBeUndefined()
+    expect(f.dispatched.every((command) => command.startsWith("session.line."))).toBe(true)
+})
+
+test("older-history compensation finishes before selecting a newly loaded message", async () => {
+    const f = await mount({}, { messages: [message(3, "Current question", "user"), message(4, "Current reply")], older: [
+        message(1, Array.from({ length: 20 }, (_, index) => `Old question ${index}`).join("\n"), "user"),
+        message(2, "Previous reply"),
+    ] })
+    await f.keys("s2k")
+    expect(f.captureCharFrame()).toContain("▎Previous reply")
+    await f.keys("yy")
+    expect(f.copied.at(-1)).toBe("Previous reply")
+    await f.keys("2j")
+    const scroll = f.transcript()
+    expect(scroll.scrollTop).toBe(scroll.scrollHeight - scroll.viewport.height)
+    expect(scroll.getRenderable("session-navigation-slack")).toBeUndefined()
+    expect(f.dispatched).toEqual(["session.line.up"])
+    await f.keys("gg")
+    await f.keys("k") // No older messages remain; reversing direction must still work.
+    await f.keys("jyy")
+    expect(f.copied.at(-1)).toBe("Previous reply")
 })

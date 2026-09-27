@@ -18,12 +18,17 @@ const YANK_FLASH_MS = 250
 
 export type VimeeAdapter = ReturnType<typeof createVimeeAdapter>
 
-export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimLog) {
+type AdapterOptions = {
+    readOnly?: boolean
+    onYank?: (text: string) => void
+}
+
+export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimLog, options: AdapterOptions = {}) {
     const codec = createGraphemeCodec()
     let buffer = new TextBuffer("")
     let activeMap = createPromptMap("", codec)
     let vim = createInitialContext({ line: 0, col: 0 })
-    const keybinds = createKeybinds(config, log)
+    const keybinds = options.readOnly ? undefined : createKeybinds(config, log)
     let timer: ReturnType<typeof setTimeout> | undefined
     let yankTimer: ReturnType<typeof setTimeout> | undefined
     let yankFlashActive = false
@@ -43,6 +48,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     return {
         attach,
         suspend,
+        setRegister(text: string) { vim = { ...vim, register: codec.encode(text) } },
         isPending: () => vim.phase !== "idle" || vim.count > 0 || !!keybinds?.isPending(),
         handle(event: KeyEvent, key: string, ctx: PromptContext) {
             const ref = ctx.prompt()
@@ -52,6 +58,13 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
             let vimeeKey = keyForVimee(event, key)
             if (!vimeeKey) return false
+            // The reader only admits motions, selection, and yanks to the engine.
+            // Character-search and text-object arguments may themselves be editing keys.
+            if (options.readOnly && !readOnlyKey(vimeeKey, event.ctrl, vim)) {
+                vim = resetContext(vim)
+                state.setPending("")
+                return true
+            }
             vimeeKey = codec.encode(vimeeKey)
 
             if (state.mode() === "insert") {
@@ -71,7 +84,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             const displayOff = clamp(input?.cursorOffset ?? dw, 0, dw)
             const charOff = displayToChar(text, displayOff)
 
-            const canBrowseHistory = vim.phase === "idle" && vim.count === 0 && !keybinds?.isPending()
+            const canBrowseHistory = !options.readOnly && vim.phase === "idle" && vim.count === 0 && !keybinds?.isPending()
             const historyCommand = canBrowseHistory ? defaultHistoryCommand(vimeeKey, text, historyText, defaultHistoryKeys) : undefined
             if (historyCommand) {
                 const result = dispatchCommand(historyCommand, ctx)
@@ -221,6 +234,9 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                     break
                 case "cursor-move":
                     setCursor(input, currentMap, action.position)
+                    break
+                case "yank":
+                    options.onYank?.(codec.decode(action.text))
                     break
                 case "mode-change":
                     nativeInsertUndoSaved = action.mode === "insert" && actions.some((item) => item.type === "content-change")
@@ -651,6 +667,15 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         if (isVisualMode(vim.mode)) return key === "y"
         return vim.operator === "y"
     }
+}
+
+function readOnlyKey(key: string, ctrl: boolean, vim: VimContext) {
+    if (key === "Escape") return true
+    if (ctrl) return false
+    if (vim.phase === "char-pending" || vim.phase === "text-object-pending" || vim.phase === "register-pending") return true
+    if (vim.phase === "g-pending") return ["g", "j", "k", "0", "^", "$", "ArrowDown", "ArrowUp"].includes(key)
+    if ((vim.phase === "operator-pending" || isVisualMode(vim.mode)) && (key === "i" || key === "a")) return true
+    return /^[0-9hjklwWbBeE$^gGfFtT;,vVy%{}()"]$/.test(key) || ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)
 }
 
 function forwardWordRange(key: string, start: CursorPosition, buffer: TextBuffer, count: number): MotionRange {

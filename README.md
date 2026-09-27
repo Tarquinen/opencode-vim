@@ -1,6 +1,6 @@
 # opencode-vim
 
-Vim-style editing for the OpenCode 2 prompt and dialog search fields.
+Vim-style editing for the OpenCode 2 prompt and dialog search fields, plus a keyboard-driven session reader.
 
 ![Demo](./assets/demo2.gif)
 
@@ -43,6 +43,7 @@ so they do not shift the layout.
 | `3w`, `diw`, `ci"`, `yiq`, `dip`, `yib` | Counts and text objects |
 | `k`, `j` on an empty or recalled prompt | Browse previous and next prompts |
 | `Enter` in normal mode | Submit the prompt |
+| `s` in normal mode | Toggle the session reader |
 | `/vim` | Toggle Vim mode on or off |
 
 Navigation follows LazyVim: plain `j`/`k` and Up/Down move through wrapped screen
@@ -51,6 +52,30 @@ newline-separated lines; `gj`/`gk` always use screen rows, including with counts
 Wrapping is visual only: `0`/`$`, `A`, `dd`, `yy`, `V`, and operators such as `dj`
 still operate on actual lines.
 Resizing the prompt does not change its text or undo history.
+
+## Session mode
+
+In an existing session, press `s` from prompt normal mode to navigate the existing
+transcript, starting on the latest message each time. Visible messages are
+highlighted in place. Off-screen messages scroll into view at the nearest edge,
+without extra blank space below the transcript. A colored bar in the left margin
+marks the selected message, and a compact prompt-footer hint shows the available keys.
+Your prompt text, cursor, and undo history are preserved.
+
+- `j` / `k` or Up / Down: next / previous message; counts work too.
+- `gg` / `G`: first / last message. OpenCode loads older history as needed.
+- `yy`: copy the entire selected message to the clipboard and Vim's yank register.
+- `Enter`: open the selected message's original Markdown in a read-only text reader with a cursor.
+- `v` / `V`, then motions and `y`: copy characters or whole lines. Yank text can be pasted into the prompt with `p`.
+- `Ctrl+d` / `Ctrl+u`: half-page down / up; `Ctrl+f` / `Ctrl+b` or Page Down / Up: full pages.
+- `Esc`: clear a text selection, return to the same transcript position, then leave session mode.
+- `s`: return directly to prompt normal mode from browsing or idle message normal mode.
+
+The text reader opens only on Enter and does not resize or replace the transcript.
+While inside a message, streaming text is held still so it cannot move your selection;
+returning to the transcript shows the latest text.
+Tool-only messages are skipped. Custom normal-mode mappings starting with `s`
+take precedence over opening the reader. Prompt editing mappings do not apply inside it.
 
 ## Dialogs
 
