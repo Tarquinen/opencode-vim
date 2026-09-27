@@ -77,7 +77,8 @@ Your prompt text, cursor, and undo history are preserved.
 The message modal opens only on Enter, with the transcript visible behind it.
 While inside a message, streaming text is held still so it cannot move your selection;
 returning to the transcript shows the latest text.
-Custom normal-mode mappings starting with `s`
+The toggle key is configurable with `options.vim.sessionKey` (default: `"s"`).
+Custom normal-mode mappings starting with the configured toggle key
 take precedence over opening the reader. Prompt editing mappings do not apply inside it.
 
 ## Dialogs
@@ -98,7 +99,7 @@ mappings take precedence over the dialog `j`/`k` defaults.
 
 Replace the plugin's string entry in `cli.json` with an object to customize it.
 This example adds `kj` to leave insert mode, `Y` to yank to the end of the line,
-and `q` to start a new session:
+`q` to start a new session, and `Q` to toggle session mode:
 
 ```json
 {
@@ -109,6 +110,7 @@ and `q` to start a new session:
       "options": {
         "vim": {
           "defaultMode": "insert",
+          "sessionKey": "Q",
           "keymapTimeout": 500,
           "keymaps": {
             "insert": { "kj": "normal" },
@@ -125,6 +127,10 @@ and `q` to start a new session:
 ```
 
 `defaultMode` defaults to `insert`; use `normal` to start in normal mode.
+`sessionKey` sets a single key for entering and leaving session mode, including from
+the message modal. Both footer hints use that key. Use a character such as `"Q"`
+or Vim notation such as `"<C-s>"`. Invalid values, including multi-key sequences,
+fall back to `"s"`.
 `keymapTimeout` is the wait for a multi-key mapping, in milliseconds (default: 500).
 
 Keymaps can use `normal`, `insert`, `submit`, a Vim sequence such as `y$`, or

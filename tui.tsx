@@ -90,7 +90,7 @@ function VimHost(props: { context: Context }) {
     const key = keyNotation(event as never)
     if (!key) return
     const mapped = normalMappings.some((sequence) => sequence.startsWith(key))
-    if (kind === "prompt" && key === "s" && !mapped && state.mode() === "normal" && !vimee.isPending()) {
+    if (kind === "prompt" && key === config.sessionKey && !mapped && state.mode() === "normal" && !vimee.isPending()) {
       if (session.enter()) {
         event.preventDefault()
         event.stopPropagation()

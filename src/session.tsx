@@ -121,13 +121,13 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
 
   const onKey = (event: KeyEvent) => {
     if (!active() || reading()) return
-    const key = readerKey(context, event)
+    const key = readerKey(context, event, config.sessionKey)
     if (!key) return
     event.preventDefault()
     event.stopPropagation()
     clearYankFlash()
     setNotice("")
-    if (key === "s" || key === "<Esc>" || key === "<C-[>") { close(); return }
+    if (key === config.sessionKey || key === "<Esc>" || key === "<C-[>") { close(); return }
     if (/^[0-9]$/.test(key) && (count || key !== "0")) { count = (count + key).slice(0, 6); return }
     const amount = Number(count) || 1
     count = ""
@@ -176,7 +176,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     active, enter, close,
     Status() {
       return <text fg={context.theme.text.feedback.warning.base}>
-        {notice() || "SESSION · Enter open · yy copy · s prompt"}
+        {notice() || `SESSION · Enter open · yy copy · ${config.sessionKey} prompt`}
       </text>
     },
   }
@@ -220,13 +220,13 @@ function MessageReader(props: {
   }
   const onKey = (event: KeyEvent) => {
     if (context.renderer.currentFocusedEditor !== input) return
-    const key = readerKey(context, event, "modal")
+    const key = readerKey(context, event, props.config.sessionKey, "modal")
     if (!key) return
     event.preventDefault()
     event.stopPropagation()
+    if (key === props.config.sessionKey && state.mode() === "normal" && !adapter.isPending()) { props.close(); return }
     // The host's Ctrl+C clears the editor unless we intercept it.
     if (key === "<C-c>") { props.back(); return }
-    if (key === "s" && state.mode() === "normal" && !adapter.isPending()) { props.close(); return }
     if ((key === "<Esc>" || key === "<C-[>") && state.mode() === "normal" && !adapter.isPending()) {
       props.back()
       return
@@ -275,18 +275,18 @@ function MessageReader(props: {
       <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexWrap="wrap" columnGap={3}>
         <text fg={theme().text.muted}>{modeLabel()} · {line()}/{input?.lineCount ?? 1}</text>
         <text fg={theme().text.muted}>
-          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : "v select · V lines · s prompt")}
+          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : `v select · V lines · ${props.config.sessionKey} prompt`)}
         </text>
       </box>
     </box>
   )
 }
 
-function readerKey(context: Context, event: KeyEvent, mode = SESSION_MODE) {
+function readerKey(context: Context, event: KeyEvent, sessionKey: string, mode = SESSION_MODE) {
   if (event.defaultPrevented || context.keymap.mode.current() !== mode) return
   if (context.keymap.pending().length || event.super || event.meta) return
   const key = keyNotation(event)
-  if (key && (!event.ctrl || key === "<C-[>" || pageCommand(key) || (mode === "modal" && key === "<C-c>"))) return key
+  if (key && (key === sessionKey || !event.ctrl || key === "<C-[>" || pageCommand(key) || (mode === "modal" && key === "<C-c>"))) return key
 }
 
 function pageCommand(key: string) {

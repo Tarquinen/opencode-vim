@@ -1,3 +1,4 @@
+import { parseKeySequence } from "@vimee/core"
 import type { VimMode } from "./state"
 
 export type VimCursorStyle = {
@@ -7,6 +8,7 @@ export type VimCursorStyle = {
 
 export type VimConfig = {
     defaultMode: VimMode
+    sessionKey: string
     keymapTimeout: number
     pendingDisplayDelay: number
     cursorStyles: Record<VimMode, VimCursorStyle>
@@ -17,6 +19,7 @@ export type VimConfig = {
 
 export type VimOptions = {
     defaultMode?: VimMode
+    sessionKey?: string
     keymapTimeout?: number
     pendingDisplayDelay?: number
     cursorStyles?: Partial<Record<VimMode, VimCursorStyle>>
@@ -39,6 +42,7 @@ export function createVimConfig(options: unknown): VimConfig {
     const input = readOptions(options)
     return {
         defaultMode: input.defaultMode ?? "insert",
+        sessionKey: input.sessionKey ?? "s",
         keymapTimeout: Math.max(0, input.keymapTimeout ?? 500),
         pendingDisplayDelay: Math.max(0, input.pendingDisplayDelay ?? 120),
         cursorStyles: {
@@ -61,6 +65,7 @@ function readOptions(options: unknown): VimOptions {
     const source = raw as Record<string, unknown>
     return {
         defaultMode: isMode(source.defaultMode) ? source.defaultMode : undefined,
+        sessionKey: readSessionKey(source.sessionKey),
         keymapTimeout: readNumber(source.keymapTimeout),
         pendingDisplayDelay: typeof source.pendingDisplayDelay === "number" ? source.pendingDisplayDelay : undefined,
         cursorStyles: readCursorStyles(source.cursorStyles),
@@ -68,6 +73,13 @@ function readOptions(options: unknown): VimOptions {
         debugPath: typeof source.debugPath === "string" ? source.debugPath : undefined,
         keymaps: readKeymaps(source.keymaps),
     }
+}
+
+function readSessionKey(input: unknown): string | undefined {
+    if (typeof input !== "string") return
+    try {
+        if (parseKeySequence(input).length === 1) return input
+    } catch {}
 }
 
 function readKeymaps(input: unknown): VimKeymaps | undefined {
