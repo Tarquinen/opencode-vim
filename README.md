@@ -1,19 +1,16 @@
 # opencode-vim
 
-Vim-style editing for the OpenCode 2 prompt and dialog search fields, plus a keyboard-driven session reader.
+Vim-style prompt editing and session navigation for OpenCode 2.
 
 ![Demo](./assets/demo2.gif)
 
 ## Installation
 
-Requires OpenCode 2. Install the published plugin:
+Requires OpenCode 2.
 
 ```sh
 opencode plugin add opencode-vim@latest
 ```
-
-This installs the package and adds it to `~/.config/opencode/cli.json`
-(or `$XDG_CONFIG_HOME/opencode/cli.json`). Restart the TUI after installation.
 
 To update:
 
@@ -21,14 +18,10 @@ To update:
 opencode plugin update opencode-vim@latest
 ```
 
-See OpenCode's [plugin installation](https://opencode.ai/v2/docs/plugins#manage)
-and [CLI plugin configuration](https://opencode.ai/v2/docs/cli/plugins) docs.
-
-## Supported Keys
+## Prompt editing
 
 Starts in insert mode. Press `Esc` to enter normal mode and `i` to type again.
-The current mode appears in the prompt footer. Pending key sequences stay hidden
-so they do not shift the layout.
+Use `/vim` to toggle the plugin on or off.
 
 | Key | Behavior |
 | --- | --- |
@@ -43,81 +36,48 @@ so they do not shift the layout.
 | `3w`, `diw`, `ci"`, `yiq`, `dip`, `yib` | Counts and text objects |
 | `k`, `j` on an empty or recalled prompt | Browse previous and next prompts |
 | `Enter` in normal mode | Submit the prompt |
-| `s` in normal mode | Toggle the session reader |
-| `/vim` | Toggle Vim mode on or off |
-
-Navigation follows LazyVim: plain `j`/`k` and Up/Down move through wrapped screen
-rows in normal and visual modes. Counts such as `1j` or `3k` move through actual
-newline-separated lines; `gj`/`gk` always use screen rows, including with counts.
-Wrapping is visual only: `0`/`$`, `A`, `dd`, `yy`, `V`, and operators such as `dj`
-still operate on actual lines.
-Resizing the prompt does not change its text or undo history.
+| `s` in normal mode | Enter session mode |
 
 ## Session mode
 
-In an existing session, press `s` from prompt normal mode to navigate the existing
-transcript, starting on the latest item each time. Each text block, reasoning block,
-tool call, or collapsed group is a separate stop. Visible items are highlighted
-in place. Off-screen items scroll into view at the nearest edge,
-without extra blank space below the transcript. A colored bar in the left margin
-marks the selected item. The footer stays fixed at `SESSION · Enter open · yy copy · s prompt`,
-with brief feedback after copying.
-Your prompt text, cursor, and undo history are preserved.
+Press `s` in normal mode to browse the session, starting at the latest item.
+A colored bar marks the selected text block, reasoning block, tool call, or group.
 
-- `j` / `k` or Up / Down: next / previous visible item; counts work too.
-- `gg` / `G`: first / last item. OpenCode loads older history as needed.
-- `yy`: copy the selected item's text to the clipboard and Vim's yank register, with the same brief highlight as prompt yanks.
-- `Enter` on a group: expand or collapse it in place. Expanded groups expose individual calls and reasoning blocks to `j` / `k`.
-- `Enter` on an item: open its text in a centered, read-only modal with a cursor. Message text retains its original Markdown; tools show their displayed details.
-- `v` / `V`, then motions and `y`: copy characters or whole lines. Yank text can be pasted into the prompt with `p`.
-- `Ctrl+d` / `Ctrl+u`: half-page down / up; `Ctrl+f` / `Ctrl+b` or Page Down / Up: full pages.
-- `Esc`: clear a text selection, return to the same transcript position, then leave session mode.
-- `s`: return directly to prompt normal mode from browsing or idle message normal mode.
+| Key | Behavior |
+| --- | --- |
+| `j`, `k` | Next / previous item; counts work too |
+| `gg`, `G` | First / last item |
+| `Enter` | Expand/collapse a group, or open an item in a read-only modal |
+| `yy` | Copy the selected item |
+| `Ctrl+d`, `Ctrl+u` | Scroll down / up |
+| `Esc` | Go back |
+| `s` | Return to the prompt |
 
-The message modal opens only on Enter, with the transcript visible behind it.
-While inside a message, streaming text is held still so it cannot move your selection;
-returning to the transcript shows the latest text.
-The toggle key is configurable with `options.vim.sessionKey` (default: `"s"`).
-Custom normal-mode mappings starting with the configured toggle key
-take precedence over opening the reader. Prompt editing mappings do not apply inside it.
+Inside the modal, use `v` or `V` to select text and `y` to copy it.
+Yanks go to both the clipboard and Vim's register, so `p` pastes into the prompt.
+Your prompt text and undo history are preserved.
 
 ## Dialogs
 
-Searchable dialogs such as `/models`, the `Ctrl+P` command palette, and Settings
-start in your configured `defaultMode`.
-
-- In insert mode, type to filter. `Esc` enters normal mode.
-- In normal mode, `j`/`k` select items; `h`/`l`, `x`, `dw`, `u`, and other editing
-  commands act on the search text. `i` returns to insert mode.
-- `Enter` selects the highlighted item. `Esc` in idle normal mode closes or goes
-  back. Arrows, Tab, Home/End, and Page Up/Down keep their dialog behavior.
-
-Dialog editing preserves the main prompt's mode and undo history. Custom normal-mode
-mappings take precedence over the dialog `j`/`k` defaults.
+Vim editing also works in search dialogs such as `/models` and `Ctrl+P`.
+Type to filter in insert mode; use `j`/`k` to choose items in normal mode.
+`Enter` confirms, and `Esc` in normal mode goes back.
 
 ## Configuration
 
-Replace the plugin's string entry in `cli.json` with an object to customize it.
-This example adds `kj` to leave insert mode, `Y` to yank to the end of the line,
-`q` to start a new session, and `Q` to toggle session mode:
+Replace the plugin entry in `cli.json` to customize it. This example uses `Q`
+for session mode and `kj` to leave insert mode:
 
 ```json
 {
-  "$schema": "https://opencode.ai/v2/cli.json",
   "plugins": [
     {
       "package": "opencode-vim@latest",
       "options": {
         "vim": {
-          "defaultMode": "insert",
           "sessionKey": "Q",
-          "keymapTimeout": 500,
           "keymaps": {
-            "insert": { "kj": "normal" },
-            "normal": {
-              "Y": "y$",
-              "q": "command:session.new"
-            }
+            "insert": { "kj": "normal" }
           }
         }
       }
@@ -126,18 +86,8 @@ This example adds `kj` to leave insert mode, `Y` to yank to the end of the line,
 }
 ```
 
-`defaultMode` defaults to `insert`; use `normal` to start in normal mode.
-`sessionKey` sets a single key for entering and leaving session mode, including from
-the message modal. Both footer hints use that key. Use a character such as `"Q"`
-or Vim notation such as `"<C-s>"`. Invalid values, including multi-key sequences,
-fall back to `"s"`.
-`keymapTimeout` is the wait for a multi-key mapping, in milliseconds (default: 500).
-
-Keymaps can use `normal`, `insert`, `submit`, a Vim sequence such as `y$`, or
-`command:<id>` for an active [OpenCode command](https://opencode.ai/v2/docs/cli/keybinds).
-Mappings are grouped by `insert`, `normal`, `visual`, or `visual-line` mode.
-Use notation such as `<Esc>`, `<CR>`, and `<C-s>` for special keys.
-
-Cursor styles can be set under `options.vim.cursorStyles`, for example
-`"normal": { "style": "block", "blinking": false }`. Available styles are
-`block`, `line`, `underline`, and `default`.
+- `sessionKey`: one key, such as `"Q"` or `"<C-s>"`. Defaults to `"s"`.
+- `defaultMode`: `"insert"` (default) or `"normal"`.
+- `keymaps`: mappings grouped by `insert`, `normal`, `visual`, or `visual-line`.
+  Actions can be Vim keys (`y$`), `normal`, `insert`, `submit`, or
+  `command:<id>` for an [OpenCode command](https://opencode.ai/v2/docs/cli/keybinds).
