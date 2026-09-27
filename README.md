@@ -10,11 +10,15 @@ Vim-style prompt editing and session navigation for OpenCode 2.
 opencode plugin add opencode-vim@latest
 ```
 
-Update with `opencode plugin update opencode-vim@latest`.
+## Updating
+
+```sh
+opencode plugin update opencode-vim@latest
+```
 
 ## Usage
 
-Starts in insert mode. Press `Esc` to enter normal mode and `i` to type again.
+Press `Esc` to enter normal mode and `i` to type again in insert mode.
 
 In a session, press `s` from normal mode to browse messages and tools. Use `j`/`k`
 to navigate, `Enter` to open an item, and `s` to return to the prompt.
