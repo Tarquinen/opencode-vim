@@ -2,7 +2,7 @@
 
 Vim-style prompt editing and session navigation for OpenCode 2.
 
-![Demo](./assets/demo2.gif)
+![Vim prompt editing, dialog navigation, and session mode](./assets/vim-in-motion-dialogs.gif)
 
 ## Installation
 
