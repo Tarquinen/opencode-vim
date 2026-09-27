@@ -1,7 +1,8 @@
 /** @jsxImportSource @opentui/solid */
 import type { Context } from "@opencode/plugin/tui/context"
 import { createClipboard, createHostClipboard, createRendererClipboardAdapter, type KeyEvent, type TextareaRenderable } from "@opentui/core"
-import { createEffect, createSignal, onCleanup, onMount, Show, untrack } from "solid-js"
+import { useTerminalDimensions } from "@opentui/solid"
+import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js"
 import type { PromptContext } from "./modules/vim/actions"
 import type { VimConfig } from "./modules/vim/config"
 import { keyNotation } from "./modules/vim/keys"
@@ -35,14 +36,24 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
 
   function close() {
     if (!active()) return
-    setReading(undefined)
+    const wasReading = Boolean(reading())
+    if (wasReading) context.ui.dialog.clear()
     setActive(false)
     context.renderer.removePostProcessFn(draw)
     popMode?.()
     popMode = undefined
     transcript = undefined
-    const route = context.ui.router.current()
-    if (route.type === "session" && route.sessionID === sessionID && prompt && !prompt.isDestroyed) prompt.focus()
+    const savedPrompt = prompt
+    const savedSessionID = sessionID
+    function restorePrompt() {
+      const route = context.ui.router.current()
+      if (!active() && context.keymap.mode.current() === "base" && route.type === "session"
+        && route.sessionID === savedSessionID && savedPrompt && !savedPrompt.isDestroyed) savedPrompt.focus()
+    }
+    restorePrompt()
+    // The dialog restores its previous focus on the next tick. Leaving session
+    // mode should restore the prompt after that, rather than the transcript.
+    if (wasReading) setTimeout(restorePrompt, 1)
     prompt = null
     context.renderer.requestRender()
   }
@@ -88,12 +99,17 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     noticeTimer = setTimeout(() => setNotice(""), 1500)
   }
 
-  function leaveMessage(offset: number) {
-    const message = reading()
-    if (message) positions.set(message.id, offset)
-    setReading(undefined)
-    setNotice("")
+  function openMessage(message: ReadableMessage) {
     transcript?.focus()
+    setReading(message)
+    context.ui.dialog.show(() => (
+      <MessageReader context={context} config={config} message={message} offset={positions.get(message.id) ?? 0}
+        copy={copy} notice={notice} remember={(offset) => positions.set(message.id, offset)}
+        back={() => context.ui.dialog.clear()} close={close} />
+    ), () => {
+      setReading(undefined)
+      setNotice("")
+    })
   }
 
   const onKey = (event: KeyEvent) => {
@@ -121,7 +137,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     else if (key === "<CR>") {
       transcript?.sync()
       const message = selected()
-      if (message) setReading(message)
+      if (message) openMessage(message)
     }
     if (command) {
       transcript?.followViewport()
@@ -149,12 +165,6 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
         {notice() || `SESSION · ${selected()?.author ?? "No message selected"} · j/k · Enter read · yy copy · s prompt`}
       </text>
     },
-    View() {
-      return <Show when={reading()} keyed>{(message) => (
-        <MessageReader context={context} config={config} message={message} offset={positions.get(message.id) ?? 0}
-          copy={copy} notice={notice} back={leaveMessage} close={close} />
-      )}</Show>
-    },
   }
 }
 
@@ -165,10 +175,15 @@ function MessageReader(props: {
   offset: number
   copy: (text: string) => void
   notice: () => string
-  back: (offset: number) => void
+  remember: (offset: number) => void
+  back: () => void
   close: () => void
 }) {
   const context = props.context
+  context.ui.dialog.set({ size: "large", centered: true })
+  const dimensions = useTerminalDimensions()
+  const theme = () => context.theme.surface("dialog")
+  const background = () => theme().background.raised.high
   const state = createVimState("normal")
   const [line, setLine] = createSignal(1)
   let input!: TextareaRenderable
@@ -178,9 +193,9 @@ function MessageReader(props: {
       renderer: { get currentFocusedRenderable() { return input } },
       keymap: { dispatchCommand: () => ({ ok: false }) },
       theme: { get current() { return {
-        warning: context.theme.text.feedback.warning.base,
-        info: context.theme.text.feedback.info.base,
-        background: context.theme.background.base,
+        warning: theme().text.feedback.warning.base,
+        info: theme().text.feedback.info.base,
+        background: background(),
       } } },
     },
     prompt: () => ({
@@ -189,18 +204,19 @@ function MessageReader(props: {
     }),
     requestRender: () => context.renderer.requestRender(),
   }
-  createEffect(() => {
-    if (context.keymap.mode.current() === SESSION_MODE) untrack(() => input.focus())
-  })
   const onKey = (event: KeyEvent) => {
-    const key = readerKey(context, event)
+    // A different dialog/editor can temporarily take focus.
+    if (context.renderer.currentFocusedEditor !== input) return
+    const key = readerKey(context, event, "modal")
     if (!key) return
     event.preventDefault()
     event.stopPropagation()
-    if (!input.focused) input.focus()
+    // OpenCode's default Ctrl+C handler clears the focused editor. This buffer
+    // is read-only, so dismiss the message instead.
+    if (key === "<C-c>") { props.back(); return }
     if (key === "s" && state.mode() === "normal" && !adapter.isPending()) { props.close(); return }
     if ((key === "<Esc>" || key === "<C-[>") && state.mode() === "normal" && !adapter.isPending()) {
-      props.back(input.cursorOffset)
+      props.back()
       return
     }
     if (pageCommand(key)) {
@@ -215,9 +231,11 @@ function MessageReader(props: {
     input.cursorOffset = Math.min(props.offset, displayWidth(input.plainText))
     adapter.attach(editorContext)
     setLine(input.logicalCursor.row + 1)
+    input.focus()
     context.renderer.keyInput.prependListener("keypress", onKey)
   })
   onCleanup(() => {
+    props.remember(input.cursorOffset)
     context.renderer.keyInput.off("keypress", onKey)
     adapter.cleanup()
   })
@@ -228,32 +246,35 @@ function MessageReader(props: {
     return "MESSAGE"
   }
   return (
-    <box id="vim-message-reader" position="absolute" top={0} left={0} width="100%" height="100%" zIndex={100}
-      paddingLeft={1} paddingRight={1} backgroundColor={context.theme.background.base}>
-      <box height={1} flexShrink={0} flexDirection="row" gap={2}>
-        <text fg={context.theme.text.feedback.warning.base}>{modeLabel()}</text>
-        <text fg={context.theme.text.muted}>{props.message.author} · {line()}/{input?.lineCount ?? 1}</text>
+    <box id="vim-message-reader" gap={1}>
+      <box paddingLeft={2} paddingRight={2} flexDirection="row" justifyContent="space-between">
+        <text fg={theme().text.base}><b>{props.message.author}</b></text>
+        <text id="vim-message-close" fg={theme().text.muted} onMouseUp={props.back}>esc</text>
       </box>
-      <textarea id="vim-session-message" ref={(value: TextareaRenderable) => {
-        input = value
-        input.handleKeyPress = () => true
-        input.handlePaste = () => {}
-      }} initialValue={props.message.text} flexGrow={1} minHeight={0} wrapMode="word" showCursor
-        cursorStyle={props.config.cursorStyles.normal} textColor={context.theme.text.base}
-        backgroundColor={context.theme.background.base} focusedBackgroundColor={context.theme.background.base}
-        focusedTextColor={context.theme.text.base} />
-      <text height={1} flexShrink={0} fg={context.theme.text.muted}>
-        {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : "v select · V lines · Esc back · s prompt")}
-      </text>
+      <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={background()}>
+        <textarea id="vim-session-message" ref={(value: TextareaRenderable) => {
+          input = value
+          input.handleKeyPress = () => true
+          input.handlePaste = () => {}
+        }} initialValue={props.message.text} minHeight={1} maxHeight={Math.max(1, Math.min(20, dimensions().height - 10))}
+          wrapMode="word" showCursor cursorStyle={props.config.cursorStyles.normal} textColor={theme().text.base}
+          backgroundColor={background()} focusedBackgroundColor={background()} focusedTextColor={theme().text.base} />
+      </box>
+      <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexWrap="wrap" columnGap={3}>
+        <text fg={theme().text.muted}>{modeLabel()} · {line()}/{input?.lineCount ?? 1}</text>
+        <text fg={theme().text.muted}>
+          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : "v select · V lines · s prompt")}
+        </text>
+      </box>
     </box>
   )
 }
 
-function readerKey(context: Context, event: KeyEvent) {
-  if (event.defaultPrevented || context.keymap.mode.current() !== SESSION_MODE) return
+function readerKey(context: Context, event: KeyEvent, mode = SESSION_MODE) {
+  if (event.defaultPrevented || context.keymap.mode.current() !== mode) return
   if (context.keymap.pending().length || event.super || event.meta) return
   const key = keyNotation(event)
-  if (key && (!event.ctrl || key === "<C-[>" || pageCommand(key))) return key
+  if (key && (!event.ctrl || key === "<C-[>" || pageCommand(key) || (mode === "modal" && key === "<C-c>"))) return key
 }
 
 function pageCommand(key: string) {

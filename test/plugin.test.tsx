@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test"
 import { InputRenderable, RGBA, ScrollBoxRenderable, TextareaRenderable } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
-import { render, type JSX } from "@opentui/solid"
+import { render, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
 import { Plugin } from "@opencode/plugin/tui"
 import { createSignal, For, Show } from "solid-js"
@@ -33,6 +33,10 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
     const [commands, setCommands] = createSignal([{ id: "prompt.submit" }])
     const [route, setRoute] = createSignal<{ type: "home" } | { type: "session"; sessionID: string }>(session ? { type: "session", sessionID: "session-1" } : { type: "home" })
     const [messages, setMessages] = createSignal(session?.messages ?? [])
+    const [dialog, setDialog] = createSignal<{ render: () => JSX.Element; onClose?: () => void }>()
+    const [dialogOptions, setDialogOptions] = createSignal<{ size?: string; centered?: boolean }>({})
+    let modalReturnMode = "base"
+    let modalReturnFocus = screen.renderer.currentFocusedRenderable
     const [slack, setSlack] = createSignal(0)
     const [windowStart, setWindowStart] = createSignal(session?.window?.start ?? 0)
     const [windowEnd, setWindowEnd] = createSignal(session?.window?.end)
@@ -52,9 +56,10 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         renderer: screen.renderer,
         options: { defaultMode: "normal", pendingDisplayDelay: 0, ...options },
         get theme() {
-            return { background: { base: RGBA.fromHex("#000000") }, text: { base: RGBA.fromHex("#ffffff"), muted: RGBA.fromHex("#888888"), feedback: {
+            const tokens = { background: { base: RGBA.fromHex("#000000"), raised: { high: RGBA.fromHex("#222222") } }, text: { base: RGBA.fromHex("#ffffff"), muted: RGBA.fromHex("#888888"), feedback: {
                 success: { base: success() }, warning: { base: RGBA.fromHex("#ffff00") }, info: { base: RGBA.fromHex("#00ffff") },
             } } }
+            return { ...tokens, surface: () => tokens }
         },
         storage: { store: () => [{ get enabled() { return enabled() } }, (fn: (draft: { enabled: boolean }) => void) => {
             const draft = { enabled: enabled() }; fn(draft); setEnabled(draft.enabled)
@@ -109,6 +114,27 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         data: { session: { message: { list: messages } } },
         ui: {
             router: { current: route }, toast: { show() {} },
+            dialog: {
+                show(view: () => JSX.Element, onClose?: () => void) {
+                    if (!dialog()) {
+                        modalReturnMode = hostMode()
+                        modalReturnFocus = screen.renderer.currentFocusedRenderable
+                        modalReturnFocus?.blur()
+                    }
+                    dialog()?.onClose?.()
+                    setHostMode("modal")
+                    setDialog({ render: view, onClose })
+                },
+                set: setDialogOptions,
+                clear() {
+                    dialog()?.onClose?.()
+                    setDialog(undefined)
+                    setHostMode(modalReturnMode)
+                    setTimeout(() => {
+                        if (!dialog() && modalReturnFocus && !modalReturnFocus.isDestroyed) modalReturnFocus.focus()
+                    }, 1)
+                },
+            },
             slot(slot: { append?: string; render: (props: any) => JSX.Element }) {
                 if (slot.append === "app") void render(() => <>
                     <Show when={session}>
@@ -125,12 +151,30 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
                         </scrollbox>
                     </Show>
                     {mounted() ? slot.render({ mode: "normal" }) : null}{footer()()}
+                    <Show when={dialog()} keyed>{(item) => <Modal>{item.render()}</Modal>}</Show>
                 </>, screen.renderer)
                 else setFooter(() => () => slot.render({ mode: "normal" }))
                 return () => setFooter(() => () => null)
             },
         },
     }
+    function Modal(props: { children: JSX.Element }) {
+        const dimensions = useTerminalDimensions()
+        return <box position="absolute" top={0} left={0} width={dimensions().width} height={dimensions().height}
+            zIndex={3000} alignItems="center" justifyContent={dialogOptions().centered ? "center" : undefined}
+            backgroundColor={RGBA.fromInts(0, 0, 0, 150)} onMouseUp={() => context.ui.dialog.clear()}>
+            <box id="host-dialog" width={dialogOptions().size === "large" ? 88 : 60} maxWidth={dimensions().width - 2}
+                paddingTop={1} backgroundColor={context.theme.background.base} onMouseUp={(event) => event.stopPropagation()}>
+                {props.children}
+            </box>
+        </box>
+    }
+    screen.renderer.keyInput.on("keypress", (event) => {
+        if (event.defaultPrevented || !dialog()) return
+        if (event.name === "escape") context.ui.dialog.clear()
+        // Match the native dialog shortcut: reader handling must prevent this.
+        if (event.ctrl && event.name === "c") screen.renderer.currentFocusedEditor?.setText("")
+    })
     plugin.setup(context as unknown as Parameters<typeof plugin.setup>[0])
     await screen.renderOnce()
     transcript?.scrollTo(transcript.scrollHeight)
@@ -179,7 +223,8 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         dialogReturnInput?.focus()
     }
     return { ...screen, renderOnce, input, toggle, setSuccess, setPending, openDialog, closeDialog, dispatched, hostMode, setRoute,
-        setMessages, copied, transcript: () => transcript!,
+        setMessages, copied, dialog, dialogOptions, clearModal: () => context.ui.dialog.clear(),
+        replaceModal: () => context.ui.dialog.show(() => <text>Another dialog</text>), transcript: () => transcript!,
         async scrollTranscript(position: number | "bottom") {
             navigationID = undefined
             setSlack(0)
@@ -460,8 +505,17 @@ test("entering a message reveals a cursor, supports visual yanks and returns in 
     await f.keys("s")
     f.dispatched.length = 0
     const scroll = f.transcript().scrollTop
+    const rows = f.transcript().getChildren().map((row) => [row.id, row.y, row.height])
     f.mockInput.pressEnter()
     await f.keys("wvll")
+    expect(f.dialogOptions()).toEqual({ size: "large", centered: true })
+    expect(f.hostMode()).toBe("modal")
+    const modal = f.renderer.root.findDescendantById("host-dialog")!
+    expect(modal.x).toBeGreaterThan(0)
+    expect(modal.y).toBeGreaterThan(0)
+    expect(modal.y + modal.height).toBeLessThan(f.renderer.height)
+    expect(Math.abs(modal.y - (f.renderer.height - modal.height) / 2)).toBeLessThanOrEqual(1)
+    expect(f.transcript().getChildren().map((row) => [row.id, row.y, row.height])).toEqual(rows)
     expect(f.reader().showCursor).toBe(true)
     expect(f.reader().getSelectedText()).toBe("two")
     expect(f.captureCharFrame()).toContain("VISUAL")
@@ -470,6 +524,8 @@ test("entering a message reveals a cursor, supports visual yanks and returns in 
     f.mockInput.pressEscape()
     await f.renderOnce()
     expect(f.reader()).toBeUndefined()
+    expect(f.dialog()).toBeUndefined()
+    expect(f.hostMode()).toBe("opencode-vim.session")
     expect(f.transcript().scrollTop).toBe(scroll)
     f.mockInput.pressEnter()
     expect(f.reader().cursorOffset).toBe(4)
@@ -533,12 +589,61 @@ test("paging a long message scrolls the viewport and retains its position", asyn
     f.mockInput.pressKey("f", { ctrl: true })
     await f.renderOnce()
     expect(f.reader().scrollY).toBeGreaterThan(0)
+    expect(f.reader().height).toBeLessThan(f.renderer.height / 2)
+    f.resize(44, 20)
+    await f.renderOnce()
+    const modal = f.renderer.root.findDescendantById("host-dialog")!
+    expect(modal.width).toBeLessThan(44)
+    expect(modal.height).toBeLessThan(20)
+    expect(f.reader().plainText).toBe(text)
     const offset = f.reader().cursorOffset
     f.mockInput.pressEscape()
     f.mockInput.pressEnter()
     expect(f.reader().cursorOffset).toBe(offset)
     f.mockInput.pressKey("u", { ctrl: true })
     expect(f.reader().cursorOffset).toBeLessThan(offset)
+})
+
+test("message modal dismissals restore browsing and save the cursor", async () => {
+    const f = await mount({}, { messages: [message(1, "one two three")] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.keys("w")
+    const close = f.renderer.root.findDescendantById("vim-message-close")!
+    await f.mockMouse.click(close.x, close.y)
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+    expect(f.hostMode()).toBe("opencode-vim.session")
+    expect(f.captureCharFrame()).toContain("▎one two three")
+    f.mockInput.pressEnter()
+    expect(f.reader().cursorOffset).toBe(4)
+    await f.renderOnce()
+    await f.mockMouse.click(0, 0)
+    expect(f.reader()).toBeUndefined()
+    f.mockInput.pressEnter()
+    f.mockInput.pressKey("c", { ctrl: true })
+    expect(f.reader()).toBeUndefined()
+    expect(f.hostMode()).toBe("opencode-vim.session")
+    await f.keys("yy")
+    expect(f.copied.at(-1)).toBe("one two three")
+    expect(f.input.plainText).toBe("hello")
+})
+
+test("replacing the message modal disposes its keys without closing the replacement", async () => {
+    const f = await mount({}, { messages: [message(1, "Answer")] })
+    await f.keys("s")
+    const listeners = f.renderer.keyInput.listenerCount("keypress")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    f.replaceModal()
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+    expect(f.renderer.keyInput.listenerCount("keypress")).toBe(listeners)
+    expect(f.captureCharFrame()).toContain("Another dialog")
+    f.toggle()
+    expect(f.dialog()).toBeDefined()
+    expect(f.captureCharFrame()).toContain("Another dialog")
+    f.clearModal()
 })
 
 test("empty sessions use the native transcript and can be exited", async () => {

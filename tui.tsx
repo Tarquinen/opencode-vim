@@ -147,7 +147,7 @@ function VimHost(props: { context: Context }) {
     restoreCursor()
   })
 
-  return <session.View />
+  return null
 
   function syncCursor(force = false) {
     const input = props.context.renderer.currentFocusedEditor

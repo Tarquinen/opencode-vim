@@ -65,13 +65,13 @@ Your prompt text, cursor, and undo history are preserved.
 - `j` / `k` or Up / Down: next / previous message; counts work too.
 - `gg` / `G`: first / last message. OpenCode loads older history as needed.
 - `yy`: copy the entire selected message to the clipboard and Vim's yank register.
-- `Enter`: open the selected message's original Markdown in a read-only text reader with a cursor.
+- `Enter`: open the selected message's original Markdown in a centered, read-only modal with a cursor.
 - `v` / `V`, then motions and `y`: copy characters or whole lines. Yank text can be pasted into the prompt with `p`.
 - `Ctrl+d` / `Ctrl+u`: half-page down / up; `Ctrl+f` / `Ctrl+b` or Page Down / Up: full pages.
 - `Esc`: clear a text selection, return to the same transcript position, then leave session mode.
 - `s`: return directly to prompt normal mode from browsing or idle message normal mode.
 
-The text reader opens only on Enter and does not resize or replace the transcript.
+The message modal opens only on Enter, with the transcript visible behind it.
 While inside a message, streaming text is held still so it cannot move your selection;
 returning to the transcript shows the latest text.
 Tool-only messages are skipped. Custom normal-mode mappings starting with `s`
