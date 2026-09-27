@@ -11,6 +11,7 @@ import { displayToChar } from "./src/modules/vim/map"
 import { createVimState } from "./src/modules/vim/state"
 import { createVimeeAdapter } from "./src/modules/vim/vimee"
 import { VimStatus } from "./view"
+import { SESSION_MODE, createSessionMode } from "./src/session"
 
 type Context = Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0]
 
@@ -38,11 +39,12 @@ function VimHost(props: { context: Context }) {
   let cursorMode = ""
   let cursorInput: typeof props.context.renderer.currentFocusedEditor = null
   let originalCursorStyle: CursorStyleOptions | undefined
+  const session = createSessionMode(props.context, config, (text) => vimee.setRegister(text))
 
   const removeStatus = props.context.ui.slot({
     prepend: "prompt.footer",
     render: (footer) =>
-      footer.mode === "normal" ? (
+      footer.mode === "normal" ? session.active() ? <session.Status /> : (
         <VimStatus
           mode={state.mode}
           enabled={enabled}
@@ -67,6 +69,7 @@ function VimHost(props: { context: Context }) {
             draft.enabled = next
           })
           if (!next) {
+            session.close()
             vimee.suspend()
             dialogVimee.suspend()
           }
@@ -79,6 +82,7 @@ function VimHost(props: { context: Context }) {
 
   const onKey = (event: KeyEvent) => {
     if (!enabled() || event.defaultPrevented) return
+    if (props.context.keymap.mode.current() === SESSION_MODE) return
     const kind = inputKind(props.context)
     if (!kind) return
     if (props.context.keymap.pending().length) return
@@ -86,6 +90,13 @@ function VimHost(props: { context: Context }) {
     const key = keyNotation(event as never)
     if (!key) return
     const mapped = normalMappings.some((sequence) => sequence.startsWith(key))
+    if (kind === "prompt" && key === config.sessionKey && !mapped && state.mode() === "normal" && !vimee.isPending()) {
+      if (session.enter()) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
+    }
     if (passThroughKey(event, key, state.mode(), vimee.isPending(), mapped)) return
     if (key === "<Esc>" && state.mode() === "normal" && !vimee.isPending()) return
 
@@ -128,6 +139,7 @@ function VimHost(props: { context: Context }) {
   createEffect(() => syncCursor())
   onCleanup(() => {
     removeStatus()
+    session.close()
     props.context.renderer.keyInput.off("keypress", onKey)
     props.context.renderer.off("focused_editor", onFocus)
     vimee.cleanup()
@@ -219,6 +231,7 @@ function createCompatContext(context: Context) {
 }
 
 function inputKind(context: Context): "prompt" | "dialog" | undefined {
+  if (context.keymap.mode.current() === SESSION_MODE) return
   if (!context.renderer.currentFocusedEditor) return
   const commands = context.keymap.commands()
   if (context.keymap.mode.current() === "modal") {

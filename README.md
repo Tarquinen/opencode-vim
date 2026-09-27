@@ -1,6 +1,6 @@
 # opencode-vim
 
-Vim-style editing for the OpenCode 2 prompt and dialog search fields.
+Vim-style editing for the OpenCode 2 prompt and dialog search fields, plus a keyboard-driven session reader.
 
 ![Demo](./assets/demo2.gif)
 
@@ -43,6 +43,7 @@ so they do not shift the layout.
 | `3w`, `diw`, `ci"`, `yiq`, `dip`, `yib` | Counts and text objects |
 | `k`, `j` on an empty or recalled prompt | Browse previous and next prompts |
 | `Enter` in normal mode | Submit the prompt |
+| `s` in normal mode | Toggle the session reader |
 | `/vim` | Toggle Vim mode on or off |
 
 Navigation follows LazyVim: plain `j`/`k` and Up/Down move through wrapped screen
@@ -51,6 +52,34 @@ newline-separated lines; `gj`/`gk` always use screen rows, including with counts
 Wrapping is visual only: `0`/`$`, `A`, `dd`, `yy`, `V`, and operators such as `dj`
 still operate on actual lines.
 Resizing the prompt does not change its text or undo history.
+
+## Session mode
+
+In an existing session, press `s` from prompt normal mode to navigate the existing
+transcript, starting on the latest item each time. Each text block, reasoning block,
+tool call, or collapsed group is a separate stop. Visible items are highlighted
+in place. Off-screen items scroll into view at the nearest edge,
+without extra blank space below the transcript. A colored bar in the left margin
+marks the selected item. The footer stays fixed at `SESSION · Enter open · yy copy · s prompt`,
+with brief feedback after copying.
+Your prompt text, cursor, and undo history are preserved.
+
+- `j` / `k` or Up / Down: next / previous visible item; counts work too.
+- `gg` / `G`: first / last item. OpenCode loads older history as needed.
+- `yy`: copy the selected item's text to the clipboard and Vim's yank register, with the same brief highlight as prompt yanks.
+- `Enter` on a group: expand or collapse it in place. Expanded groups expose individual calls and reasoning blocks to `j` / `k`.
+- `Enter` on an item: open its text in a centered, read-only modal with a cursor. Message text retains its original Markdown; tools show their displayed details.
+- `v` / `V`, then motions and `y`: copy characters or whole lines. Yank text can be pasted into the prompt with `p`.
+- `Ctrl+d` / `Ctrl+u`: half-page down / up; `Ctrl+f` / `Ctrl+b` or Page Down / Up: full pages.
+- `Esc`: clear a text selection, return to the same transcript position, then leave session mode.
+- `s`: return directly to prompt normal mode from browsing or idle message normal mode.
+
+The message modal opens only on Enter, with the transcript visible behind it.
+While inside a message, streaming text is held still so it cannot move your selection;
+returning to the transcript shows the latest text.
+The toggle key is configurable with `options.vim.sessionKey` (default: `"s"`).
+Custom normal-mode mappings starting with the configured toggle key
+take precedence over opening the reader. Prompt editing mappings do not apply inside it.
 
 ## Dialogs
 
@@ -70,7 +99,7 @@ mappings take precedence over the dialog `j`/`k` defaults.
 
 Replace the plugin's string entry in `cli.json` with an object to customize it.
 This example adds `kj` to leave insert mode, `Y` to yank to the end of the line,
-and `q` to start a new session:
+`q` to start a new session, and `Q` to toggle session mode:
 
 ```json
 {
@@ -81,6 +110,7 @@ and `q` to start a new session:
       "options": {
         "vim": {
           "defaultMode": "insert",
+          "sessionKey": "Q",
           "keymapTimeout": 500,
           "keymaps": {
             "insert": { "kj": "normal" },
@@ -97,6 +127,10 @@ and `q` to start a new session:
 ```
 
 `defaultMode` defaults to `insert`; use `normal` to start in normal mode.
+`sessionKey` sets a single key for entering and leaving session mode, including from
+the message modal. Both footer hints use that key. Use a character such as `"Q"`
+or Vim notation such as `"<C-s>"`. Invalid values, including multi-key sequences,
+fall back to `"s"`.
 `keymapTimeout` is the wait for a multi-key mapping, in milliseconds (default: 500).
 
 Keymaps can use `normal`, `insert`, `submit`, a Vim sequence such as `y$`, or
