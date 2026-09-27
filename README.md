@@ -60,13 +60,13 @@ transcript, starting on the latest item each time. Each text block, reasoning bl
 tool call, or collapsed group is a separate stop. Visible items are highlighted
 in place. Off-screen items scroll into view at the nearest edge,
 without extra blank space below the transcript. A colored bar in the left margin
-marks the selected item. The footer stays fixed at `SESSION · Enter open · s prompt`,
+marks the selected item. The footer stays fixed at `SESSION · Enter open · yy copy · s prompt`,
 with brief feedback after copying.
 Your prompt text, cursor, and undo history are preserved.
 
 - `j` / `k` or Up / Down: next / previous visible item; counts work too.
 - `gg` / `G`: first / last item. OpenCode loads older history as needed.
-- `yy`: copy the selected item's text to the clipboard and Vim's yank register.
+- `yy`: copy the selected item's text to the clipboard and Vim's yank register, with the same brief highlight as prompt yanks.
 - `Enter` on a group: expand or collapse it in place. Expanded groups expose individual calls and reasoning blocks to `j` / `k`.
 - `Enter` on an item: open its text in a centered, read-only modal with a cursor. Message text retains its original Markdown; tools show their displayed details.
 - `v` / `V`, then motions and `y`: copy characters or whole lines. Yank text can be pasted into the prompt with `p`.

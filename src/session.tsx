@@ -8,7 +8,7 @@ import type { VimConfig } from "./modules/vim/config"
 import { keyNotation } from "./modules/vim/keys"
 import { displayWidth } from "./modules/vim/map"
 import { createVimState } from "./modules/vim/state"
-import { createVimeeAdapter } from "./modules/vim/vimee"
+import { createVimeeAdapter, YANK_FLASH_MS } from "./modules/vim/vimee"
 import { createTranscriptSelection } from "./transcript"
 import type { TranscriptItem } from "./transcript-items"
 
@@ -29,13 +29,24 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
   let count = ""
   let disposed = false
   let noticeTimer: ReturnType<typeof setTimeout> | undefined
+  let yankTimer: ReturnType<typeof setTimeout> | undefined
+  let yankID: string | undefined
 
   function selected() {
     return transcript?.get(selectedID)
   }
 
+  function clearYankFlash() {
+    if (yankTimer) clearTimeout(yankTimer)
+    yankTimer = undefined
+    if (!yankID) return
+    yankID = undefined
+    context.renderer.requestRender()
+  }
+
   function close() {
     if (!active()) return
+    clearYankFlash()
     const wasReading = Boolean(reading())
     if (wasReading) context.ui.dialog.clear()
     setActive(false)
@@ -80,7 +91,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
   }
 
   const draw: Parameters<Context["renderer"]["addPostProcessFn"]>[0] = (buffer) => {
-    if (active() && !reading() && context.keymap.mode.current() === SESSION_MODE) transcript?.draw(buffer)
+    if (active() && !reading() && context.keymap.mode.current() === SESSION_MODE) transcript?.draw(buffer, yankID)
   }
 
   async function copy(text: string) {
@@ -115,6 +126,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     if (!key) return
     event.preventDefault()
     event.stopPropagation()
+    clearYankFlash()
     setNotice("")
     if (key === "s" || key === "<Esc>" || key === "<C-[>") { close(); return }
     if (/^[0-9]$/.test(key) && (count || key !== "0")) { count = (count + key).slice(0, 6); return }
@@ -129,7 +141,12 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     else if (key === "g" && previous === "g") command = "session.first"
     else if (key === "y" && previous === "y") {
       const message = selected()
-      if (message) void copy(message.text)
+      if (message) {
+        yankID = message.id
+        yankTimer = setTimeout(clearYankFlash, YANK_FLASH_MS)
+        context.renderer.requestRender()
+        void copy(message.text)
+      }
     } else if (key === "g" || key === "y") prefix = key
     else if (key === "<CR>") {
       transcript?.sync()
@@ -160,7 +177,7 @@ export function createSessionMode(context: Context, config: VimConfig, onYank: (
     active, enter, close,
     Status() {
       return <text fg={context.theme.text.feedback.warning.base}>
-        {notice() || "SESSION · Enter open · s prompt"}
+        {notice() || "SESSION · Enter open · yy copy · s prompt"}
       </text>
     },
   }

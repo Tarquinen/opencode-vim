@@ -456,7 +456,7 @@ test("s marks the existing transcript without changing its layout or opening a r
     const before = f.captureCharFrame().split("\n").slice(0, 10).join("\n")
     await f.keys("s")
     expect(f.hostMode()).toBe("opencode-vim.session")
-    expect(f.captureCharFrame()).toContain("SESSION · Enter open · s prompt")
+    expect(f.captureCharFrame()).toContain("SESSION · Enter open · yy copy · s prompt")
     expect(f.captureCharFrame()).toContain("▎Answer")
     expect(f.reader()).toBeUndefined()
     expect({ y: row.y, height: row.height, width: row.width, scroll: f.transcript().scrollTop }).toEqual(layout)
@@ -499,7 +499,7 @@ test("message navigation uses native history loading and marks newly mounted mes
     expect(f.dispatched).not.toContain("session.message.previous")
     await f.keys("gg")
     expect(f.captureCharFrame()).toContain("▎First")
-    expect(f.captureCharFrame()).toContain("SESSION · Enter open · s prompt")
+    expect(f.captureCharFrame()).toContain("SESSION · Enter open · yy copy · s prompt")
     await f.keys("2j")
     expect(f.captureCharFrame()).toContain("▎Third")
     f.setMessages([...recent, message(6, "Sixth")])
@@ -516,6 +516,48 @@ test("whole-message yank preserves Markdown and can be pasted in the prompt", as
     expect(f.copied).toEqual([text])
     await f.keys("s$p")
     expect(f.input.plainText).toBe("hello" + text)
+})
+
+test("session yy briefly highlights only the copied item without changing its text or layout", async () => {
+    const text = "Yanked 中 👍🏽 é\nSecond line"
+    const f = await mount({}, { messages: [message(1, "Question", "user"), message(2, text)] })
+    await f.keys("s")
+    const before = f.captureSpans().lines.slice(0, 10)
+    const characters = f.captureCharFrame().split("\n").slice(0, 10)
+    const scroll = f.transcript().scrollTop
+    await f.keys("yy")
+    const spans = f.captureSpans().lines.flatMap((line) => line.spans)
+    for (const part of text.split("\n")) {
+        const span = spans.find((span) => span.text.includes(part))
+        expect(span?.bg).toEqual(RGBA.fromHex("#00ffff"))
+        expect(span?.fg).toEqual(RGBA.fromHex("#000000"))
+    }
+    expect(spans.find((span) => span.text.includes("Question"))?.bg).not.toEqual(RGBA.fromHex("#00ffff"))
+    expect(f.captureCharFrame().split("\n").slice(0, 10)).toEqual(characters)
+    expect(f.transcript().scrollTop).toBe(scroll)
+    expect(f.copied).toEqual([text])
+    await Bun.sleep(280)
+    await f.renderOnce()
+    expect(f.captureSpans().lines.slice(0, 10)).toEqual(before)
+})
+
+test("session yank flashes stay inside the viewport and clear on navigation or exit", async () => {
+    const text = Array.from({ length: 24 }, (_, index) => `row ${index} 中`).join("\n")
+    const f = await mount({}, { messages: [message(1, "Question", "user"), message(2, text)] })
+    await f.keys("syy")
+    const view = f.transcript().viewport
+    const flashed = f.captureSpans().lines
+    for (let y = 0; y < flashed.length; y++) {
+        expect(flashed[y].spans.some((span) => span.bg.equals(RGBA.fromHex("#00ffff"))))
+            .toBe(y >= view.y && y < view.y + view.height)
+    }
+    expect(f.copied).toEqual([text])
+    await f.keys("k")
+    expect(f.captureSpans().lines.flatMap((line) => line.spans).some((span) => span.bg.equals(RGBA.fromHex("#00ffff")))).toBe(false)
+    await f.keys("yy")
+    expect(f.captureSpans().lines.flatMap((line) => line.spans).some((span) => span.bg.equals(RGBA.fromHex("#00ffff")))).toBe(true)
+    await f.keys("ss")
+    expect(f.captureSpans().lines.flatMap((line) => line.spans).some((span) => span.bg.equals(RGBA.fromHex("#00ffff")))).toBe(false)
 })
 
 test("entering a message reveals a cursor, supports visual yanks and returns in steps", async () => {
@@ -667,7 +709,7 @@ test("replacing the message modal disposes its keys without closing the replacem
 test("empty sessions use the native transcript and can be exited", async () => {
     const f = await mount({}, { messages: [] })
     await f.keys("s")
-    expect(f.captureCharFrame()).toContain("SESSION · Enter open · s prompt")
+    expect(f.captureCharFrame()).toContain("SESSION · Enter open · yy copy · s prompt")
     expect(f.reader()).toBeUndefined()
     await f.keys("k")
     await f.renderOnce()
@@ -772,7 +814,7 @@ test("collapsed tool groups expand in place and individual calls can be read and
     const f = await mount({}, { messages: [first, second, message(3, "Done")], group: ["1", "2"] })
     await f.keys("sk")
     expect(f.captureCharFrame()).toContain("▎→Explored: 2 reads")
-    expect(f.captureCharFrame()).toContain("SESSION · Enter open · s prompt")
+    expect(f.captureCharFrame()).toContain("SESSION · Enter open · yy copy · s prompt")
     f.mockInput.pressEnter()
     await f.renderOnce()
     expect(f.reader()).toBeUndefined()

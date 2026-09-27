@@ -146,14 +146,31 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     followViewport() { navigation = undefined; requestedID = undefined; selectedParents = [] },
     focus() { inspect()?.scroll.focus() },
     sync() { advance(); navigation = undefined; return inspect() },
-    draw(buffer: OptimizedBuffer) {
+    draw(buffer: OptimizedBuffer, yankID?: string) {
       advance()
       const view = inspect()
       if (!view?.selected) return
-      const x = view.scroll.x - 1
-      if (x < 0) return
       const top = Math.max(0, view.top, view.selected.top)
       const bottom = Math.min(buffer.height, view.bottom, view.selected.bottom)
+      if (view.selected.id === yankID) {
+        const node = view.selected.node
+        const left = Math.max(0, view.scroll.viewport.x, node.x)
+        const right = Math.min(buffer.width, view.scroll.viewport.x + view.scroll.viewport.width, node.x + node.width)
+        const foreground = context.theme.background.base.buffer
+        const background = context.theme.text.feedback.info.base.buffer
+        const colors = buffer.buffers
+        // Recolor existing cells so Markdown, wide graphemes and their layout
+        // stay intact. Each cell's foreground/background has four RGBA channels.
+        for (let y = top; y < bottom; y++) {
+          for (let x = left; x < right; x++) {
+            const offset = (y * buffer.width + x) * 4
+            colors.fg.set(foreground, offset)
+            colors.bg.set(background, offset)
+          }
+        }
+      }
+      const x = view.scroll.x - 1
+      if (x < 0) return
       for (let y = top; y < bottom; y++) {
         buffer.drawText("▎", x, y, context.theme.text.feedback.warning.base, context.theme.background.base)
       }

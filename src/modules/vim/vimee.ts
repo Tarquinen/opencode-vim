@@ -14,7 +14,7 @@ type HostKeybindAction = "normal" | "submit" | "command"
 type HostKeybindDefinition = KeybindDefinition & { hostAction?: HostKeybindAction; command?: string }
 type HostRange = { start: number; end: number }
 
-const YANK_FLASH_MS = 250
+export const YANK_FLASH_MS = 250
 
 export type VimeeAdapter = ReturnType<typeof createVimeeAdapter>
 
