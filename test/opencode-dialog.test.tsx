@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import * as pluginModule from "@opencode/plugin/tui"
 import { InputRenderable, TextareaRenderable } from "@opentui/core"
 import { testRender, type JSX } from "@opentui/solid"
 import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
@@ -20,7 +21,7 @@ test.skipIf(!process.env.OPENCODE_SOURCE)("OpenCode dialogs: Vim filtering and t
             build.onLoad({ filter: /[/\\]node_modules[/\\]solid-js[/\\]store[/\\]dist[/\\]store\.js$/ }, () => ({ exports: store, loader: "object" }))
         },
     })
-    ensureRuntimePluginSupport()
+    ensureRuntimePluginSupport({ additional: { "@opencode/plugin/tui": pluginModule } })
     const root = `${process.env.OPENCODE_SOURCE}/packages/tui`
     const [{ ConfigProvider }, { ThemeProvider, useThemes }, { Keymap }, { DialogProvider, useDialog },
         { DialogSelect }, { ToastProvider }, { TestTuiContexts }, { createTuiResolvedConfig }] = await Promise.all([
