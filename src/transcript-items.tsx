@@ -61,13 +61,19 @@ function textOf(node: Renderable): string {
   return text
 }
 
-function groupAt(node: Renderable) {
+export function groupAt(node: Renderable) {
   const header = node.getChildren()[0]
   if (!header) return
-  // InlineToolRow's icon/label pair distinguishes disclosures from tool output.
-  const cells = header.getChildren()[0]?.getChildren() ?? []
-  if (cells.length < 2 || !cells.every((cell) => cell instanceof TextBufferRenderable)) return
-  const label = cells.slice(1).map((cell) => (cell as TextBufferRenderable).plainText).join(" ").trim()
+  const body = header.getChildren()[0]
+  let label: string
+  if (body instanceof TextBufferRenderable) {
+    if (!body.plainText.startsWith("⋯ ")) return
+    label = body.plainText.slice(2).trim()
+  } else {
+    const cells = body?.getChildren() ?? []
+    if (cells.length < 2 || !cells.slice(1).every((cell) => cell instanceof TextBufferRenderable)) return
+    label = cells.slice(1).map((cell) => (cell as TextBufferRenderable).plainText).join(" ").trim()
+  }
   let kind: GroupKind
   if (/^(Thought|Thinking)(?:$|[: ·…])/.test(label)) kind = "reasoning"
   else if (/^Explor(?:ed|ing):/.test(label)) kind = "exploration"
@@ -112,12 +118,19 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
   for (const row of rows) {
     if (row.id === "session-navigation-slack") break
     if (!row.visible || !row.height) continue
-    // Groups can consume a message's first parts without claiming its row ID.
-    let index = sources.findIndex((part) => part.id === row.id)
-    if (index === -1) index = sources.findIndex((part, position) => position >= cursor && part.messageID === row.id)
-    if (index !== -1) cursor = index
     const anchor = row.getChildren()[0]
     const info = anchor && groupAt(anchor)
+    // Groups can consume a message's first parts without claiming its row ID.
+    let index = sources.findIndex((part) => part.id === row.id)
+    if (index === -1) {
+      index = sources.findIndex((part, position) => position >= cursor && part.messageID === row.id)
+      if (index !== -1 && !info) {
+        const text = textOf(row).trim()
+        const match = sources.findIndex((part, position) => position >= cursor && part.messageID === row.id && part.text.trim() === text)
+        if (text && match !== -1) index = match
+      }
+    }
+    if (index !== -1) cursor = index
     if (!info && index === -1 && sources[cursor]?.kind === "footer") {
       lastSource = cursor++
       continue

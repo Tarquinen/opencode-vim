@@ -834,6 +834,26 @@ test("collapsed tool groups expand in place and individual calls can be read and
     expect(f.copied.at(-1)).toBe("Done")
 })
 
+test("session entry and navigation work when the first native row has no ID", async () => {
+    const tool = message(1, "Read file.ts\nFile contents")
+    tool.content![0] = { type: "tool", id: "read-1", name: "read", text: "Read file.ts\nFile contents" }
+    const f = await mount({}, { messages: [tool, message(2, "Done")], group: ["1"] })
+    Reflect.set(f.transcript().getRenderable("1")!, "id", undefined)
+    await f.keys("s")
+    expect(f.hostMode()).toBe("opencode-vim.session")
+    expect(f.captureCharFrame()).toContain("▎Done")
+    await f.keys("k")
+    expect(f.captureCharFrame()).toContain("▎→Explored: 2 reads")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    await f.keys("jyy")
+    expect(f.copied.at(-1)).toBe("Read file.ts\nFile contents")
+    await f.keys("j")
+    expect(f.captureCharFrame()).toContain("▎Done")
+    await f.keys("s")
+    expect(f.renderer.currentFocusedEditor).toBe(f.input)
+})
+
 test("text, reasoning and standalone tools are separate stops within one message", async () => {
     const reply = message(1, "Start")
     reply.content!.push({ type: "reasoning", text: "Check something" },
