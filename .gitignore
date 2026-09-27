@@ -5,3 +5,5 @@ docs/*
 !docs/keymap-actions.md
 assets/*.mp4
 assets/screenshot-*.png
+assets/vim-in-motion*
+motion/

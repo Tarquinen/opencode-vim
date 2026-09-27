@@ -5,7 +5,7 @@ for (const length of [1000, 5000, 10000]) {
     const fixture = await createFixture("word ".repeat(length / 5))
     try {
         const start = performance.now()
-        createPromptMap(fixture.input.plainText, fixture.input)
+        createPromptMap(fixture.input.plainText)
         const mapMs = performance.now() - start
         const moveStart = performance.now()
         await fixture.keys("hl".repeat(50))

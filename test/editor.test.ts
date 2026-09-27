@@ -65,6 +65,46 @@ describe("real textarea Vim editing", () => {
         expect(fixture.input.plainText).toBe("abcdef")
     })
 
+    for (const key of ["p", "P", "2p", "2P"]) {
+        test(`linewise ${key} fills an empty prompt without adding a blank line`, async () => {
+            fixture = await createFixture()
+            const copied = "\n  中 👩‍💻\nlast\n\n"
+            fixture.adapter.setRegister(copied)
+            await fixture.keys(key)
+            const expected = key.startsWith("2") ? copied + copied.slice(0, -1) : copied.slice(0, -1)
+            expect(fixture.input.plainText).toBe(expected)
+            expect(fixture.input.cursorOffset).toBe(0)
+            await fixture.keys("u")
+            expect(fixture.input.plainText).toBe("")
+            fixture.mockInput.pressKey("r", { ctrl: true })
+            expect(fixture.input.plainText).toBe(expected)
+            expect(fixture.input.cursorOffset).toBe(0)
+        })
+    }
+
+    test("mapped linewise paste into an empty prompt remains dot-repeatable", async () => {
+        fixture = await createFixture("", { keymaps: { normal: { Q: "2p" } } })
+        fixture.adapter.setRegister("one\ntwo\n")
+        await fixture.keys("Q")
+        expect(fixture.input.plainText).toBe("one\ntwo\none\ntwo")
+        await fixture.keys(".")
+        expect(fixture.input.plainText).toBe("one\none\ntwo\none\ntwo\ntwo\none\ntwo")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("one\ntwo\none\ntwo")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("")
+    })
+
+    test("a named linewise register fills a prompt after deleting all its text", async () => {
+        fixture = await createFixture("one\ntwo")
+        await fixture.keys('"ayyggdG"ap')
+        expect(fixture.input.plainText).toBe("one")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("one\ntwo")
+    })
+
     test("typing immediately after a yank does not replace the flash selection", async () => {
         fixture = await createFixture("one two")
         await fixture.keys("yiwiX")
@@ -84,12 +124,120 @@ describe("real textarea Vim editing", () => {
         expect(fixture.input.plainText).toBe("abc")
     })
 
-    test("wrapped lines move vertically without adding newlines", async () => {
+    test("soft wraps do not create logical lines", async () => {
         fixture = await createFixture("one two three four", {}, 10)
+        await fixture.keys("1j")
+        expect(fixture.input.cursorOffset).toBe(0)
+        await fixture.keys("$")
+        expect(fixture.input.cursorOffset).toBe(17)
+        await fixture.keys("0")
+        expect(fixture.input.cursorOffset).toBe(0)
+        await fixture.keys("dd")
+        expect(fixture.input.plainText).toBe("")
+    })
+
+    test("screen motions use soft wraps without changing the text", async () => {
+        fixture = await createFixture("one two three four", {}, 10)
+        await fixture.keys("gj")
+        expect(fixture.input.cursorOffset).toBe(8)
+        await fixture.keys("g$")
+        expect(fixture.input.cursorOffset).toBe(17)
+        await fixture.keys("g0")
+        expect(fixture.input.cursorOffset).toBe(8)
+        await fixture.keys("gk")
+        expect(fixture.input.cursorOffset).toBe(0)
+        expect(fixture.input.plainText).toBe("one two three four")
+    })
+
+    test("plain j/k follow wrapped rows and counted j/k follow actual lines", async () => {
+        const text = "one two three four\nfive six seven\nlast"
+        fixture = await createFixture(text, {}, 10)
         await fixture.keys("j")
         expect(fixture.input.cursorOffset).toBe(8)
-        await fixture.keys("dd")
-        expect(fixture.input.plainText).toBe("one two ")
+        await fixture.keys("j")
+        expect(fixture.input.cursorOffset).toBe(19)
+        await fixture.keys("k")
+        expect(fixture.input.cursorOffset).toBe(8)
+        await fixture.keys("k")
+        expect(fixture.input.cursorOffset).toBe(0)
+        await fixture.keys("1j")
+        expect(fixture.input.cursorOffset).toBe(19)
+        await fixture.keys("1k")
+        expect(fixture.input.cursorOffset).toBe(0)
+        await fixture.keys("2j")
+        expect(fixture.input.cursorOffset).toBe(34)
+        await fixture.keys("2k")
+        expect(fixture.input.cursorOffset).toBe(0)
+        expect(fixture.input.plainText).toBe(text)
+    })
+
+    test("Up/Down use the same count-sensitive wrapping as j/k", async () => {
+        fixture = await createFixture("one two three four\nfive six seven", {}, 10)
+        fixture.mockInput.pressArrow("down")
+        expect(fixture.input.cursorOffset).toBe(8)
+        fixture.mockInput.pressArrow("up")
+        expect(fixture.input.cursorOffset).toBe(0)
+        await fixture.keys("1")
+        fixture.mockInput.pressArrow("down")
+        expect(fixture.input.cursorOffset).toBe(19)
+        await fixture.keys("1")
+        fixture.mockInput.pressArrow("up")
+        expect(fixture.input.cursorOffset).toBe(0)
+    })
+
+    test("visual j/k select through wrapped rows", async () => {
+        fixture = await createFixture("one two three four", {}, 10)
+        await fixture.keys("vj")
+        expect(fixture.input.cursorOffset).toBe(8)
+        expect(fixture.input.getSelectedText()).toBe("one two t")
+        await fixture.keys("k")
+        expect(fixture.input.cursorOffset).toBe(0)
+        expect(fixture.input.getSelectedText()).toBe("o")
+    })
+
+    test("linewise selection covers every wrapped row", async () => {
+        fixture = await createFixture("one two three four\nnext", {}, 10)
+        await fixture.keys("gjV")
+        expect(fixture.input.getSelectedText()).toBe("one two three four")
+        await fixture.keys("d")
+        expect(fixture.input.plainText).toBe("next")
+    })
+
+    test("yanking across a wrap does not put synthetic newlines in the register", async () => {
+        fixture = await createFixture("one two three four", {}, 10)
+        await fixture.keys("v$y$p")
+        expect(fixture.input.plainText).toBe("one two three fourone two three four")
+    })
+
+    test("screen motions work through mappings", async () => {
+        fixture = await createFixture("one two three four", { keymaps: { normal: { j: "gj", k: "gk" } } }, 10)
+        await fixture.keys("j")
+        expect(fixture.input.cursorOffset).toBe(8)
+        await fixture.keys("k")
+        expect(fixture.input.cursorOffset).toBe(0)
+    })
+
+    test("custom mappings can use literal j/k for actual lines", async () => {
+        fixture = await createFixture("one two three four\nfive six seven", { keymaps: { normal: { j: "j", k: "k", Q: "j" } } }, 10)
+        await fixture.keys("j")
+        expect(fixture.input.cursorOffset).toBe(19)
+        await fixture.keys("k")
+        expect(fixture.input.cursorOffset).toBe(0)
+        await fixture.keys("Q")
+        expect(fixture.input.cursorOffset).toBe(19)
+    })
+
+    test("screen motions see edits earlier in the same mapping", async () => {
+        fixture = await createFixture("one two three four", { keymaps: { normal: { Q: "dwgj" } } }, 10)
+        await fixture.keys("Q")
+        expect(fixture.input.plainText).toBe("two three four")
+        expect(fixture.input.cursorOffset).toBe(10)
+    })
+
+    test("screen motions follow the host's wrapping of long whitespace", async () => {
+        fixture = await createFixture("one two      three", {}, 10)
+        await fixture.keys("gjg^")
+        expect(fixture.input.cursorOffset).toBe(13)
     })
 
     test("dot repeats native insertion", async () => {
@@ -146,15 +294,22 @@ describe("real textarea Vim editing", () => {
         expect(fixture.input.plainText).toBe("abcdef")
     })
 
-    test("rewraps cached text after resizing", async () => {
+    test("resizing changes screen motions but preserves logical lines and undo", async () => {
         fixture = await createFixture("one two three four five six", {}, 20)
-        await fixture.keys("j0")
+        await fixture.keys("Ax")
+        fixture.mockInput.pressEscape()
         fixture.input.width = 10
         fixture.resize(10, 12)
         await fixture.renderOnce()
         fixture.input.cursorOffset = 0
+        await fixture.keys("1j")
+        expect(fixture.input.cursorOffset).toBe(0)
         await fixture.keys("j")
         expect(fixture.input.cursorOffset).toBe(8)
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("one two three four five six")
+        fixture.mockInput.pressKey("r", { ctrl: true })
+        expect(fixture.input.plainText).toBe("one two three four five sixx")
     })
 
     for (const text of ["👩‍💻", "e\u0301", "𠀀", "\ue000"]) {

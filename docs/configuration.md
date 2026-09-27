@@ -1,431 +1,81 @@
-# Configuration Guide
+# Configuration
 
-This guide shows how to enable `opencode-vim` in OpenCode and configure its Vim prompt behavior.
+Replace the plugin entry in `cli.json` with an object containing `options.vim`.
+This example uses `Q` for session mode and `kj` to leave insert mode:
 
-## Basic Setup
-
-Add `opencode-vim` to the `plugin` array in your OpenCode `tui.jsonc` file:
-
-```jsonc
+```json
 {
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": [
-    [
-      "./plugin/opencode-vim",
-      {
-        "autoUpdate": true,
+  "plugins": [
+    {
+      "package": "opencode-vim@latest",
+      "options": {
         "vim": {
-          "defaultMode": "insert"
-        }
-      }
-    ]
-  ]
-}
-```
-
-If your plugin is installed somewhere else, change the plugin path to match your setup.
-
-## Full Example
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": [
-    [
-      "./plugin/opencode-vim",
-      {
-        "autoUpdate": true,
-        "vim": {
-          "defaultMode": "insert",
-          "keymapTimeout": 500,
-          "pendingDisplayDelay": 120,
-          "cursorStyles": {
-            "insert": {
-              "style": "line",
-              "blinking": true
-            },
-            "normal": {
-              "style": "block",
-              "blinking": true
-            }
-          },
-          "debug": false,
-          "debugPath": "/home/you/.cache/opencode/opencode-vim.log",
+          "sessionKey": "Q",
           "keymaps": {
-            "insert": {
-              "kj": "normal"
-            },
-            "normal": {
-              "<CR>": "submit",
-              "Y": "y$"
-            }
+            "insert": { "kj": "normal" }
           }
         }
       }
-    ]
+    }
   ]
 }
 ```
 
 ## Options
 
-### `autoUpdate`
+All options below belong inside `options.vim`.
 
-Updates `opencode-vim` automatically when a newer npm version is available.
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `defaultMode` | `"insert"` | Starting Vim mode; use `"normal"` to start in normal mode |
+| `sessionKey` | `"s"` | Single key to enter and leave session mode |
+| `keymapTimeout` | `500` | Milliseconds to wait for the rest of a custom mapping |
+| `keymaps` | `{}` | Prompt and search-dialog mappings, grouped by mode |
+| `cursorStyles` | See below | Cursor appearance for each editing mode |
+| `debug` | `false` | Enable debug logging |
+| `debugPath` | `~/.cache/opencode/opencode-vim.log` | Debug log file |
 
-Default:
+### Session key
 
-```jsonc
-"autoUpdate": true
-```
+Use one character, such as `"Q"`, or key notation such as `"<C-s>"`. The key changes
+both entry and exit, including the footer hints. Invalid or multi-key values fall
+back to `"s"`.
 
-Example:
+A custom normal-mode mapping beginning with the same key takes precedence over
+entering session mode.
 
-```jsonc
-"autoUpdate": false
-```
+### Custom keymaps
 
-### `defaultMode`
+Mappings apply to `insert`, `normal`, `visual`, and `visual-line` editing modes in
+the prompt and search dialogs. Session browsing and its read-only modal use their
+own bindings.
 
-The mode the prompt starts in.
+See [Custom Keymaps](./keymap-actions.md) for actions, key notation, and examples.
+See [Keybindings and Modes](./vim-behavior.md) for the default behavior.
 
-Allowed values:
+### Cursor styles
 
-- `"insert"`
-- `"normal"`
+Insert mode defaults to a blinking line cursor. Normal, visual, and visual-line
+modes default to a blinking block. Supported styles are `block`, `line`,
+`underline`, and `default`. Omitted values keep their defaults.
 
-Default:
+For example, add this inside `options.vim` to disable cursor blinking:
 
-```jsonc
-"defaultMode": "insert"
-```
-
-Example:
-
-```jsonc
-"defaultMode": "normal"
-```
-
-### `keymapTimeout`
-
-How long, in milliseconds, the prompt waits for the next key when a configured keymap has only been partially typed.
-
-Default:
-
-```jsonc
-"keymapTimeout": 500
-```
-
-Examples:
-
-```jsonc
-"keymapTimeout": 250
-```
-
-```jsonc
-"keymapTimeout": 1000
-```
-
-Use a shorter timeout for faster fallback after partial mappings. Use a longer timeout if you type multi-key mappings slowly.
-
-### `pendingDisplayDelay`
-
-How long, in milliseconds, the prompt waits before showing a pending key sequence in the status area.
-
-Default:
-
-```jsonc
-"pendingDisplayDelay": 120
-```
-
-Examples:
-
-```jsonc
-"pendingDisplayDelay": 0
-```
-
-```jsonc
-"pendingDisplayDelay": 300
-```
-
-This only affects display. It does not change how long keymaps wait for more input.
-
-### `cursorStyles`
-
-The cursor style to use in each mode.
-
-Allowed styles:
-
-- `"block"`
-- `"line"`
-- `"underline"`
-- `"default"`
-
-Default:
-
-```jsonc
-"cursorStyles": {
-  "insert": {
-    "style": "line",
-    "blinking": true
-  },
-  "normal": {
-    "style": "block",
-    "blinking": true
+```json
+{
+  "cursorStyles": {
+    "insert": { "style": "line", "blinking": false },
+    "normal": { "style": "block", "blinking": false }
   }
 }
 ```
 
-Examples:
-
-```jsonc
-"cursorStyles": {
-  "insert": {
-    "style": "line",
-    "blinking": false
-  },
-  "normal": {
-    "style": "block",
-    "blinking": false
-  }
-}
-```
-
-```jsonc
-"cursorStyles": {
-  "insert": {
-    "style": "underline"
-  },
-  "normal": {
-    "style": "default"
-  }
-}
-```
-
-You can configure only one mode if you want. Any omitted values use the defaults.
-
-### `debug`
-
-Enables debug logging.
-
-Default:
-
-```jsonc
-"debug": false
-```
-
-Example:
-
-```jsonc
-"debug": true
-```
-
-You can also enable debug logging with this environment variable:
-
-```bash
-VIM_PROMPT_DEBUG=1
-```
-
-### `debugPath`
-
-The file path used for debug logs when debug logging is enabled.
-
-Default:
-
-```txt
-~/.cache/opencode/opencode-vim.log
-```
-
-Example:
-
-```jsonc
-"debugPath": "/tmp/opencode-vim.log"
-```
-
-Use an absolute path in config. `~` is not expanded inside `debugPath`.
-
-### `keymaps`
-
-Custom keymaps for each Vim mode.
-
-Allowed modes:
-
-- `"insert"`
-- `"normal"`
-- `"visual"`
-- `"visual-line"`
-
-Each keymap entry maps a key sequence to an action:
-
-```jsonc
-"keymaps": {
-  "insert": {
-    "kj": "normal"
-  },
-  "normal": {
-    "<CR>": "submit"
-  }
-}
-```
-
-Supported built-in actions:
-
-- `"normal"` exits insert mode and enters normal mode.
-- `"insert"` enters insert mode.
-- `"submit"` submits the OpenCode prompt.
-
-Use `"command:<name>"` to dispatch an active OpenCode command. See [Keymap Actions](./keymap-actions.md) for the full action and command reference.
-
-Any other action string is treated as a Vim key sequence. For example, this maps `Y` to yank from the cursor to the end of the line:
-
-```jsonc
-"keymaps": {
-  "normal": {
-    "Y": "y$"
-  }
-}
-```
-
-Unlike other keys, `<CR>` in normal mode defaults to `"submit"` when no mapping is configured. A mode-specific mapping overrides that default. In insert mode, an unmapped `<CR>` passes through to OpenCode's `input_submit` and `input_newline` keybinds.
-
-When `input_submit` is not `"return"`, map `input_newline` to `"return"` for insert-mode newlines.
-
-## Keymap Syntax
-
-Key sequences can contain printable ASCII characters, except literal spaces. Use `<Space>` for the space key.
-
-Examples:
-
-```jsonc
-"x": "d"
-"gg": "0"
-"Y": "y$"
-"\\r": "<C-r>"
-```
-
-Supported special keys:
-
-- `<Esc>`
-- `<CR>`
-- `<Tab>`
-- `<BS>`
-- `<Del>`
-- `<Space>`
-- `<C-a>` through `<C-z>`
-
-Ctrl key names must be lowercase. Use `<C-s>`, not `<C-S>`.
-
-`<CR>` can be mapped directly or end a sequence, but cannot start a multi-key sequence.
-
-Unsupported examples:
-
-```jsonc
-"<C-S>": "submit"
-"<C-1>": "submit"
-"<Up>": "k"
-"a b": "normal"
-```
-
-Invalid keymaps are skipped. Enable debug logging if you need to troubleshoot keymap registration.
-
-## Keymap Examples
-
-Use `kj` or `jk` to leave insert mode:
-
-```jsonc
-"keymaps": {
-  "insert": {
-    "kj": "normal",
-    "jk": "normal"
-  }
-}
-```
-
-Submit with `<CR>` in normal mode is the default, so this keymap is optional:
-
-```jsonc
-"keymaps": {
-  "normal": {
-    "<CR>": "submit"
-  }
-}
-```
-
-Submit the prompt with Ctrl-S in insert mode:
-
-```jsonc
-"keymaps": {
-  "insert": {
-    "<C-s>": "submit"
-  }
-}
-```
-
-Make `Y` yank to the end of the line:
-
-```jsonc
-"keymaps": {
-  "normal": {
-    "Y": "y$"
-  }
-}
-```
-
-Make `D` delete to the beginning of the line:
-
-```jsonc
-"keymaps": {
-  "normal": {
-    "D": "d0"
-  }
-}
-```
-
-Make `H` move to the beginning and `L` move to the end:
-
-```jsonc
-"keymaps": {
-  "normal": {
-    "H": "0",
-    "L": "$"
-  }
-}
-```
-
-Use `q` to enter insert mode from normal mode:
-
-```jsonc
-"keymaps": {
-  "normal": {
-    "q": "insert"
-  }
-}
-```
-
-Use a leader-style sequence:
-
-```jsonc
-"keymaps": {
-  "normal": {
-    "\\s": "submit",
-    "\\r": "<C-r>"
-  }
-}
-```
-
-## Troubleshooting
-
-If a keymap does not work, check these first:
-
-- The mode is `insert`, `normal`, `visual`, or `visual-line`.
-- The key sequence does not contain a literal space.
-- Special keys use one of the supported names exactly.
-- Ctrl keys use lowercase letters, such as `<C-s>`.
-- The action string is not empty.
-
-To debug configuration problems, enable logging:
-
-```jsonc
-"debug": true,
-"debugPath": "/tmp/opencode-vim.log"
-```
+### Debugging
+
+Set `"debug": true` or launch OpenCode with `VIM_PROMPT_DEBUG=1`. Invalid mappings
+are skipped and recorded in the log. A custom `debugPath` should be absolute;
+`~` is not expanded in configured paths.
+
+`keymapTimeout` controls partially typed custom mappings. If an insert-mode
+mapping times out, its pending characters are inserted as ordinary text. Pending
+keys are not shown in the footer.

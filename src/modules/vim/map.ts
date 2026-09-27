@@ -1,6 +1,5 @@
 import type { CursorPosition } from "@vimee/core"
-import type { EditBufferLike } from "./actions"
-import { createGraphemeCodec, type GraphemeCodec } from "./graphemes"
+import { createGraphemeCodec } from "./graphemes"
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
@@ -36,65 +35,19 @@ export function displayWidth(text: string): number {
 }
 
 export type PromptMap = {
-    codec: GraphemeCodec
     hostText: string
     vimText: string
     hostToVim: number[]
-    vimToHost: Array<number | undefined>
+    vimToHost: number[]
 }
 
-export function createPromptMap(hostText: string, input?: EditBufferLike, codec = createGraphemeCodec()): PromptMap {
-    return buildPromptMap(hostText, input ? visualWrapOffsets(input, hostText) : [], codec)
-}
-
-export function derivePromptMap(map: PromptMap, vimText: string): PromptMap {
-    const prefix = commonPrefix(map.vimText, vimText)
-    const suffix = commonSuffix(map.vimText, vimText, prefix)
-    const inserted = vimText.slice(prefix, vimText.length - suffix)
-    const synthetic = new Set<number>()
-    let hostText = ""
-
-    for (let vimOffset = 0; vimOffset < vimText.length; vimOffset++) {
-        const oldOffset = previousOffset(map, vimOffset, vimText.length, prefix, suffix)
-        if (oldOffset !== undefined && map.vimToHost[oldOffset] === undefined && preserveSynthetic(vimOffset, prefix, suffix, vimText.length, inserted)) {
-            synthetic.add(vimOffset)
-            continue
-        }
-
-        hostText += map.codec.decode(vimText[vimOffset])
-    }
-
-    return buildPromptMapFromSynthetic(hostText, vimText, synthetic, map.codec)
-}
-
-function preserveSynthetic(vimOffset: number, prefix: number, suffix: number, vimLength: number, inserted: string) {
-    if (!inserted.includes("\n")) return true
-    return vimOffset !== prefix - 1 && vimOffset !== vimLength - suffix
-}
-
-export function hostPosition(map: PromptMap, hostDisplayOffset: number): CursorPosition {
-    const charIdx = displayToChar(map.hostText, hostDisplayOffset)
-    return positionFromOffset(map.vimText, map.hostToVim[clamp(charIdx, 0, map.hostText.length)] ?? 0)
-}
-
-export function hostOffset(map: PromptMap, position: CursorPosition, bias: "previous" | "next" = "next") {
-    const charIdx = hostOffsetFromVimOffset(map, offsetFromPosition(map.vimText, position), bias)
-    return charToDisplay(map.hostText, charIdx)
-}
-
-function buildPromptMap(hostText: string, wraps: number[], codec: GraphemeCodec): PromptMap {
+export function createPromptMap(hostText: string, codec = createGraphemeCodec()): PromptMap {
     const hostToVim: number[] = []
-    const vimToHost: Array<number | undefined> = []
-    const wrapOffsets = new Set(wraps.filter((offset) => offset > 0 && offset < hostText.length && hostText[offset - 1] !== "\n"))
+    const vimToHost: number[] = []
     let vimText = ""
     let vimOffset = 0
 
     for (const { index: hostOffset, segment } of graphemes.segment(hostText)) {
-        if (wrapOffsets.has(hostOffset)) {
-            vimText += "\n"
-            vimToHost[vimOffset] = undefined
-            vimOffset++
-        }
         for (let index = hostOffset; index < hostOffset + segment.length; index++) hostToVim[index] = vimOffset
         vimText += codec.encode(segment)
         vimToHost[vimOffset] = hostOffset
@@ -102,82 +55,21 @@ function buildPromptMap(hostText: string, wraps: number[], codec: GraphemeCodec)
     }
 
     hostToVim[hostText.length] = vimOffset
-    return { hostText, vimText, hostToVim, vimToHost, codec }
+    vimToHost[vimOffset] = hostText.length
+    return { hostText, vimText, hostToVim, vimToHost }
 }
 
-function buildPromptMapFromSynthetic(hostText: string, vimText: string, synthetic: Set<number>, codec: GraphemeCodec): PromptMap {
-    const hostToVim: number[] = []
-    const vimToHost: Array<number | undefined> = []
-    let hostOffset = 0
-
-    for (let vimOffset = 0; vimOffset < vimText.length; vimOffset++) {
-        if (synthetic.has(vimOffset)) {
-            vimToHost[vimOffset] = undefined
-            continue
-        }
-
-        vimToHost[vimOffset] = hostOffset
-        const length = codec.decode(vimText[vimOffset]).length
-        for (let index = 0; index < length; index++) hostToVim[hostOffset++] = vimOffset
-    }
-
-    hostToVim[hostText.length] = vimText.length
-    return { hostText, vimText, hostToVim, vimToHost, codec }
+export function hostPosition(map: PromptMap, hostDisplayOffset: number): CursorPosition {
+    const charIdx = displayToChar(map.hostText, hostDisplayOffset)
+    return positionFromOffset(map.vimText, map.hostToVim[clamp(charIdx, 0, map.hostText.length)])
 }
 
-function previousOffset(map: PromptMap, vimOffset: number, vimLength: number, prefix: number, suffix: number) {
-    if (vimOffset < prefix) return vimOffset
-    if (vimOffset >= vimLength - suffix) return map.vimText.length - (vimLength - vimOffset)
-    return undefined
+export function hostOffset(map: PromptMap, position: CursorPosition) {
+    return hostFromVimOffset(map, offsetFromPosition(map.vimText, position))
 }
 
-function visualWrapOffsets(input: EditBufferLike, text: string) {
-    const wraps: number[] = []
-    const lines = input.editorView?.getLogicalLineInfo?.()
-    if (!lines) return wraps
-    let line = 1
-    let offset = 0
-    for (const part of graphemes.segment(text)) {
-        while (line < lines.lineStartCols.length && lines.lineStartCols[line] <= offset) {
-            if (lines.lineWraps[line] > 0) wraps.push(part.index)
-            line++
-        }
-        offset += graphemeWidth(part.segment)
-    }
-    return wraps
-}
-
-function hostOffsetFromVimOffset(map: PromptMap, vimOffset: number, bias: "previous" | "next") {
-    const offset = clamp(vimOffset, 0, map.vimText.length)
-    if (offset === map.vimText.length) return map.hostText.length
-
-    const host = map.vimToHost[offset]
-    if (host !== undefined) return host
-
-    if (bias === "previous") {
-        for (let previous = offset - 1; previous >= 0; previous--) {
-            const previousHost = map.vimToHost[previous]
-            if (previousHost !== undefined) return previousHost
-        }
-    }
-
-    for (let next = offset + 1; next < map.vimToHost.length; next++) {
-        const nextHost = map.vimToHost[next]
-        if (nextHost !== undefined) return nextHost
-    }
-    return map.hostText.length
-}
-
-function commonPrefix(left: string, right: string) {
-    let index = 0
-    while (index < left.length && index < right.length && left[index] === right[index]) index++
-    return index
-}
-
-function commonSuffix(left: string, right: string, prefix: number) {
-    let length = 0
-    while (length + prefix < left.length && length + prefix < right.length && left[left.length - length - 1] === right[right.length - length - 1]) length++
-    return length
+export function hostFromVimOffset(map: PromptMap, offset: number) {
+    return charToDisplay(map.hostText, map.vimToHost[clamp(offset, 0, map.vimText.length)])
 }
 
 function positionFromOffset(text: string, offset: number): CursorPosition {
