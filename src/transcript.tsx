@@ -145,7 +145,6 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
       return true
     },
     followViewport() { navigation = undefined; requestedID = undefined; selectedParents = [] },
-    focus() { inspect()?.scroll.focus() },
     sync() { advance(); navigation = undefined; return inspect() },
     draw(buffer: OptimizedBuffer, yankID?: string) {
       advance()
