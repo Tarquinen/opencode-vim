@@ -625,6 +625,23 @@ test("whole-message yank preserves Markdown and can be pasted in the prompt", as
     expect(f.input.plainText).toBe("hello" + text)
 })
 
+test("lines copied from a message fill an empty prompt without a leading blank line", async () => {
+    const text = "quoted 中 👩‍💻\nsecond line"
+    const f = await mount({}, { messages: [message(1, text)] })
+    f.input.setText("")
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.keys("Vjy")
+    expect(f.copied).toEqual([text + "\n"])
+    await f.keys("sp")
+    expect(f.input.plainText).toBe(text)
+    expect(f.input.cursorOffset).toBe(0)
+    await f.keys("u")
+    expect(f.input.plainText).toBe("")
+    f.mockInput.pressKey("r", { ctrl: true })
+    expect(f.input.plainText).toBe(text)
+})
+
 test("session yy briefly highlights only the copied item without changing its text or layout", async () => {
     const text = "Yanked 中 👍🏽 é\nSecond line"
     const f = await mount({}, { messages: [message(1, "Question", "user"), message(2, text)] })

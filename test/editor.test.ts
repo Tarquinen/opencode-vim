@@ -65,6 +65,46 @@ describe("real textarea Vim editing", () => {
         expect(fixture.input.plainText).toBe("abcdef")
     })
 
+    for (const key of ["p", "P", "2p", "2P"]) {
+        test(`linewise ${key} fills an empty prompt without adding a blank line`, async () => {
+            fixture = await createFixture()
+            const copied = "\n  中 👩‍💻\nlast\n\n"
+            fixture.adapter.setRegister(copied)
+            await fixture.keys(key)
+            const expected = key.startsWith("2") ? copied + copied.slice(0, -1) : copied.slice(0, -1)
+            expect(fixture.input.plainText).toBe(expected)
+            expect(fixture.input.cursorOffset).toBe(0)
+            await fixture.keys("u")
+            expect(fixture.input.plainText).toBe("")
+            fixture.mockInput.pressKey("r", { ctrl: true })
+            expect(fixture.input.plainText).toBe(expected)
+            expect(fixture.input.cursorOffset).toBe(0)
+        })
+    }
+
+    test("mapped linewise paste into an empty prompt remains dot-repeatable", async () => {
+        fixture = await createFixture("", { keymaps: { normal: { Q: "2p" } } })
+        fixture.adapter.setRegister("one\ntwo\n")
+        await fixture.keys("Q")
+        expect(fixture.input.plainText).toBe("one\ntwo\none\ntwo")
+        await fixture.keys(".")
+        expect(fixture.input.plainText).toBe("one\none\ntwo\none\ntwo\ntwo\none\ntwo")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("one\ntwo\none\ntwo")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("")
+    })
+
+    test("a named linewise register fills a prompt after deleting all its text", async () => {
+        fixture = await createFixture("one\ntwo")
+        await fixture.keys('"ayyggdG"ap')
+        expect(fixture.input.plainText).toBe("one")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("one\ntwo")
+    })
+
     test("typing immediately after a yank does not replace the flash selection", async () => {
         fixture = await createFixture("one two")
         await fixture.keys("yiwiX")

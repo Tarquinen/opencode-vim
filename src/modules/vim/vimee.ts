@@ -474,7 +474,21 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         // The engine saves undo points for yanks too. Run read-only operations
         // against a disposable buffer so they cannot alter the editing history.
         const yanking = operator === "y" || (isVisualMode(vim.mode) && key === "y") || (vim.mode === "normal" && key === "Y")
-        return processKeystroke(key, vim, yanking ? new TextBuffer(buffer.getContent()) : buffer, ctrl, false)
+        const register = vim.selectedRegister ? vim.registers[vim.selectedRegister] ?? "" : vim.register
+        const emptyLinePaste = !ctrl && vim.mode === "normal" && vim.phase === "idle" && (key === "p" || key === "P")
+            && buffer.getContent() === "" && register.endsWith("\n")
+        const result = processKeystroke(key, vim, yanking ? new TextBuffer(buffer.getContent()) : buffer, ctrl, false)
+        if (emptyLinePaste) {
+            // Linewise puts should fill an empty prompt, not keep its placeholder line.
+            // Remove just that line, keeping the engine's undo point and repeat keys.
+            buffer.deleteLines(key === "p" ? 0 : buffer.getLineCount() - 1, 1)
+            result.newCtx.cursor = { line: 0, col: 0 }
+            for (const action of result.actions) {
+                if (action.type === "content-change") action.content = buffer.getContent()
+                if (action.type === "cursor-move") action.position = result.newCtx.cursor
+            }
+        }
+        return result
     }
 
     function lineMotion(key: string): MotionRange | undefined {
