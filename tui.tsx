@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
 import { InputRenderable, type CursorStyleOptions, type KeyEvent } from "@opentui/core"
-import { createEffect, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
 import { applyVimCursorStyle, focusedInput } from "./src/modules/vim/actions"
 import { createVimConfig } from "./src/modules/vim/config"
 import { editInput } from "./src/modules/vim/edit"
@@ -30,6 +30,7 @@ function VimHost(props: { context: Context }) {
   const vimee = createVimeeAdapter(state, config, log)
   const dialogState = createVimState(config.defaultMode, log)
   const dialogVimee = createVimeeAdapter(dialogState, config, log)
+  const [dialogFocused, setDialogFocused] = createSignal(false)
   const promptVim = { state, vimee }
   const dialogVim = { state: dialogState, vimee: dialogVimee }
   let dialogInput: typeof props.context.renderer.currentFocusedEditor = null
@@ -44,9 +45,9 @@ function VimHost(props: { context: Context }) {
   const removeStatus = props.context.ui.slot({
     prepend: "prompt.footer",
     render: (footer) =>
-      footer.mode === "normal" ? session.active() ? <session.Status /> : (
+      footer.mode === "normal" ? session.active() && !dialogFocused() ? <session.Status /> : (
         <VimStatus
-          mode={state.mode}
+          mode={() => dialogFocused() ? dialogState.mode() : state.mode()}
           enabled={enabled}
           theme={compatTheme(props.context)}
         />
@@ -152,6 +153,7 @@ function VimHost(props: { context: Context }) {
   function syncCursor(force = false) {
     const input = props.context.renderer.currentFocusedEditor
     const kind = inputKind(props.context)
+    setDialogFocused(kind === "dialog")
     if (!enabled() || !kind || !input) {
       restoreCursor()
       return
@@ -160,7 +162,7 @@ function VimHost(props: { context: Context }) {
     if (kind === "dialog" && dialogInput !== input) {
       dialogInput = input
       dialogVimee.suspend()
-      dialogState.setMode(config.defaultMode)
+      dialogState.setMode(promptVim.state.mode())
     }
     const mode = state.mode()
     vimee.attach(ctx)

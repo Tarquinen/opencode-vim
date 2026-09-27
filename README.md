@@ -59,7 +59,7 @@ Your prompt text and undo history are preserved.
 
 ## Dialogs
 
-Vim editing also works in search dialogs such as `/models` and `Ctrl+P`.
+Search dialogs such as `/models` and `Ctrl+P` inherit the prompt's current mode.
 Type to filter in insert mode; use `j`/`k` to choose items in normal mode.
 `Enter` confirms, and `Esc` in normal mode goes back.
 

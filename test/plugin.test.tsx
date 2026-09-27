@@ -350,6 +350,38 @@ test("unmount removes handlers and restores native editing", async () => {
     expect(f.input.plainText).toBe("xhello")
 })
 
+test.each(["normal", "insert"] as const)("dialogs inherit the prompt's current %s mode rather than the startup mode", async (mode) => {
+    const f = await mount({ defaultMode: mode === "normal" ? "insert" : "normal" })
+    if (mode === "normal") f.mockInput.pressEscape()
+    else f.mockInput.pressKey("i")
+    const cursor = mode === "normal" ? "block" : "line"
+
+    for (const kind of ["select", "prompt"] as const) {
+        const editor = f.openDialog("query", kind)
+        expect(editor.cursorStyle.style).toBe(cursor)
+        await f.renderOnce()
+        expect(f.captureCharFrame()).toContain(mode.toUpperCase())
+        if (mode === "normal") {
+            f.mockInput.pressKey("0")
+            f.mockInput.pressKey("x")
+            expect(editor.value).toBe("uery")
+            f.mockInput.pressKey("i")
+        } else {
+            f.mockInput.pressKey("x")
+            expect(editor.value).toContain("x")
+            f.mockInput.pressEscape()
+        }
+        await f.renderOnce()
+        expect(f.captureCharFrame()).toContain(mode === "normal" ? "INSERT" : "NORMAL")
+        expect(f.captureCharFrame()).not.toContain(mode.toUpperCase())
+        f.closeDialog(editor)
+        await f.renderOnce()
+        expect(f.captureCharFrame()).toContain(mode.toUpperCase())
+        expect(f.input.cursorStyle.style).toBe(cursor)
+        expect(f.input.plainText).toBe("hello")
+    }
+})
+
 test("dialog search deletion and undo emit updated filter text", async () => {
     const f = await mount()
     const editor = f.openDialog("hello")
@@ -819,7 +851,13 @@ test("session browsing and reading yield to dialogs, then restore their focus", 
     await f.keys("j")
     expect(f.dispatched).toEqual(["dialog.select.next"])
     expect(f.captureCharFrame()).not.toContain("▎")
+    expect(f.captureCharFrame()).toContain("NORMAL")
+    expect(f.captureCharFrame()).not.toContain("SESSION")
+    await f.keys("i")
+    expect(f.captureCharFrame()).toContain("INSERT")
     f.closeDialog(browsingDialog)
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("SESSION")
     f.mockInput.pressEnter()
     expect(f.renderer.currentFocusedEditor).toBe(f.reader())
     expect(f.reader().showCursor).toBe(true)
