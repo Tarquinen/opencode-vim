@@ -37,6 +37,15 @@ export function createTerminal(socket: string, artifacts: string) {
         await keys("-l", text)
     }
 
+    function cursor() {
+        const [x, y] = tmux("display-message", "-p", "-t", "e2e", "#{cursor_x} #{cursor_y}").trim().split(" ")
+        return { x: Number(x), y: Number(y) }
+    }
+
+    async function click(x: number, y: number) {
+        await keys("-l", `\x1b[<0;${x + 1};${y + 1}M\x1b[<0;${x + 1};${y + 1}m`)
+    }
+
     async function screen(label: string, matches: (text: string) => boolean, timeout = 5_000) {
         const deadline = Date.now() + timeout
         while (true) {
@@ -55,5 +64,5 @@ export function createTerminal(socket: string, artifacts: string) {
         }
     }
 
-    return { start, stop, keys, type, screen }
+    return { start, stop, keys, type, screen, cursor, click }
 }

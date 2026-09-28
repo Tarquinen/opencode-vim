@@ -33,12 +33,14 @@ bun run test:e2e
 
 - `test` covers editing behavior, plugin integration, source and npm package
   loading, and comparisons against a pinned Neovim version downloaded
-  automatically. Three optional integration cases require an OpenCode source
-  checkout via `OPENCODE_SOURCE` and otherwise skip.
+  automatically.
 - `test:e2e` builds and packs the current plugin, then runs real terminal
   interactions against the latest stable OpenCode 2 release. Each scenario gets
-  isolated configuration and a fresh session. No model requests are submitted.
+  isolated configuration and a fresh session, with imported fixture transcripts
+  for message-reader and history tests. No model requests are submitted.
   Captures, logs, and results are saved under `test-results/e2e/`.
+
+Run individual scenarios with `bun run test:e2e message-reader`.
 
 Internet access is needed for initial binary downloads and for E2E tests to
 resolve the latest OpenCode release. Downloaded binaries are cached under

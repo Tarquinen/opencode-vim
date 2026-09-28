@@ -3,11 +3,14 @@ import { execFileSync } from "node:child_process"
 import { cp, mkdir } from "node:fs/promises"
 import { createServer } from "node:net"
 import path from "node:path"
+import type { Context } from "@opencode/plugin/tui/context"
 import { createTerminal, type Terminal } from "./terminal"
 
 export type Fixture = { terminal: Terminal; sessionTitle: string }
+export type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
+export type FixtureSetup = { messages?: Message[]; cli?: Record<string, unknown> }
 
-type Options = {
+type Options = FixtureSetup & {
     opencode: { binary: string; version: string }
     plugin: string
     directory: string
@@ -50,6 +53,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
             plugins: [plugin],
             tabs: { mode: "on" },
             attention: { notifications: false, sound: false },
+            ...options.cli,
         }))
 
         const listener = createServer()
@@ -80,7 +84,16 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
                 await Bun.sleep(100)
             }
         }
-        const session = (await request("/api/session", { title: sessionTitle, location: { directory: workspace } })).data
+        let session = (await request("/api/session", { title: sessionTitle, location: { directory: workspace } })).data
+        if (options.messages) {
+            session = (await request("/api/experimental/session/import", {
+                info: { ...session, id: `ses_${crypto.randomUUID().replaceAll("-", "")}` },
+                messages: options.messages,
+                location: { directory: workspace },
+            })).data
+            const imported = (await request(`/api/experimental/session/${session.id}/export`)).data
+            assert.equal(imported.messages.length, options.messages.length)
+        }
         const command = ["env", "-i"]
         for (const [key, value] of Object.entries(environment("tui"))) command.push(`${key}=${value}`)
         command.push(opencode.binary, "--server", url, "--session", session.id, workspace)

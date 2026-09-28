@@ -1,19 +1,41 @@
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import path from "node:path"
-import { runWithFixture } from "./fixture"
+import { runWithFixture, type Fixture, type FixtureSetup } from "./fixture"
 import { installOpenCode } from "./opencode"
 import { packPlugin } from "./plugin"
 import { agentSwitching } from "./scenarios/agent-switching"
 import { dialogFocus } from "./scenarios/dialog-focus"
 import { tabSwitching } from "./scenarios/tab-switching"
+import { messageReader } from "./scenarios/message-reader"
+import { transcriptGrouped, transcriptLowDetail, transcriptUngrouped, transcriptRunning, transcriptHistory } from "./scenarios/transcript"
+import { readerMessages, transcriptMessages, historyMessages } from "./data/transcript"
 
-const scenarios = [
+const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
     { name: "tab-switching", run: tabSwitching },
     { name: "dialog-focus", run: dialogFocus },
     { name: "agent-switching", run: agentSwitching },
+    { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
 ]
+for (const animations of [true, false]) {
+    const suffix = animations ? "animated" : "static"
+    for (const [name, run, session, running] of [
+        ["grouped", transcriptGrouped, { verbosity: "medium", grouping: "auto", thinking: "hide" }, false],
+        ["low-detail", transcriptLowDetail, { verbosity: "low", grouping: "auto", thinking: "hide" }, false],
+        ["ungrouped", transcriptUngrouped, { verbosity: "medium", grouping: "none", thinking: "show" }, false],
+        ["running", transcriptRunning, { verbosity: "medium", grouping: "auto", thinking: "hide" }, true],
+    ] as const) {
+        const messages = transcriptMessages(running)
+        if (name === "grouped") messages.unshift(...historyMessages())
+        scenarios.push({ name: `transcript-${name}-${suffix}`, run, setup: { messages, cli: { animations, session } } })
+    }
+    scenarios.push({ name: `transcript-history-${suffix}`, run: transcriptHistory, setup: { messages: historyMessages(), cli: { animations } } })
+}
 
+const requested = Bun.argv.slice(2)
+for (const name of requested) {
+    if (!scenarios.some((scenario) => scenario.name === name)) throw new Error(`Unknown E2E scenario: ${name}`)
+}
 if (!Bun.which("tmux")) throw new Error("E2E tests require tmux. Install it, then run bun run test:e2e.")
 
 const root = path.resolve(import.meta.dir, "../..")
@@ -33,9 +55,11 @@ try {
     const plugin = await packPlugin(root, temporary, artifacts)
 
     for (const scenario of scenarios) {
+        if (requested.length && !requested.includes(scenario.name)) continue
         const started = Date.now()
         try {
             await runWithFixture({
+                ...scenario.setup,
                 opencode,
                 plugin,
                 directory: path.join(temporary, scenario.name),
