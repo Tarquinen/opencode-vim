@@ -25,7 +25,10 @@ export function TextReader(props: ReaderProps & {
   const adapter = createVimeeAdapter(state, props.config, () => {}, { readOnly: true, onYank: props.copy })
   const editorContext: PromptContext = {
     api: {
-      renderer: { get currentFocusedRenderable() { return input } },
+      renderer: {
+        get currentFocusedRenderable() { return input },
+        get widthMethod() { return context.renderer.widthMethod },
+      },
       keymap: { dispatchCommand: () => ({ ok: false }) },
       theme: { get current() { return {
         warning: theme().text.feedback.warning.base,
@@ -77,7 +80,7 @@ export function TextReader(props: ReaderProps & {
   })
   onMount(() => {
     props.highlight?.(output)
-    output.cursorOffset = Math.min(props.offset, displayWidth(output.plainText))
+    output.cursorOffset = Math.min(props.offset, displayWidth(output.plainText, context.renderer.widthMethod))
     input = props.leading?.() ?? output
     input.handleKeyPress = () => true
     input.handlePaste = () => {}
