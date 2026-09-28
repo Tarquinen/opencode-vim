@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createVimState } from "./state"
+import { createVimState } from "../../src/modules/vim/state"
 
 describe("vim state", () => {
     test("isolates listener errors", () => {

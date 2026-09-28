@@ -1,11 +1,11 @@
 import { RGBA, TextareaRenderable, type KeyEvent } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
-import type { PromptContext } from "../src/modules/vim/actions"
-import { createVimConfig, type VimOptions } from "../src/modules/vim/config"
-import { editInput } from "../src/modules/vim/edit"
-import { keyNotation } from "../src/modules/vim/keys"
-import { createVimState } from "../src/modules/vim/state"
-import { createVimeeAdapter } from "../src/modules/vim/vimee"
+import type { PromptContext } from "../../src/modules/vim/actions"
+import { createVimConfig, type VimOptions } from "../../src/modules/vim/config"
+import { editInput } from "../../src/modules/vim/edit"
+import { keyNotation } from "../../src/modules/vim/keys"
+import { createVimState } from "../../src/modules/vim/state"
+import { createVimeeAdapter } from "../../src/modules/vim/vimee"
 
 export async function createFixture(text = "", options: VimOptions = {}, width = 80) {
     const screen = await createTestRenderer({ width, height: 12, kittyKeyboard: true })

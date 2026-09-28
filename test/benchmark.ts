@@ -1,4 +1,4 @@
-import { createFixture } from "./fixture"
+import { createFixture } from "./helpers/fixture"
 import { createPromptMap, hostFromVimOffset } from "../src/modules/vim/map"
 
 for (const pattern of ["word ", "word\n", "中e\u0301👩‍💻\t\n"]) {

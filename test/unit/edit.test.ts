@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { editInput } from "./edit"
+import { editInput } from "../../src/modules/vim/edit"
 
 describe("editInput", () => {
     test("inserts without replacing unchanged placeholders", () => {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createFixture } from "./fixture"
+import { createFixture } from "../helpers/fixture"
 
 let fixture: Awaited<ReturnType<typeof createFixture>> | undefined
 afterEach(() => { fixture?.dispose(); fixture = undefined })

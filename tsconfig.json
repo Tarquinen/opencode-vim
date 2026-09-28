@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "types": ["bun", "node"]
   },
-  "include": ["./tui.tsx", "./scripts/**/*.ts", "./test/**/*.ts", "./test/**/*.tsx", "./src/modules/vim/*.test.ts"]
+  "include": ["./tui.tsx", "./scripts/**/*.ts", "./test/**/*.ts", "./test/**/*.tsx"]
 }

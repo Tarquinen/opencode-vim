@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { createGraphemeCodec } from "./graphemes"
-import { charToDisplay, createPromptMap, displayToChar, displayWidth, hostCharOffset, hostFromVimOffset, hostOffset, hostPosition, vimLineLength } from "./map"
+import { createGraphemeCodec } from "../../src/modules/vim/graphemes"
+import { charToDisplay, createPromptMap, displayToChar, displayWidth, hostCharOffset, hostFromVimOffset, hostOffset, hostPosition, vimLineLength } from "../../src/modules/vim/map"
 
 describe("vim display offsets", () => {
     test("maps ASCII and CJK offsets", () => {

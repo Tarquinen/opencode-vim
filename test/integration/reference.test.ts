@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
-import { createFixture } from "./fixture"
-import { nvim } from "./neovim"
+import { createFixture } from "../helpers/fixture"
+import { nvim } from "../helpers/neovim"
 
 const cases: Array<[string, string, number?]> = [
     ["one two three", "dw"],
