@@ -5,7 +5,8 @@ import type { TextareaRenderable } from "@opentui/core"
 import { loadShell, type ShellSnapshot, type ShellSource } from "./data"
 import { ReaderHeader, TextReader } from "../text"
 import type { ReaderProps } from "../types"
-import { createReaderSyntax, highlightCommand, highlightDiff } from "./syntax"
+import { createReaderSyntax, highlightCode } from "../syntax"
+import { highlightDiff } from "./syntax"
 
 export function ShellReader(props: ReaderProps & { source: ShellSource }) {
   const theme = () => props.context.theme.surface("dialog")
@@ -27,7 +28,7 @@ export function ShellReader(props: ReaderProps & { source: ShellSource }) {
     </box>
   }>{(data) => <TextReader {...props} title="Shell output" status={data().status}
     text={data().output ? data().output.replace(/\n$/, "") : "No captured output."}
-    label="Output" leading={() => command} highlight={(input) => highlightDiff(input, syntax)}
+    label="Output" leading={() => command} highlight={(input) => highlightDiff(input, syntax, props.context.renderer.widthMethod)}
     maxHeight={Math.max(1, Math.min(30, dimensions().height - commandHeight() - (data().notice ? 12 : 10)))}
     details={<box paddingLeft={2} paddingRight={2}>
       <box flexDirection="row" gap={2}>
@@ -38,7 +39,7 @@ export function ShellReader(props: ReaderProps & { source: ShellSource }) {
       </box>
       <textarea id="vim-shell-command" ref={(input: TextareaRenderable) => {
         command = input
-        onMount(() => { void highlightCommand(input, syntax, controller.signal) })
+        onMount(() => { void highlightCode(input, syntax, "bash", controller.signal, props.context.renderer.widthMethod) })
       }} initialValue={data().command || "Receiving command…"} minHeight={1} maxHeight={commandHeight()}
         wrapMode="word" showCursor cursorStyle={props.config.cursorStyles.normal}
         textColor={theme().text.base} focusedTextColor={theme().text.base}

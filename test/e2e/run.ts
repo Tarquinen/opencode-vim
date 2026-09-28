@@ -13,6 +13,8 @@ import { readerMessages, transcriptMessages, historyMessages } from "./data/tran
 import { shellMessages } from "./data/shell"
 import { shellReader } from "./scenarios/shell-reader"
 import { sessionKeymaps, sessionAgentBinding } from "./scenarios/session-keymaps"
+import { readMessages } from "./data/read"
+import { readReader } from "./scenarios/read-reader"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
     { name: "tab-switching", run: tabSwitching },
@@ -21,6 +23,8 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
     { name: "shell-reader", run: shellReader, setup: { messages: shellMessages } },
     { name: "shell-reader-low-detail", run: shellReader, setup: { messages: shellMessages, cli: { session: { verbosity: "low" } } } },
+    { name: "read-reader", run: readReader, setup: { messages: readMessages } },
+    { name: "read-reader-low-detail", run: readReader, setup: { messages: readMessages, cli: { session: { verbosity: "low" } } } },
     { name: "session-keymaps", run: sessionKeymaps, setup: {
         messages: shellMessages, cli: { keybinds: { "session.new": "tab" } },
         vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-section" } } },

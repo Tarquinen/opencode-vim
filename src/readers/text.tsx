@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
-import type { KeyEvent, TextareaRenderable } from "@opentui/core"
+import { LineNumberRenderable, type KeyEvent, type TextareaRenderable } from "@opentui/core"
 import { useTerminalDimensions, type JSX } from "@opentui/solid"
-import { onCleanup, onMount, Show, untrack } from "solid-js"
+import { createEffect, onCleanup, onMount, Show, untrack } from "solid-js"
 import type { PromptContext } from "../modules/vim/actions"
 import { displayWidth } from "../modules/vim/map"
 import { createVimState } from "../modules/vim/state"
@@ -13,6 +13,7 @@ export function TextReader(props: ReaderProps & {
   title: string; text: string; status?: string; details?: JSX.Element
   label?: string; maxHeight?: number; highlight?: (input: TextareaRenderable) => void
   leading?: () => TextareaRenderable
+  firstLine?: number
 }) {
   const context = props.context
   const dimensions = useTerminalDimensions()
@@ -101,6 +102,29 @@ export function TextReader(props: ReaderProps & {
     if (state.mode() === "visual-line") return "VISUAL LINE"
     return ""
   }
+  const height = () => props.maxHeight ?? Math.max(1, Math.min(20, dimensions().height - 10))
+  const editor = <textarea id="vim-session-message" ref={(value: TextareaRenderable) => {
+    output = value
+    output.handleKeyPress = () => true
+    output.handlePaste = () => {}
+  }} initialValue={props.text} minHeight={1} maxHeight={height()}
+    flexGrow={props.firstLine === undefined ? undefined : 1} minWidth={0}
+    wrapMode="word" showCursor cursorStyle={props.config.cursorStyles.normal} textColor={theme().text.base}
+    backgroundColor={background()} focusedBackgroundColor={background()} focusedTextColor={theme().text.base} />
+  let body = editor
+  if (props.firstLine !== undefined) {
+    const gutter = new LineNumberRenderable(context.renderer, {
+      id: "vim-file-lines", lineNumberOffset: props.firstLine - 1,
+      minWidth: String(props.firstLine + props.text.split("\n").length - 1).length + 2,
+    })
+    gutter.add(output)
+    createEffect(() => {
+      gutter.fg = theme().text.muted
+      gutter.bg = background()
+      gutter.maxHeight = height()
+    })
+    body = gutter as unknown as JSX.Element
+  }
   return (
     <box id="vim-message-reader" gap={1}>
       <ReaderHeader context={context} title={props.title} back={props.back} />
@@ -112,13 +136,7 @@ export function TextReader(props: ReaderProps & {
             <Show when={props.status}><text fg={theme().text.muted}>{props.status}</text></Show>
           </box>
         </Show>
-        <textarea id="vim-session-message" ref={(value: TextareaRenderable) => {
-          output = value
-          output.handleKeyPress = () => true
-          output.handlePaste = () => {}
-        }} initialValue={props.text} minHeight={1} maxHeight={props.maxHeight ?? Math.max(1, Math.min(20, dimensions().height - 10))}
-          wrapMode="word" showCursor cursorStyle={props.config.cursorStyles.normal} textColor={theme().text.base}
-          backgroundColor={background()} focusedBackgroundColor={background()} focusedTextColor={theme().text.base} />
+        {body}
       </box>
       <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexWrap="wrap" columnGap={3}>
         <Show when={modeLabel()}>
@@ -135,7 +153,7 @@ export function TextReader(props: ReaderProps & {
 export function ReaderHeader(props: Pick<ReaderProps, "context" | "back"> & { title: string }) {
   const theme = () => props.context.theme.surface("dialog")
   return <box paddingLeft={2} paddingRight={2} flexDirection="row" gap={2}>
-    <text fg={theme().text.base} flexGrow={1}><b>{props.title}</b></text>
+    <text fg={theme().text.base} flexGrow={1} flexShrink={1} minWidth={0} truncate><b>{props.title}</b></text>
     <text id="vim-message-close" fg={theme().text.muted} onMouseUp={props.back}>esc</text>
   </box>
 }

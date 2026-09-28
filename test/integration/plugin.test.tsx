@@ -1212,6 +1212,96 @@ test("shell diff colors preserve Unicode output, selection and copying", async (
     expect(f.hostMode()).toBe("opencode-vim.session")
 })
 
+test.each([[80, 16], [120, 38]])("read tools show saved code with scrolling line numbers and copy without the gutter at %ix%i", async (width, height) => {
+    let finish!: (value: { highlights: [number, number, string][] }) => void
+    const highlighting = spyOn(OpenTUI.getTreeSitterClient(), "highlightOnce").mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    try {
+        const lines = ['const greeting = "你好 👩‍💻";', `const wrapped = "${"long text ".repeat(15)}";`]
+        for (let number = 43; number <= 100; number++) lines.push(`const value${number} = ${number};`)
+        const text = lines.join("\n")
+        const result = ["Read file src/example.ts, lines 41-100", ...lines.map((line, index) => `${index + 41}: ${line}`), "[Output truncated. Continue reading with offset: 101]"].join("\n")
+        const f = await mount({}, { messages: [{ id: "read-message", type: "assistant", time: { created: 1 }, content: [{
+            type: "tool", id: "read-call", name: "read", text: "Read src/example.ts", state: {
+                status: "completed", input: { path: "src/example.ts", offset: 41 }, content: [{ type: "text", text: result }],
+            },
+        }] }] })
+        f.resize(width, height)
+        await f.keys("s")
+        f.mockInput.pressEnter()
+        await f.renderOnce()
+        const input = f.reader()
+        expect(input.plainText).toBe(text)
+        expect(f.renderer.currentFocusedEditor).toBe(input)
+        expect(f.captureCharFrame()).toContain("src/example.ts")
+        expect(f.captureCharFrame()).toContain("Lines 41–100")
+        expect(f.captureCharFrame()).toContain("Partial file")
+        expect(f.captureCharFrame()).toMatch(/41\s+const greeting/)
+        expect(highlighting).toHaveBeenCalledWith(text, "typescript")
+        await f.keys("wviw")
+        const offset = input.cursorOffset
+        finish({ highlights: [[17, lines[0].length - 1, "string"]] })
+        await f.renderOnce()
+        expect(input.getSelectedText()).toBe("greeting")
+        expect(input.cursorOffset).toBe(offset)
+        expect(input.getLineHighlights(0)[0]).toMatchObject({ start: 17, end: Bun.stringWidth(lines[0]) - 1 })
+        f.mockInput.pressEscape()
+        await f.keys("ggVyxG")
+        expect(f.copied.at(-1)).toBe(lines[0] + "\n")
+        expect(input.plainText).toBe(text)
+        expect(input.scrollY).toBeGreaterThan(0)
+        expect(f.captureCharFrame()).toMatch(/100\s+const value100/)
+        const cursor = f.renderer.getCursorState()
+        expect(cursor.visible).toBe(true)
+        expect(f.captureCharFrame().split("\n")[cursor.y - 1]).toContain("value100")
+        const remembered = input.cursorOffset
+        f.mockInput.pressEscape()
+        f.mockInput.pressEnter()
+        await f.renderOnce()
+        expect(f.reader().cursorOffset).toBe(remembered)
+        f.resize(44, 20)
+        await f.keys("gg")
+        expect(f.captureCharFrame()).toMatch(/41\s+const greeting/)
+        expect(f.reader().plainText).toBe(text)
+        const modal = f.renderer.root.findDescendantById("host-dialog")!
+        expect(modal.y).toBeGreaterThanOrEqual(0)
+        expect(modal.y + modal.height).toBeLessThanOrEqual(20)
+        await f.keys("s")
+        expect(f.renderer.currentFocusedEditor).toBe(f.input)
+        expect(f.input.plainText).toBe("hello")
+        finish({ highlights: [[0, 5, "function"]] })
+        await f.renderOnce()
+    } finally {
+        highlighting.mockRestore()
+    }
+})
+
+test.each(["Read directory src, 0 entries", "Image read successfully", "Custom read result"])("non-file read results keep the default view: %s", async (result) => {
+    const f = await mount({}, { messages: [{ id: "read-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "read-call", name: "read", text: "Original read summary", state: {
+            status: "completed", input: { path: "src" }, content: [{ type: "text", text: result }],
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.reader().plainText).toBe("Original read summary")
+    expect(f.renderer.root.findDescendantById("vim-file-lines")).toBeUndefined()
+})
+
+test.each(["Read file empty.unknown, 0 lines", "Read file empty.unknown, lines 1-1\n1: "])("empty and blank read files stay empty when copied: %s", async (result) => {
+    const f = await mount({}, { messages: [{ id: "read-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "read-call", name: "read", text: "Read empty.unknown", state: {
+            status: "completed", input: { path: "empty.unknown" }, content: [{ type: "text", text: result }],
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.keys("yy")
+    expect(f.reader().plainText).toBe("")
+    expect(f.copied.at(-1)).toBe("\n")
+    expect(f.captureCharFrame()).toContain(result.endsWith("0 lines") ? "Empty file" : "Lines 1–1")
+})
+
 test("streaming updates do not move a selection, and browsing refreshes the text", async () => {
     const f = await mount({}, { messages: [message(1, "hello")] })
     await f.keys("s")
@@ -1440,9 +1530,13 @@ test("native marker selects one text part at a time and clips to the viewport", 
 
 test("collapsed tool groups expand in place and individual calls can be read and copied", async () => {
     const first = message(1, "Read first.ts\nFirst output")
-    first.content![0] = { type: "tool", id: "tool-1", name: "read", text: "Read first.ts\nFirst output" }
+    first.content![0] = { type: "tool", id: "tool-1", name: "read", text: "Read first.ts\nFirst output", state: {
+        status: "completed", input: { path: "first.ts" }, content: [{ type: "text", text: "Read file first.ts, lines 1-1\n1: First output" }],
+    } }
     const second = message(2, "Read second.ts\nSecond output")
-    second.content![0] = { type: "tool", id: "tool-2", name: "read", text: "Read second.ts\nSecond output" }
+    second.content![0] = { type: "tool", id: "tool-2", name: "read", text: "Read second.ts\nSecond output", state: {
+        status: "completed", input: { path: "second.ts" }, content: [{ type: "text", text: "Read file second.ts, lines 1-1\n1: Second output" }],
+    } }
     const f = await mount({}, { messages: [first, second, message(3, "Done")], group: ["1", "2"] })
     await f.keys("sk")
     expect(f.captureCharFrame()).toContain("▎→Explored: 2 reads")
@@ -1456,7 +1550,7 @@ test("collapsed tool groups expand in place and individual calls can be read and
     expect(f.captureCharFrame()).toContain("▎First output")
     expect(f.captureCharFrame()).not.toContain("▎Second output")
     f.mockInput.pressEnter()
-    expect(f.reader().plainText).toBe("Read first.ts\nFirst output")
+    expect(f.reader().plainText).toBe("First output")
     f.mockInput.pressEscape()
     await f.keys("jyy")
     expect(f.copied.at(-1)).toBe("Read second.ts\nSecond output")
@@ -1470,7 +1564,9 @@ test("collapsed tool groups expand in place and individual calls can be read and
 
 test("session entry and navigation work when the first native row has no ID", async () => {
     const tool = message(1, "Read file.ts\nFile contents")
-    tool.content![0] = { type: "tool", id: "read-1", name: "read", text: "Read file.ts\nFile contents" }
+    tool.content![0] = { type: "tool", id: "read-1", name: "read", text: "Read file.ts\nFile contents", state: {
+        status: "completed", input: { path: "file.ts" }, content: [{ type: "text", text: "Read file file.ts, lines 1-1\n1: File contents" }],
+    } }
     const f = await mount({}, { messages: [tool, message(2, "Done")], group: ["1"] })
     Reflect.set(f.transcript().getRenderable("1")!, "id", undefined)
     await f.keys("s")
