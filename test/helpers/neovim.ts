@@ -11,7 +11,7 @@ if (!platform || !architecture) {
 }
 
 const asset = `nvim-${platform}-${architecture}`
-const cache = path.resolve(import.meta.dir, "../node_modules/.cache/neovim")
+const cache = path.resolve(import.meta.dir, "../../node_modules/.cache/neovim")
 const directory = path.join(cache, `v${version}-${platform}-${architecture}`)
 export const nvim = path.join(directory, "bin/nvim")
 

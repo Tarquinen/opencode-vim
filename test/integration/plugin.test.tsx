@@ -6,8 +6,8 @@ import { render, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
 import { Plugin } from "@opencode/plugin/tui"
 import { createEffect, createRoot, createSignal, For, Show } from "solid-js"
-import type { VimOptions } from "../src/modules/vim/config"
-import { createClipboardFixture } from "./clipboard-fixture"
+import type { VimOptions } from "../../src/modules/vim/config"
+import { createClipboardFixture } from "../helpers/clipboard-fixture"
 
 // Install before the runtime loader snapshots OpenTUI's shared exports.
 let activeClipboard = createClipboardFixture()
@@ -16,7 +16,7 @@ afterAll(() => clipboardFactory.mockRestore())
 
 const entrypoint = process.env.OPENCODE_VIM_TEST_ENTRYPOINT
 if (entrypoint) ensureRuntimePluginSupport({ additional: { "@opencode/plugin/tui": { Plugin } } })
-const { default: plugin }: typeof import("../tui") = await import(entrypoint ?? "../tui")
+const { default: plugin }: typeof import("../../tui") = await import(entrypoint ?? "../../tui")
 
 let dispose: (() => void) | undefined
 afterEach(() => { dispose?.(); dispose = undefined })

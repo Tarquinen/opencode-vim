@@ -15,7 +15,7 @@
     "build": "bun scripts/build.ts",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --conditions=browser --preload @opentui/solid/preload",
+    "test": "bun test --conditions=browser --preload @opentui/solid/preload ./test/unit ./test/integration",
     "test:e2e": "bun test/e2e/run.ts",
     "bench": "bun test/benchmark.ts"
   },

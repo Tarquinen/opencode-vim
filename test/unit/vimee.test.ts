@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import type { KeyEvent } from "@opentui/core"
-import type { PromptContext } from "./actions"
-import { createVimConfig } from "./config"
-import type { VimLog } from "./log"
-import { createVimState, type VimMode } from "./state"
-import { createVimeeAdapter } from "./vimee"
+import type { PromptContext } from "../../src/modules/vim/actions"
+import { createVimConfig } from "../../src/modules/vim/config"
+import type { VimLog } from "../../src/modules/vim/log"
+import { createVimState, type VimMode } from "../../src/modules/vim/state"
+import { createVimeeAdapter } from "../../src/modules/vim/vimee"
 
 describe("vim command keymaps", () => {
     test("does not restore stale cursor state after a normal command", () => {

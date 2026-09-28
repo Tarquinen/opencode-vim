@@ -50,6 +50,9 @@ Use `bun run build` to build the plugin into `dist/`.
 
 ## Adding tests
 
+Put unit tests in `test/unit/`, integration tests in `test/integration/`, and
+shared fixtures and setup in `test/helpers/`.
+
 Add focused regression coverage for bug fixes. Use E2E scenarios when the behavior
 depends on real OpenCode keyboard handling, focus, dialogs, or tabs.
 

@@ -3,7 +3,7 @@ import { cp, mkdir, mkdtemp, rm, symlink } from "node:fs/promises"
 import path from "node:path"
 
 test.each(["source", "npm"])("%s plugin shares the host's runtime", async (kind) => {
-    const root = path.resolve(import.meta.dir, "..")
+    const root = path.resolve(import.meta.dir, "../..")
     await mkdir("/tmp/opencode", { recursive: true })
     const directory = await mkdtemp("/tmp/opencode/vim-runtime-")
     try {
@@ -34,7 +34,7 @@ test.each(["source", "npm"])("%s plugin shares the host's runtime", async (kind)
         // A fresh process installs OpenCode's runtime loader before importing the
         // plugin; it must not reuse modules preloaded by the ordinary test suite.
         await run([
-            process.execPath, "test", "--conditions=browser", "--preload", "@opentui/solid/preload", "test/plugin.test.tsx",
+            process.execPath, "test", "--conditions=browser", "--preload", "@opentui/solid/preload", "test/integration/plugin.test.tsx",
         ], root, { OPENCODE_VIM_TEST_ENTRYPOINT: entrypoint })
     } finally {
         await rm(directory, { recursive: true, force: true })
