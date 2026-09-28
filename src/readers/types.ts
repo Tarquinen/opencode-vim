@@ -5,6 +5,7 @@ import type { TranscriptItem } from "../transcript-items"
 export type ReaderProps = {
   context: Context
   config: VimConfig
+  sessionID: string
   message: TranscriptItem
   offset: number
   copy: (text: string) => void

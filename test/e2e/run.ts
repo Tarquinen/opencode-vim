@@ -10,12 +10,16 @@ import { tabSwitching } from "./scenarios/tab-switching"
 import { messageReader } from "./scenarios/message-reader"
 import { transcriptGrouped, transcriptLowDetail, transcriptUngrouped, transcriptRunning, transcriptHistory } from "./scenarios/transcript"
 import { readerMessages, transcriptMessages, historyMessages } from "./data/transcript"
+import { shellMessages } from "./data/shell"
+import { shellReader } from "./scenarios/shell-reader"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
     { name: "tab-switching", run: tabSwitching },
     { name: "dialog-focus", run: dialogFocus },
     { name: "agent-switching", run: agentSwitching },
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
+    { name: "shell-reader", run: shellReader, setup: { messages: shellMessages } },
+    { name: "shell-reader-low-detail", run: shellReader, setup: { messages: shellMessages, cli: { session: { verbosity: "low" } } } },
 ]
 for (const animations of [true, false]) {
     const suffix = animations ? "animated" : "static"

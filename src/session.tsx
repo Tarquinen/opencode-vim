@@ -4,7 +4,7 @@ import { BoxRenderable, type KeyEvent } from "@opentui/core"
 import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js"
 import type { VimConfig } from "./modules/vim/config"
 import { YANK_FLASH_MS } from "./modules/vim/vimee"
-import { DefaultReader } from "./readers/default"
+import { Reader } from "./readers"
 import { pageCommand, readerKey } from "./session-keys"
 import { createTranscriptSelection } from "./transcript"
 import type { TranscriptItem } from "./transcript-items"
@@ -108,7 +108,7 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     focusTarget?.focus()
     setReading(message)
     context.ui.dialog.show(() => (
-      <DefaultReader context={context} config={config} message={message} offset={positions.get(message.id) ?? 0}
+      <Reader context={context} config={config} sessionID={sessionID} message={message} offset={positions.get(message.id) ?? 0}
         copy={copy} notice={notice} remember={(offset) => positions.set(message.id, offset)}
         back={() => context.ui.dialog.clear()} close={close} />
     ), () => {

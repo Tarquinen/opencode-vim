@@ -8,7 +8,8 @@ import { createTerminal, type Terminal } from "./terminal"
 
 export type Fixture = { terminal: Terminal; sessionTitle: string }
 export type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
-export type FixtureSetup = { messages?: Message[]; cli?: Record<string, unknown> }
+export type FixtureAPI = { request: (endpoint: string, body?: unknown) => Promise<any>; workspace: string }
+export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown> }
 
 type Options = FixtureSetup & {
     opencode: { binary: string; version: string }
@@ -86,13 +87,15 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
         }
         let session = (await request("/api/session", { title: sessionTitle, location: { directory: workspace } })).data
         if (options.messages) {
+            const messages = typeof options.messages === "function"
+                ? await options.messages({ request, workspace }) : options.messages
             session = (await request("/api/experimental/session/import", {
                 info: { ...session, id: `ses_${crypto.randomUUID().replaceAll("-", "")}` },
-                messages: options.messages,
+                messages,
                 location: { directory: workspace },
             })).data
             const imported = (await request(`/api/experimental/session/${session.id}/export`)).data
-            assert.equal(imported.messages.length, options.messages.length)
+            assert.equal(imported.messages.length, messages.length)
         }
         const command = ["env", "-i"]
         for (const [key, value] of Object.entries(environment("tui"))) command.push(`${key}=${value}`)

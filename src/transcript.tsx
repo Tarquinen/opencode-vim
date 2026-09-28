@@ -14,6 +14,14 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     loading?: { key: string; frame: number; up: boolean; height: number }
   } | undefined
 
+  function items(rows: Renderable[]) {
+    const pending = new Set<string>()
+    for (const request of context.data.session.permission.list(sessionID) ?? []) {
+      if (request.source?.type === "tool") pending.add(request.source.id)
+    }
+    return transcriptItems(rows, context.data.session.message.list(sessionID), pending)
+  }
+
   function choose(range: TranscriptRange, view: NonNullable<ReturnType<typeof inspect>>) {
     requestedID = range.id
     select(requestedID)
@@ -104,7 +112,7 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     }
     if (!scroll || scroll.isDestroyed) scroll = findScroll(context.renderer.root)
     if (!scroll) { select(undefined); return }
-    const { ranges, hasLatest } = transcriptItems(scroll.getChildren(), messages)
+    const { ranges, hasLatest } = items(scroll.getChildren())
     const top = scroll.viewport.y
     const bottom = top + scroll.viewport.height
     let selected = ranges.find((range) => range.id === requestedID)
@@ -131,7 +139,7 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     latest, move,
     get(id: string | undefined) {
       if (!scroll || scroll.isDestroyed) return
-      return transcriptItems(scroll.getChildren(), context.data.session.message.list(sessionID)).ranges.find((range) => range.id === id)
+      return items(scroll.getChildren()).ranges.find((range) => range.id === id)
     },
     toggle() {
       const range = inspect()?.selected

@@ -7,6 +7,7 @@ import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-suppor
 import { Plugin } from "@opencode/plugin/tui"
 import { createEffect, createRoot, createSignal, For, Show } from "solid-js"
 import type { VimOptions } from "../../src/modules/vim/config"
+import type { ShellSource } from "../../src/readers/shell-data"
 import { createClipboardFixture } from "../helpers/clipboard-fixture"
 
 // Install before the runtime loader snapshots OpenTUI's shared exports.
@@ -21,7 +22,7 @@ const { default: plugin }: typeof import("../../tui") = await import(entrypoint 
 let dispose: (() => void) | undefined
 afterEach(() => { dispose?.(); dispose = undefined })
 
-type TestMessage = { id: string; type: "user" | "assistant"; time: { created: number }; text?: string; content?: Array<{ type: string; text: string; id?: string; name?: string }> }
+type TestMessage = { id: string; type: "user" | "assistant"; time: { created: number }; text?: string; content?: Array<{ type: string; text: string; id?: string; name?: string; state?: Extract<ShellSource, { type: "tool" }>["state"] }> }
 function message(id: number, text: string, type: "user" | "assistant" = "assistant"): TestMessage {
     return { id: String(id), type, time: { created: id }, ...(type === "user" ? { text } : { content: [{ type: "text", text }] }) }
 }
@@ -122,8 +123,9 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
                 if (command) toggle = command.run
             },
         },
-        data: { session: { message: { list: messages } } },
+        data: { session: { message: { list: messages }, permission: { list: () => [] } } },
         ui: {
+            format: { path: (value: string) => value },
             router: { current: route }, toast: { show() {} },
             dialog: {
                 show(view: () => JSX.Element, onClose?: () => void) {
@@ -1010,6 +1012,27 @@ test("reader blocks edits, custom editing maps and bracketed paste", async () =>
     await f.keys("s")
     expect(f.reader()).toBeUndefined()
     expect(f.hostMode()).toBe("base")
+})
+
+test("shell readers separate command and output and preserve read-only Vim controls", async () => {
+    const f = await mount({}, { messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
+            status: "completed", input: { command: "printf output", workdir: "/workspace" },
+            content: [{ type: "text", text: "first output\nsecond output" }], metadata: { exit: 0 },
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("Shell output")
+    expect(f.captureCharFrame()).toContain("printf output")
+    expect(f.reader().plainText).toBe("first output\nsecond output")
+    await f.keys("xVjy")
+    expect(f.reader().plainText).toBe("first output\nsecond output")
+    expect(f.copied.at(-1)).toBe("first output\nsecond output\n")
+    await f.keys("s")
+    expect(f.renderer.currentFocusedEditor).toBe(f.input)
+    expect(f.input.plainText).toBe("hello")
 })
 
 test("streaming updates do not move a selection, and browsing refreshes the text", async () => {
