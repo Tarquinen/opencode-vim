@@ -4,12 +4,13 @@ import { cp, mkdir } from "node:fs/promises"
 import { createServer } from "node:net"
 import path from "node:path"
 import type { Context } from "@opencode/plugin/tui/context"
+import type { VimOptions } from "../../src/modules/vim/config"
 import { createTerminal, type Terminal } from "./terminal"
 
 export type Fixture = { terminal: Terminal; sessionTitle: string }
 export type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
 export type FixtureAPI = { request: (endpoint: string, body?: unknown) => Promise<any>; workspace: string }
-export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown> }
+export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown>; vim?: VimOptions }
 
 type Options = FixtureSetup & {
     opencode: { binary: string; version: string }
@@ -51,7 +52,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
         }
         assert.equal(execFileSync(opencode.binary, ["--version"], { env: environment("server"), encoding: "utf8" }).trim(), `opencode v${opencode.version}`)
         await Bun.write(path.join(directory, "tui/config/cli.json"), JSON.stringify({
-            plugins: [plugin],
+            plugins: [{ package: plugin, options: { vim: options.vim ?? {} } }],
             tabs: { mode: "on" },
             attention: { notifications: false, sound: false },
             ...options.cli,

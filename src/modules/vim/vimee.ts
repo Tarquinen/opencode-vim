@@ -891,7 +891,8 @@ function createKeybinds(config: VimConfig, log: VimLog): KeybindMap | undefined 
     const map = createKeybindMap()
     let count = 0
 
-    for (const [mode, keymaps] of Object.entries(config.keymaps) as Array<[VimeeMode, Record<string, string> | undefined]>) {
+    for (const mode of ["insert", "normal", "visual", "visual-line"] as const) {
+        const keymaps = config.keymaps[mode]
         if (!keymaps) continue
         for (const [keys, action] of Object.entries(keymaps)) {
             try {

@@ -1055,6 +1055,98 @@ test("shell readers separate command and output and preserve read-only Vim contr
     expect(f.input.plainText).toBe("hello")
 })
 
+test.each(["", "v", "V"])("session keymaps remap section switching and release Tab in modal mode %j", async (mode) => {
+    const f = await mount({ keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-section" } } }, {
+        messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
+            type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
+                status: "completed", input: { command: "printf output" }, content: [{ type: "text", text: "first output" }],
+            },
+        }] }],
+    })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    const command = f.renderer.currentFocusedEditor as TextareaRenderable
+    expect(f.captureCharFrame()).toContain("<C-w>w switch")
+    expect(f.captureCharFrame()).not.toContain("tab switch")
+    await f.keys(mode)
+    const selection = command.getSelectedText()
+    let passed = 0
+    f.renderer.keyInput.on("keypress", (event) => { if (event.name === "tab" && !event.defaultPrevented) passed++ })
+    f.mockInput.pressKey("TAB")
+    await f.renderOnce()
+    expect(passed).toBe(1)
+    expect(f.renderer.currentFocusedEditor).toBe(command)
+    expect(command.getSelectedText()).toBe(selection)
+    f.mockInput.pressKey("w", { ctrl: true })
+    await f.renderOnce()
+    expect(f.renderer.currentFocusedEditor).toBe(command)
+    await f.keys("w")
+    expect(f.renderer.currentFocusedEditor).toBe(f.reader())
+    expect(command.hasSelection()).toBe(false)
+    expect(command.plainText).toBe("printf output")
+    expect(f.reader().plainText).toBe("first output")
+
+    f.mockInput.pressKey("w", { ctrl: true })
+    command.focus()
+    await f.keys("w")
+    expect(f.renderer.currentFocusedEditor).toBe(command)
+    expect(command.cursorOffset).toBe(7)
+    f.mockInput.pressKey("w", { ctrl: true })
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+})
+
+test("session Tab passthrough hides disabled section hints and leaves generic modals read-only", async () => {
+    const f = await mount({ keymaps: { session: { "<Tab>": "passthrough" } } }, { messages: [message(1, "one two")] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("v select · s prompt")
+    expect(f.captureCharFrame()).not.toContain("switch")
+    let passed = 0
+    f.renderer.keyInput.on("keypress", (event) => { if (event.name === "tab" && !event.defaultPrevented) passed++ })
+    f.mockInput.pressKey("TAB")
+    await f.keys("xw")
+    expect(passed).toBe(1)
+    expect(f.reader().plainText).toBe("one two")
+    expect(f.reader().cursorOffset).toBe(4)
+})
+
+test("session passthrough applies while browsing and reading without changing prompt mappings", async () => {
+    const f = await mount({ keymaps: {
+        normal: { j: "x" },
+        session: { j: "passthrough", "<Tab>": "passthrough", "<C-w>w": "switch-section" },
+    } }, { messages: [message(1, "first message"), message(2, "last message")] })
+    await f.keys("j")
+    expect(f.input.plainText).toBe("ello")
+    await f.keys("s")
+    const before = f.captureCharFrame()
+    const passed: string[] = []
+    f.renderer.keyInput.on("keypress", (event) => {
+        if (!event.defaultPrevented) passed.push(event.ctrl ? `ctrl+${event.name}` : event.name)
+    })
+    f.mockInput.pressKey("TAB")
+    f.mockInput.pressKey("w", { ctrl: true })
+    await f.keys("j")
+    expect(passed).toEqual(["tab", "ctrl+w", "j"])
+    expect(f.captureCharFrame()).toBe(before)
+    expect(f.hostMode()).toBe("opencode-vim.session")
+    await f.keys("k")
+    expect(f.captureCharFrame()).toContain("▎first message")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    const offset = f.reader().cursorOffset
+    await f.keys("j")
+    expect(passed.at(-1)).toBe("j")
+    expect(f.reader().cursorOffset).toBe(offset)
+    expect(f.reader().plainText).toBe("first message")
+    await f.keys("s")
+    await f.keys("j")
+    expect(f.input.plainText).toBe("llo")
+})
+
 test("shell output keeps deliberate blank lines and trailing spaces", async () => {
     const f = await mount({}, { messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
         type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {

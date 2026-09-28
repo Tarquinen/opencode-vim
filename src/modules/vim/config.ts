@@ -28,7 +28,10 @@ export type VimOptions = {
     keymaps?: VimKeymaps
 }
 
-export type VimKeymaps = Partial<Record<VimMode, Record<string, VimMappedAction>>>
+export type SessionAction = "switch-section" | "passthrough"
+export type VimKeymaps = Partial<Record<VimMode, Record<string, VimMappedAction>>> & {
+    session?: Record<string, SessionAction>
+}
 export type VimMappedAction = string
 
 const DEFAULT_CURSOR_STYLES: Record<VimMode, VimCursorStyle> = {
@@ -93,6 +96,12 @@ function readKeymaps(input: unknown): VimKeymaps | undefined {
         keymaps[mode] = {}
         for (const [key, action] of Object.entries(raw as Record<string, unknown>)) {
             if (isMappedAction(action)) keymaps[mode][key] = action
+        }
+    }
+    if (source.session && typeof source.session === "object") {
+        keymaps.session = {}
+        for (const [key, action] of Object.entries(source.session)) {
+            if (action === "switch-section" || action === "passthrough") keymaps.session[key] = action
         }
     }
 

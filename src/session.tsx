@@ -5,7 +5,7 @@ import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-j
 import type { VimConfig } from "./modules/vim/config"
 import { YANK_FLASH_MS } from "./modules/vim/vimee"
 import { Reader } from "./readers"
-import { pageCommand, readerKey } from "./session-keys"
+import { createSessionKeymaps, pageCommand, sessionModeKey } from "./session-keys"
 import { createTranscriptSelection } from "./transcript"
 import type { TranscriptItem } from "./transcript-items"
 import type { VimClipboard } from "./clipboard"
@@ -13,6 +13,7 @@ import type { VimClipboard } from "./clipboard"
 export const SESSION_MODE = "opencode-vim.session"
 
 export function createSessionMode(context: Context, config: VimConfig, clipboard: VimClipboard) {
+  const mappings = createSessionKeymaps(config, false)
   const [active, setActive] = createSignal(false)
   const [reading, setReading] = createSignal<TranscriptItem>()
   const [notice, setNotice] = createSignal("")
@@ -119,8 +120,9 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
 
   const onKey = (event: KeyEvent) => {
     if (!active() || reading()) return
-    const key = readerKey(context, event, config.sessionKey, SESSION_MODE)
+    const key = sessionModeKey(context, event, config.sessionKey, SESSION_MODE, mappings.accepts)
     if (!key) return
+    if (mappings.resolve(key) === "passthrough") return
     event.preventDefault()
     event.stopPropagation()
     clearYankFlash()

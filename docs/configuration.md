@@ -30,7 +30,7 @@ All options below belong inside `options.vim`.
 | `defaultMode` | `"insert"` | Starting Vim mode; use `"normal"` to start in normal mode |
 | `sessionKey` | `"s"` | Single key to enter and leave session mode |
 | `keymapTimeout` | `500` | Milliseconds to wait for the rest of a custom mapping |
-| `keymaps` | `{}` | Prompt and search-dialog mappings, grouped by mode |
+| `keymaps` | `{}` | Custom mappings, grouped by mode |
 | `cursorStyles` | See below | Cursor appearance for each editing mode |
 | `debug` | `false` | Enable debug logging |
 | `debugPath` | `~/.cache/opencode/opencode-vim.log` | Debug log file |
@@ -47,8 +47,8 @@ entering session mode.
 ### Custom keymaps
 
 Mappings apply to `insert`, `normal`, `visual`, and `visual-line` editing modes in
-the prompt and search dialogs. Session browsing and its read-only modal use their
-own bindings.
+the prompt and search dialogs. Use `keymaps.session` for transcript browsing and
+its message/tool modals.
 
 See [Custom Keymaps](./keymap-actions.md) for actions, key notation, and examples.
 See [Keybindings and Modes](./vim-behavior.md) for the default behavior.

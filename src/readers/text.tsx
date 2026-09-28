@@ -6,7 +6,7 @@ import type { PromptContext } from "../modules/vim/actions"
 import { displayWidth } from "../modules/vim/map"
 import { createVimState } from "../modules/vim/state"
 import { createVimeeAdapter } from "../modules/vim/vimee"
-import { pageCommand, readerKey } from "../session-keys"
+import { createSessionKeymaps, pageCommand, sessionModeKey } from "../session-keys"
 import type { ReaderProps } from "./types"
 
 export function TextReader(props: ReaderProps & {
@@ -19,6 +19,7 @@ export function TextReader(props: ReaderProps & {
   const theme = () => context.theme.surface("dialog")
   const background = () => props.label ? theme().background.base : theme().background.raised.high
   const state = createVimState("normal")
+  const mappings = createSessionKeymaps(props.config, !!props.leading)
   let input!: TextareaRenderable
   let output!: TextareaRenderable
   const adapter = createVimeeAdapter(state, props.config, () => {}, { readOnly: true, onYank: props.copy })
@@ -40,12 +41,16 @@ export function TextReader(props: ReaderProps & {
   }
   const onKey = (event: KeyEvent) => {
     if (context.renderer.currentFocusedEditor !== input) return
-    const key = readerKey(context, event, props.config.sessionKey, "modal")
-    if (!key) return
+    const key = sessionModeKey(context, event, props.config.sessionKey, "modal", mappings.accepts)
+    if (!key) { mappings.cancel(); return }
+    if (key === "<Esc>" || key === "<C-[>") mappings.cancel()
+    const action = !adapter.isPending() ? mappings.resolve(key) : undefined
+    if (action === "passthrough") return
     event.preventDefault()
     event.stopPropagation()
-    if (key === "<Tab>" && props.leading) {
-      const next = input === output ? props.leading() : output
+    if (action === "pending") return
+    if (action === "switch-section") {
+      const next = input === output ? props.leading!() : output
       next.focus()
       return
     }
@@ -64,6 +69,7 @@ export function TextReader(props: ReaderProps & {
     } else adapter.handle(event, key, editorContext)
   }
   const onFocus = () => untrack(() => {
+    mappings.cancel()
     const focused = context.renderer.currentFocusedEditor
     if (focused !== output && focused !== props.leading?.()) return
     input = focused as TextareaRenderable
@@ -116,7 +122,7 @@ export function TextReader(props: ReaderProps & {
           <text fg={theme().text.muted}>{modeLabel()}</text>
         </Show>
         <text fg={theme().text.muted}>
-          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : `v select${props.leading ? " · tab switch" : ""} · ${props.config.sessionKey} prompt`)}
+          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : `v select${mappings.hint ? ` · ${mappings.hint} switch` : ""} · ${props.config.sessionKey} prompt`)}
         </text>
       </box>
     </box>
