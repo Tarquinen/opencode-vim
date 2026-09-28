@@ -21,7 +21,9 @@ export async function shellMessages({ request, workspace }: FixtureAPI): Promise
                     content: [{ type: "text", text: "Background acknowledgement, not output" }], metadata: { shellID: shell.id, status: "running" },
                 } },
                 { type: "tool", id: "saved", name: "shell", time: { created: 2, completed: 3 }, state: {
-                    status: "completed", input: { command: "printf saved-result" }, content: [{ type: "text", text: "retained shell output" }],
+                    status: "completed", input: { command: "git diff -- src/readers/shell/index.tsx" }, content: [{ type: "text", text:
+                        "retained shell output\ndiff --git a/shell.tsx b/shell.tsx\n--- a/shell.tsx\n+++ b/shell.tsx\n@@ -1 +1 @@\n-old layout\n+new layout",
+                    }],
                     metadata: { shellID: "sh_expired_fixture", exit: 0 },
                 } },
                 { type: "tool", id: "other", name: "custom_shell", time: { created: 2, completed: 3 }, state: {

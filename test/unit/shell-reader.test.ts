@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Context } from "@opencode/plugin/tui/context"
-import { loadShell, OUTPUT_LIMIT, shellSnapshot, type ShellSource } from "../../src/readers/shell-data"
+import { loadShell, OUTPUT_LIMIT, shellSnapshot, type ShellSource } from "../../src/readers/shell/data"
 
 type Tool = Extract<ShellSource, { type: "tool" }>
 function tool(state: Tool["state"]): Tool {

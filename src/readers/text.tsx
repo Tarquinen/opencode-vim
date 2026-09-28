@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import type { KeyEvent, TextareaRenderable } from "@opentui/core"
 import { useTerminalDimensions, type JSX } from "@opentui/solid"
-import { onCleanup, onMount, Show } from "solid-js"
+import { onCleanup, onMount, Show, untrack } from "solid-js"
 import type { PromptContext } from "../modules/vim/actions"
 import { displayWidth } from "../modules/vim/map"
 import { createVimState } from "../modules/vim/state"
@@ -9,13 +9,18 @@ import { createVimeeAdapter } from "../modules/vim/vimee"
 import { pageCommand, readerKey } from "../session-keys"
 import type { ReaderProps } from "./types"
 
-export function TextReader(props: ReaderProps & { title: string; text: string; status?: string; details?: JSX.Element }) {
+export function TextReader(props: ReaderProps & {
+  title: string; text: string; status?: string; details?: JSX.Element
+  label?: string; maxHeight?: number; highlight?: (input: TextareaRenderable) => void
+  leading?: () => TextareaRenderable
+}) {
   const context = props.context
   const dimensions = useTerminalDimensions()
   const theme = () => context.theme.surface("dialog")
-  const background = () => theme().background.raised.high
+  const background = () => props.label ? theme().background.base : theme().background.raised.high
   const state = createVimState("normal")
   let input!: TextareaRenderable
+  let output!: TextareaRenderable
   const adapter = createVimeeAdapter(state, props.config, () => {}, { readOnly: true, onYank: props.copy })
   const editorContext: PromptContext = {
     api: {
@@ -39,6 +44,11 @@ export function TextReader(props: ReaderProps & { title: string; text: string; s
     if (!key) return
     event.preventDefault()
     event.stopPropagation()
+    if (key === "<Tab>" && props.leading) {
+      const next = input === output ? props.leading() : output
+      next.focus()
+      return
+    }
     if (key === props.config.sessionKey && state.mode() === "normal" && !adapter.isPending()) { props.close(); return }
     // The host's Ctrl+C clears the editor unless we intercept it.
     if (key === "<C-c>") { props.back(); return }
@@ -53,14 +63,26 @@ export function TextReader(props: ReaderProps & { title: string; text: string; s
       for (let row = 0; row < rows; row++) adapter.handle({ ...event, ctrl: false } as KeyEvent, down ? "j" : "k", editorContext)
     } else adapter.handle(event, key, editorContext)
   }
-  onMount(() => {
-    input.cursorOffset = Math.min(props.offset, displayWidth(input.plainText))
+  const onFocus = () => untrack(() => {
+    const focused = context.renderer.currentFocusedEditor
+    if (focused !== output && focused !== props.leading?.()) return
+    input = focused as TextareaRenderable
     adapter.attach(editorContext)
+  })
+  onMount(() => {
+    props.highlight?.(output)
+    output.cursorOffset = Math.min(props.offset, displayWidth(output.plainText))
+    input = props.leading?.() ?? output
+    input.handleKeyPress = () => true
+    input.handlePaste = () => {}
+    adapter.attach(editorContext)
+    context.renderer.on("focused_editor", onFocus)
     input.focus()
     context.renderer.keyInput.prependListener("keypress", onKey)
   })
   onCleanup(() => {
-    props.remember(input.cursorOffset)
+    props.remember(output.cursorOffset)
+    context.renderer.off("focused_editor", onFocus)
     context.renderer.keyInput.off("keypress", onKey)
     adapter.cleanup()
   })
@@ -72,14 +94,20 @@ export function TextReader(props: ReaderProps & { title: string; text: string; s
   }
   return (
     <box id="vim-message-reader" gap={1}>
-      <ReaderHeader context={context} title={props.title} status={props.status} back={props.back} />
+      <ReaderHeader context={context} title={props.title} back={props.back} />
       {props.details}
-      <box paddingLeft={2} paddingRight={2} paddingTop={1} paddingBottom={1} backgroundColor={background()}>
+      <box paddingLeft={2} paddingRight={2} paddingTop={props.label ? 0 : 1} paddingBottom={props.label ? 0 : 1} backgroundColor={background()}>
+        <Show when={props.label}>
+          <box flexDirection="row" gap={2}>
+            <text fg={theme().text.muted}><b>{props.label}</b></text>
+            <Show when={props.status}><text fg={theme().text.muted}>{props.status}</text></Show>
+          </box>
+        </Show>
         <textarea id="vim-session-message" ref={(value: TextareaRenderable) => {
-          input = value
-          input.handleKeyPress = () => true
-          input.handlePaste = () => {}
-        }} initialValue={props.text} minHeight={1} maxHeight={Math.max(1, Math.min(20, dimensions().height - (props.details ? 18 : 10)))}
+          output = value
+          output.handleKeyPress = () => true
+          output.handlePaste = () => {}
+        }} initialValue={props.text} minHeight={1} maxHeight={props.maxHeight ?? Math.max(1, Math.min(20, dimensions().height - 10))}
           wrapMode="word" showCursor cursorStyle={props.config.cursorStyles.normal} textColor={theme().text.base}
           backgroundColor={background()} focusedBackgroundColor={background()} focusedTextColor={theme().text.base} />
       </box>
@@ -88,18 +116,17 @@ export function TextReader(props: ReaderProps & { title: string; text: string; s
           <text fg={theme().text.muted}>{modeLabel()}</text>
         </Show>
         <text fg={theme().text.muted}>
-          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : `v select · ${props.config.sessionKey} prompt`)}
+          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : `v select${props.leading ? " · tab switch" : ""} · ${props.config.sessionKey} prompt`)}
         </text>
       </box>
     </box>
   )
 }
 
-export function ReaderHeader(props: Pick<ReaderProps, "context" | "back"> & { title: string; status?: string }) {
+export function ReaderHeader(props: Pick<ReaderProps, "context" | "back"> & { title: string }) {
   const theme = () => props.context.theme.surface("dialog")
   return <box paddingLeft={2} paddingRight={2} flexDirection="row" gap={2}>
     <text fg={theme().text.base} flexGrow={1}><b>{props.title}</b></text>
-    <Show when={props.status}><text fg={theme().text.muted}>{props.status}</text></Show>
     <text id="vim-message-close" fg={theme().text.muted} onMouseUp={props.back}>esc</text>
   </box>
 }

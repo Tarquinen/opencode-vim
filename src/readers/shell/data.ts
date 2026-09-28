@@ -1,6 +1,6 @@
 import { stripVTControlCharacters } from "node:util"
 import type { Context } from "@opencode/plugin/tui/context"
-import type { TranscriptSource } from "../transcript-items"
+import type { TranscriptSource } from "../../transcript-items"
 
 export type ShellSource = Extract<TranscriptSource, { type: "shell" | "tool" }>
 export type ShellSnapshot = {

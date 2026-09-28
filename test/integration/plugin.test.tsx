@@ -7,7 +7,7 @@ import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-suppor
 import { Plugin } from "@opencode/plugin/tui"
 import { createEffect, createRoot, createSignal, For, Show } from "solid-js"
 import type { VimOptions } from "../../src/modules/vim/config"
-import type { ShellSource } from "../../src/readers/shell-data"
+import type { ShellSource } from "../../src/readers/shell/data"
 import { createClipboardFixture } from "../helpers/clipboard-fixture"
 
 // Install before the runtime loader snapshots OpenTUI's shared exports.
@@ -69,7 +69,8 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         get theme() {
             const tokens = { background: { base: RGBA.fromHex("#000000"), raised: { high: RGBA.fromHex("#222222") } }, text: { base: RGBA.fromHex("#ffffff"), muted: RGBA.fromHex("#888888"), feedback: {
                 success: { base: success() }, warning: { base: RGBA.fromHex("#ffff00") }, info: { base: RGBA.fromHex("#00ffff") },
-            } } }
+            } }, syntax: { function: RGBA.fromHex("#00ffff"), string: RGBA.fromHex("#00ff00") },
+                diff: { text: { added: success(), removed: RGBA.fromHex("#ff0000"), hunkHeader: RGBA.fromHex("#00ffff") } } }
             return { ...tokens, surface: () => tokens }
         },
         storage: { store: () => [{ get enabled() { return enabled() } }, (fn: (draft: { enabled: boolean }) => void) => {
@@ -1018,21 +1019,105 @@ test("shell readers separate command and output and preserve read-only Vim contr
     const f = await mount({}, { messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
         type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
             status: "completed", input: { command: "printf output", workdir: "/workspace" },
-            content: [{ type: "text", text: "first output\nsecond output" }], metadata: { exit: 0 },
+            content: [{ type: "text", text: "first output\nsecond output\n" }], metadata: { exit: 0 },
         },
     }] }] })
     await f.keys("s")
     f.mockInput.pressEnter()
     await f.renderOnce()
     expect(f.captureCharFrame()).toContain("Shell output")
+    expect(f.captureCharFrame()).toContain("Command")
+    expect(f.captureCharFrame()).toContain("Output")
     expect(f.captureCharFrame()).toContain("printf output")
+    const command = f.renderer.currentFocusedEditor as TextareaRenderable
+    expect(command.id).toBe("vim-shell-command")
+    expect(command.cursorOffset).toBe(0)
+    await f.keys("xviwy")
+    expect(command.plainText).toBe("printf output")
+    expect(f.copied.at(-1)).toBe("printf")
+    f.mockInput.pressKey("TAB")
+    await f.renderOnce()
+    expect(f.renderer.currentFocusedEditor).toBe(f.reader())
     expect(f.reader().plainText).toBe("first output\nsecond output")
     await f.keys("xVjy")
     expect(f.reader().plainText).toBe("first output\nsecond output")
     expect(f.copied.at(-1)).toBe("first output\nsecond output\n")
+    f.mockInput.pressKey("TAB")
+    await f.renderOnce()
+    expect(f.renderer.currentFocusedEditor).toBe(command)
+    await f.keys("v")
+    expect(command.hasSelection()).toBe(true)
+    f.reader().focus()
+    await f.renderOnce()
+    expect(command.hasSelection()).toBe(false)
     await f.keys("s")
     expect(f.renderer.currentFocusedEditor).toBe(f.input)
     expect(f.input.plainText).toBe("hello")
+})
+
+test("shell output keeps deliberate blank lines and trailing spaces", async () => {
+    const f = await mount({}, { messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
+            status: "completed", input: { command: "printf output" },
+            content: [{ type: "text", text: "output  \n\n" }], metadata: { exit: 0 },
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.reader().plainText).toBe("output  \n")
+})
+
+test("shell command highlighting preserves Unicode and an active selection", async () => {
+    let finish!: (value: { highlights: [number, number, string][] }) => void
+    const highlighting = spyOn(OpenTUI.getTreeSitterClient(), "highlightOnce").mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    try {
+        const command = "printf '你好' | cat"
+        const f = await mount({}, { messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
+            type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
+                status: "completed", input: { command }, content: [{ type: "text", text: "你好\n" }], metadata: { exit: 0 },
+            },
+        }] }] })
+        await f.keys("s")
+        f.mockInput.pressEnter()
+        await f.renderOnce()
+        expect(highlighting).toHaveBeenCalledWith(command, "bash")
+        const input = f.renderer.currentFocusedEditor as TextareaRenderable
+        await f.keys("viw")
+        const offset = input.cursorOffset
+        finish({ highlights: [[0, 6, "function"], [7, 11, "string"], [14, 17, "function"]] })
+        await f.renderOnce()
+        expect(input.plainText).toBe(command)
+        expect(input.getSelectedText()).toBe("printf")
+        expect(input.cursorOffset).toBe(offset)
+        expect(input.getLineHighlights(0)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ start: 7, end: 13 }), expect.objectContaining({ start: 16, end: 19 }),
+        ]))
+    } finally {
+        highlighting.mockRestore()
+    }
+})
+
+test("shell diff colors preserve Unicode output, selection and copying", async () => {
+    const output = "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-hello\n+你好 👩‍💻"
+    const f = await mount({}, { messages: [{ id: "diff-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "diff-call", name: "shell", text: "Diff summary", state: {
+            status: "completed", input: { command: "git diff" }, content: [{ type: "text", text: output }], metadata: { exit: 0 },
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    const input = f.reader()
+    expect(input.getLineHighlights(4)[0]?.styleId).not.toBe(input.getLineHighlights(5)[0]?.styleId)
+    expect(input.getLineHighlights(5)[0]?.end).toBe(Bun.stringWidth("+你好 👩‍💻"))
+    f.mockInput.pressKey("TAB")
+    await f.keys("GVy")
+    expect(f.copied.at(-1)).toBe("+你好 👩‍💻\n")
+    expect(input.plainText).toBe(output)
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.hostMode()).toBe("opencode-vim.session")
 })
 
 test("streaming updates do not move a selection, and browsing refreshes the text", async () => {
