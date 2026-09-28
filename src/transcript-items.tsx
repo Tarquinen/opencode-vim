@@ -85,6 +85,18 @@ export function groupAt(node: Renderable) {
   return { header, kind, label, children: node.getChildren().slice(1) }
 }
 
+function patchFiles(node: Renderable): Renderable[] {
+  if (!node.visible || !node.height) return []
+  const header = node.getChildren()[0]
+  const label = header?.getChildren()[0]
+  if (label instanceof TextBufferRenderable && ["← Patched", "# Created", "# Deleted"].includes(label.plainText)) {
+    return [node]
+  }
+  const files: Renderable[] = []
+  for (const child of node.getChildren()) files.push(...patchFiles(child))
+  return files
+}
+
 export function transcriptItems(rows: Renderable[], messages: Message[], pendingTools = new Set<string>()) {
   const sources = parts(messages)
   const ranges: TranscriptRange[] = []
@@ -92,6 +104,13 @@ export function transcriptItems(rows: Renderable[], messages: Message[], pending
   let lastSource = -1
 
   function add(node: Renderable, source?: Part, parentID?: string) {
+    if (source?.source?.type === "tool" && source.source.name === "patch") {
+      const files = patchFiles(node)
+      if (files.length > 1) {
+        for (const [index, file] of files.entries()) add(file, { ...source, id: `${source.id}:file:${index}` }, parentID)
+        return
+      }
+    }
     const text = source?.text || textOf(node)
     if (!text.trim()) return
     ranges.push({ id: source?.id ?? node.id, author: source?.author ?? "Tool", text, source: source?.source, node,

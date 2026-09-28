@@ -15,6 +15,8 @@ import { shellReader } from "./scenarios/shell-reader"
 import { sessionKeymaps, sessionAgentBinding } from "./scenarios/session-keymaps"
 import { readMessages } from "./data/read"
 import { readReader } from "./scenarios/read-reader"
+import { fileChangeMessages } from "./data/file-changes"
+import { fileChanges } from "./scenarios/file-changes"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
     { name: "tab-switching", run: tabSwitching },
@@ -25,6 +27,8 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
     { name: "shell-reader-low-detail", run: shellReader, setup: { messages: shellMessages, cli: { session: { verbosity: "low" } } } },
     { name: "read-reader", run: readReader, setup: { messages: readMessages } },
     { name: "read-reader-low-detail", run: readReader, setup: { messages: readMessages, cli: { session: { verbosity: "low" } } } },
+    { name: "file-changes", run: fileChanges, setup: { messages: fileChangeMessages, cli: { diffs: { view: "unified" } } } },
+    { name: "file-changes-low-detail", run: fileChanges, setup: { messages: fileChangeMessages, cli: { session: { verbosity: "low" }, diffs: { view: "split" } } } },
     { name: "session-keymaps", run: sessionKeymaps, setup: {
         messages: shellMessages, cli: { keybinds: { "session.new": "tab" } },
         vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-section" } } },
