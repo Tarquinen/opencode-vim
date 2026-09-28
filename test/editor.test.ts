@@ -389,4 +389,24 @@ describe("real textarea Vim editing", () => {
         expect(fixture.input.plainText).toBe("[Image 1] abc")
         expect(fixture.input.extmarks.get(id)?.data).toBe("attachment")
     })
+
+    test("external edits refresh cached lines and display widths", async () => {
+        fixture = await createFixture("ab")
+        await fixture.keys("$")
+        fixture.input.insertText("中\n")
+        await fixture.keys("0")
+        expect(fixture.input.cursorOffset).toBe(4)
+        await fixture.keys("xu")
+        expect(fixture.input.plainText).toBe("a中\nb")
+        expect(fixture.input.cursorOffset).toBe(4)
+    })
+
+    test("a pasted combining mark joins its neighbor without desynchronizing Vim", async () => {
+        fixture = await createFixture("ab")
+        fixture.adapter.setRegister("\u0301")
+        await fixture.keys("p0x")
+        expect(fixture.input.plainText).toBe("b")
+        await fixture.keys("u")
+        expect(fixture.input.plainText).toBe("a\u0301b")
+    })
 })

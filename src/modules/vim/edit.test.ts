@@ -25,6 +25,20 @@ describe("editInput", () => {
 
         expect(fixture.calls).toEqual([["selection", 1, 3], ["insert", "x"]])
     })
+
+    for (const [before, after, start, end, inserted] of [
+        ["a👩‍💻b", "a👩‍🔬b", 1, 3, "👩‍🔬"],
+        ["a\u0301x", "a\u0300x", 0, 1, "a\u0300"],
+        ["ax", "a\u0301x", 0, 1, "a\u0301"],
+        ["a\u0301x", "ax", 0, 1, "a"],
+        ["a🇦🇧🇨🇩z", "a🇽🇦🇧🇨🇩z", 1, 5, "🇽🇦🇧🇨🇩"],
+    ] as const) {
+        test(`expands shared text to whole graphemes: ${before} → ${after}`, () => {
+            const fixture = createFixture(before)
+            editInput(fixture.input, after)
+            expect(fixture.calls).toEqual([["selection", start, end], ["insert", inserted]])
+        })
+    }
 })
 
 function createFixture(plainText: string) {

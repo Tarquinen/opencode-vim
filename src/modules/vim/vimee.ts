@@ -5,7 +5,7 @@ import { focusedInput, setInput, type EditBufferLike, type PromptContext } from 
 import type { VimConfig } from "./config"
 import type { VimLog } from "./log"
 import { createGraphemeCodec } from "./graphemes"
-import { charToDisplay, displayToChar, displayWidth, createPromptMap, hostFromVimOffset, hostOffset, hostPosition, type PromptMap } from "./map"
+import { displayToChar, displayWidth, createPromptMap, hostCharOffset, hostFromVimOffset, hostOffset, hostPosition, vimLineLength, vimOffsetFromPosition, type PromptMap } from "./map"
 import type { createVimState } from "./state"
 
 type VimState = ReturnType<typeof createVimState>
@@ -80,9 +80,6 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             }
 
             const text = input?.plainText ?? ref.current.input
-            const dw = displayWidth(text)
-            const displayOff = clamp(input?.cursorOffset ?? dw, 0, dw)
-            const charOff = displayToChar(text, displayOff)
 
             const canBrowseHistory = !options.readOnly && vim.phase === "idle" && vim.count === 0 && !keybinds?.isPending()
             const historyCommand = canBrowseHistory ? defaultHistoryCommand(vimeeKey, text, historyText, defaultHistoryKeys) : undefined
@@ -97,11 +94,12 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             historyText = undefined
 
             const map = mapForHostText(text)
+            const displayOff = clamp(input?.cursorOffset ?? map.displayWidth, 0, map.displayWidth)
             const cursor = hostPosition(map, displayOff)
 
             const wasPending = keybinds?.isPending() ?? false
             const pendingBefore = pendingInsert
-            sync(map, cursor)
+            sync(cursor)
 
             const shouldFlashYank = shouldFlashYankFor(vimeeKey)
             const visualYankRange = visualYankRangeFor(map)
@@ -157,7 +155,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                 syncMode(state, vim.mode)
 
                 const keybindPending = keybinds?.isPending() ?? false
-                if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, charOff)
+                if (wasPending && !keybindPending && pendingBefore && state.mode() === "insert") flushPendingInsert(ctx, pendingBefore, hostCharOffset(map, displayOff))
                 pendingInsert = keybindPending && state.mode() === "insert" ? plainPending(vim.statusMessage) : ""
                 state.setPending(pendingDisplay(vim, keybindPending))
                 updateTimeout(ctx)
@@ -207,16 +205,16 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         pendingContext = undefined
     }
 
-    function sync(map: PromptMap, cursor: CursorPosition) {
+    function sync(cursor: CursorPosition) {
         if (cursor.line !== vim.cursor.line || cursor.col !== vim.cursor.col) preferredColumn = undefined
-        if (buffer.getContent() !== map.vimText) buffer.replaceContent(map.vimText)
         vim = { ...vim, cursor, mode: state.mode() }
     }
 
     function mapForHostText(text: string) {
         if (activeMap.hostText === text) return activeMap
-        if (state.mode() === "insert") recordNativeChange(text)
-        activeMap = createPromptMap(text, codec)
+        const nextMap = createPromptMap(text, codec)
+        if (state.mode() === "insert") recordNativeChange(nextMap)
+        activeMap = nextMap
         if (state.mode() === "insert") {
             if (!nativeInsertUndoSaved) {
                 buffer.saveUndoPoint(vim.cursor)
@@ -230,10 +228,10 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         return activeMap
     }
 
-    function recordNativeChange(text: string) {
-        const before = codec.encode(activeMap.hostText)
-        const after = codec.encode(text)
-        const start = codec.encode(activeMap.hostText.slice(0, displayToChar(activeMap.hostText, hostOffset(activeMap, vim.cursor)))).length
+    function recordNativeChange(nextMap: PromptMap) {
+        const before = activeMap.vimText
+        const after = nextMap.vimText
+        const start = vimOffsetFromPosition(activeMap, vim.cursor)
         let prefix = 0
         while (prefix < start && prefix < after.length && before[prefix] === after[prefix]) prefix++
         let suffix = 0
@@ -258,10 +256,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                     currentMap = createPromptMap(codec.decode(action.content), codec)
                     activeMap = currentMap
                     setInput(ref, currentMap.hostText)
-                    buffer.replaceContent(action.content)
-                    break
-                case "cursor-move":
-                    setCursor(input, currentMap, action.position)
+                    // Decoding can join neighboring graphemes; use the map's units.
+                    buffer.replaceContent(currentMap.vimText)
                     break
                 case "yank":
                     if (!action.register) options.onYank?.(codec.decode(action.text))
@@ -286,6 +282,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             }
         }
 
+        // The engine context already has the final cursor; move the editor once.
         setCursor(input, currentMap, vim.cursor)
         syncVisualSelection(input, currentMap, ctx)
     }
@@ -356,13 +353,13 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         const map = mapForHostText(text)
 
         if (input && text.length > 0) {
-            const dw = displayWidth(text)
+            const dw = map.displayWidth
             const offset = clamp(input?.cursorOffset ?? dw, 0, dw)
-            const charOffset = displayToChar(text, offset)
+            const charOffset = hostCharOffset(map, offset)
             if (charOffset > 0 && text[charOffset - 1] !== "\n") {
-                input.cursorOffset = charToDisplay(text, displayToChar(text, Math.max(0, offset - 1)))
+                input.cursorOffset = hostOffset(map, hostPosition(map, Math.max(0, offset - 1)))
             }
-            clampNormalCursor(input)
+            clampNormalCursor(input, map)
         }
 
         const lastChange = nativeInsertUndoSaved ? [...vim.pendingChange, "Escape"] : vim.lastChange
@@ -570,10 +567,10 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         } else {
             target = start
             if (key === "^") {
-                const from = displayToChar(map.hostText, start)
-                const to = displayToChar(map.hostText, end + 1)
+                const from = hostCharOffset(map, start)
+                const to = hostCharOffset(map, end + 1)
                 const first = map.hostText.slice(from, to).search(/\S/)
-                if (first >= 0) target = charToDisplay(map.hostText, from + first)
+                if (first >= 0) target = hostFromVimOffset(map, map.hostToVim[from + first])
             }
         }
         return { start: vim.cursor, end: hostPosition(map, target), linewise: !screen, inclusive: !screen || key === "$" }
@@ -659,8 +656,9 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
     function setCursor(input: EditBufferLike | undefined, map: PromptMap, position: CursorPosition) {
         if (!input) return
-        input.cursorOffset = hostOffset(map, position)
-        if (vim.mode !== "insert") clampNormalCursor(input)
+        const offset = hostOffset(map, position)
+        if (input.cursorOffset !== offset) input.cursorOffset = offset
+        if (vim.mode !== "insert") clampNormalCursor(input, map)
     }
 
     function syncVisualSelection(input: EditBufferLike | undefined, map: PromptMap, ctx: PromptContext) {
@@ -760,7 +758,7 @@ function visualLineRange(map: PromptMap, anchor: CursorPosition, cursor: CursorP
     const startLine = Math.min(anchor.line, cursor.line)
     const endLine = Math.max(anchor.line, cursor.line)
     const start = hostOffset(map, { line: startLine, col: 0 })
-    const end = hostOffset(map, { line: endLine, col: vimLineLength(map.vimText, endLine) })
+    const end = hostOffset(map, { line: endLine, col: vimLineLength(map, endLine) })
     return hostRange(map, start, end)
 }
 
@@ -771,14 +769,14 @@ function yankedTextRange(map: PromptMap, cursor: CursorPosition, text: string): 
         return visualLineRange(map, cursor, { line: cursor.line + Math.max(0, lineCount - 1), col: 0 })
     }
 
-    const start = vimOffsetFromPosition(map.vimText, cursor)
+    const start = vimOffsetFromPosition(map, cursor)
     return vimOffsetRange(map, start, start + text.length - 1)
 }
 
 function motionHostRange(map: PromptMap, range: MotionRange): HostRange | undefined {
     if (range.linewise) return visualLineRange(map, range.start, range.end)
-    const start = vimOffsetFromPosition(map.vimText, range.start)
-    const end = vimOffsetFromPosition(map.vimText, range.end)
+    const start = vimOffsetFromPosition(map, range.start)
+    const end = vimOffsetFromPosition(map, range.end)
     return vimOffsetRange(map, start, end)
 }
 
@@ -790,7 +788,7 @@ function vimOffsetRange(map: PromptMap, left: number, right: number): HostRange 
 
 function hostRange(map: PromptMap, left: number, right: number): HostRange | undefined {
     if (!map.hostText) return undefined
-    const dw = displayWidth(map.hostText)
+    const dw = map.displayWidth
     const start = clamp(Math.min(left, right), 0, Math.max(0, dw - 1))
     const end = clamp(Math.max(left, right), 0, Math.max(0, dw - 1))
     return { start, end }
@@ -841,32 +839,20 @@ function isVisualMode(mode: VimContext["mode"]): mode is "visual" | "visual-line
     return mode === "visual" || mode === "visual-line"
 }
 
-function vimLineLength(text: string, line: number) {
-    return text.split("\n")[line]?.length ?? 0
-}
-
-function vimOffsetFromPosition(text: string, position: CursorPosition) {
-    const lines = text.split("\n")
-    const line = clamp(position.line, 0, Math.max(0, lines.length - 1))
-    let offset = 0
-    for (let index = 0; index < line; index++) offset += lines[index].length + 1
-    return offset + clamp(position.col, 0, lines[line]?.length ?? 0)
-}
-
-function clampNormalCursor(input: EditBufferLike) {
+function clampNormalCursor(input: EditBufferLike, map: PromptMap) {
     const cursor = input.visualCursor
     const offset = input.cursorOffset
-    const text = input.plainText
-    if (!cursor || offset === undefined || text === undefined) return
+    const text = map.hostText
+    if (!cursor || offset === undefined) return
     if (cursor.visualCol === 0) return
-    const dw = displayWidth(text)
+    const dw = map.displayWidth
     if (offset >= dw) {
-        input.cursorOffset = charToDisplay(text, displayToChar(text, Math.max(0, dw - 1)))
+        input.cursorOffset = hostOffset(map, hostPosition(map, Math.max(0, dw - 1)))
         return
     }
-    const charIdx = displayToChar(text, offset)
+    const charIdx = hostCharOffset(map, offset)
     if (charIdx < text.length && text[charIdx] === '\n') {
-        input.cursorOffset = charToDisplay(text, displayToChar(text, Math.max(0, offset - 1)))
+        input.cursorOffset = hostOffset(map, hostPosition(map, Math.max(0, offset - 1)))
     }
 }
 
