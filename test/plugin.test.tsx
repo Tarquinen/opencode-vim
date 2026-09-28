@@ -117,7 +117,10 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
                 else return
                 targetID = navigationID
             },
-            layer(fn: () => { commands: Array<{ run: () => void }> }) { toggle = fn().commands[0].run },
+            layer(fn: () => { commands?: Array<{ run: () => void }> }) {
+                const command = fn().commands?.[0]
+                if (command) toggle = command.run
+            },
         },
         data: { session: { message: { list: messages } } },
         ui: {
@@ -559,6 +562,46 @@ test("host shortcuts and pending leader sequences reach the host", async () => {
     f.mockInput.pressKey("p")
     expect(received).toEqual(["x", "p"])
     expect(f.input.plainText).toBe("hello")
+})
+
+test.each([
+    ["normal", ""], ["insert", "i"], ["visual", "vl"], ["visual-line", "V"], ["session", "s"],
+])("Shift+Tab reaches the host without changing %s mode or selection", async (_mode, keys) => {
+    const f = await mount({}, { messages: [message(1, "Answer")] })
+    await f.keys(keys)
+    const frame = f.captureCharFrame()
+    const offset = f.input.cursorOffset
+    const selection = f.input.getSelectedText()
+    const hostMode = f.hostMode()
+    let received = 0
+    f.renderer.keyInput.on("keypress", (event) => {
+        if (event.name !== "tab" || !event.shift) return
+        received++
+        event.preventDefault()
+    })
+    f.mockInput.pressKey("TAB", { shift: true })
+    await f.renderOnce()
+    expect(received).toBe(1)
+    expect(f.captureCharFrame()).toBe(frame)
+    expect(f.hostMode()).toBe(hostMode)
+    expect(f.input.cursorOffset).toBe(offset)
+    expect(f.input.getSelectedText()).toBe(selection)
+    expect(f.input.plainText).toBe("hello")
+})
+
+test("a plain Tab mapping does not capture Shift+Tab", async () => {
+    const f = await mount({ keymaps: { normal: { "<Tab>": "x" } } })
+    const received: boolean[] = []
+    f.renderer.keyInput.on("keypress", (event) => {
+        received.push(event.shift)
+        event.preventDefault()
+    })
+    f.mockInput.pressKey("TAB", { shift: true })
+    expect(received).toEqual([true])
+    expect(f.input.plainText).toBe("hello")
+    f.mockInput.pressKey("TAB")
+    expect(received).toEqual([true])
+    expect(f.input.plainText).toBe("ello")
 })
 
 test("unmount removes handlers and restores native editing", async () => {

@@ -33,6 +33,11 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
   let yankTimer: ReturnType<typeof setTimeout> | undefined
   let yankID: string | undefined
 
+  context.keymap.layer(() => ({
+    mode: SESSION_MODE,
+    bindings: ["agent.cycle", "agent.cycle.reverse"],
+  }))
+
   function selected() {
     return transcript?.get(selectedID)
   }
@@ -278,6 +283,7 @@ function readerKey(context: Context, event: KeyEvent, sessionKey: string, mode =
   if (event.defaultPrevented || context.keymap.mode.current() !== mode) return
   if (context.keymap.pending().length || event.super || event.meta) return
   const key = keyNotation(event)
+  if (key === "<Tab>" && event.shift) return
   if (key && (key === sessionKey || !event.ctrl || key === "<C-[>" || pageCommand(key) || (mode === "modal" && key === "<C-c>"))) return key
 }
 

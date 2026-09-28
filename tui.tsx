@@ -313,6 +313,7 @@ function compatTheme(context: Context) {
 }
 
 function passThroughKey(event: KeyEvent, key: string, mode: string, pending: boolean, mapped: boolean) {
+  if (key === "<Tab>" && event.shift) return true
   if (mode !== "normal") return false
   if (mapped) return false
   if (event.ctrl && key !== "<C-r>" && key !== "<C-[>") return true

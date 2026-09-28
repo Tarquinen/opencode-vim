@@ -4,12 +4,14 @@ import path from "node:path"
 import { runWithFixture } from "./fixture"
 import { installOpenCode } from "./opencode"
 import { packPlugin } from "./plugin"
+import { agentSwitching } from "./scenarios/agent-switching"
 import { dialogFocus } from "./scenarios/dialog-focus"
 import { tabSwitching } from "./scenarios/tab-switching"
 
 const scenarios = [
     { name: "tab-switching", run: tabSwitching },
     { name: "dialog-focus", run: dialogFocus },
+    { name: "agent-switching", run: agentSwitching },
 ]
 
 if (!Bun.which("tmux")) throw new Error("E2E tests require tmux. Install it, then run bun run test:e2e.")
