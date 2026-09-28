@@ -39,50 +39,77 @@ export type PromptMap = {
     vimText: string
     hostToVim: number[]
     vimToHost: number[]
+    vimToDisplay: number[]
+    lineStarts: number[]
+    displayWidth: number
 }
 
 export function createPromptMap(hostText: string, codec = createGraphemeCodec()): PromptMap {
     const hostToVim: number[] = []
     const vimToHost: number[] = []
+    const vimToDisplay: number[] = []
+    const lineStarts = [0]
     let vimText = ""
     let vimOffset = 0
+    let width = 0
 
     for (const { index: hostOffset, segment } of graphemes.segment(hostText)) {
         for (let index = hostOffset; index < hostOffset + segment.length; index++) hostToVim[index] = vimOffset
-        vimText += codec.encode(segment)
+        const encoded = codec.encodeGrapheme(segment)
+        vimText += encoded
         vimToHost[vimOffset] = hostOffset
+        vimToDisplay[vimOffset] = width
+        width += graphemeWidth(segment)
         vimOffset++
+        if (encoded === "\n") lineStarts.push(vimOffset)
     }
 
     hostToVim[hostText.length] = vimOffset
     vimToHost[vimOffset] = hostText.length
-    return { hostText, vimText, hostToVim, vimToHost }
+    vimToDisplay[vimOffset] = width
+    return { hostText, vimText, hostToVim, vimToHost, vimToDisplay, lineStarts, displayWidth: width }
 }
 
 export function hostPosition(map: PromptMap, hostDisplayOffset: number): CursorPosition {
-    const charIdx = displayToChar(map.hostText, hostDisplayOffset)
-    return positionFromOffset(map.vimText, map.hostToVim[clamp(charIdx, 0, map.hostText.length)])
+    const offset = indexAtOffset(map.vimToDisplay, hostDisplayOffset)
+    const line = indexAtOffset(map.lineStarts, offset)
+    return { line, col: offset - map.lineStarts[line] }
+}
+
+export function hostCharOffset(map: PromptMap, hostDisplayOffset: number) {
+    return map.vimToHost[indexAtOffset(map.vimToDisplay, hostDisplayOffset)]
 }
 
 export function hostOffset(map: PromptMap, position: CursorPosition) {
-    return hostFromVimOffset(map, offsetFromPosition(map.vimText, position))
+    return hostFromVimOffset(map, vimOffsetFromPosition(map, position))
 }
 
 export function hostFromVimOffset(map: PromptMap, offset: number) {
-    return charToDisplay(map.hostText, map.vimToHost[clamp(offset, 0, map.vimText.length)])
+    return map.vimToDisplay[clamp(offset, 0, map.vimText.length)]
 }
 
-function positionFromOffset(text: string, offset: number): CursorPosition {
-    const lines = text.slice(0, offset).split("\n")
-    return { line: lines.length - 1, col: lines[lines.length - 1]?.length ?? 0 }
+export function vimLineLength(map: PromptMap, line: number) {
+    const start = map.lineStarts[line]
+    if (start === undefined) return 0
+    const end = line + 1 < map.lineStarts.length ? map.lineStarts[line + 1] - 1 : map.vimText.length
+    return end - start
 }
 
-function offsetFromPosition(text: string, position: CursorPosition) {
-    const lines = text.split("\n")
-    const line = clamp(position.line, 0, Math.max(0, lines.length - 1))
-    let offset = 0
-    for (let index = 0; index < line; index++) offset += lines[index].length + 1
-    return offset + clamp(position.col, 0, lines[line]?.length ?? 0)
+export function vimOffsetFromPosition(map: PromptMap, position: CursorPosition) {
+    const line = clamp(position.line, 0, map.lineStarts.length - 1)
+    return map.lineStarts[line] + clamp(position.col, 0, vimLineLength(map, line))
+}
+
+// Find the last boundary at or before an offset, including zero-width graphemes.
+function indexAtOffset(offsets: number[], offset: number) {
+    let low = 0
+    let high = offsets.length
+    while (low < high) {
+        const middle = Math.floor((low + high) / 2)
+        if (offsets[middle] <= offset) low = middle + 1
+        else high = middle
+    }
+    return Math.max(0, low - 1)
 }
 
 function clamp(value: number, min: number, max: number) {
