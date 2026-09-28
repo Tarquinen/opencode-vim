@@ -7,15 +7,16 @@ export function selected(text: string, value: string) {
 
 export function reader(text: string) {
     const lines = text.split("\n")
-    const footer = lines.findIndex((line) => line.includes("MESSAGE") && line.includes("v select"))
+    const footer = lines.findIndex((line) => line.includes("v select"))
     if (footer === -1) return
-    const left = lines[footer].indexOf("MESSAGE")
+    const left = lines[footer].indexOf("v select")
+    const close = "esc"
     for (let index = footer - 1; index >= 0; index--) {
-        const right = lines[index].lastIndexOf("esc")
+        const right = lines[index].lastIndexOf(close)
         if (right < left) continue
         let content = ""
-        for (let row = index + 1; row < footer; row++) content += lines[row].slice(left, right + 3) + "\n"
-        return { content, left, right: right + 3, top: index, bottom: footer + 1 }
+        for (let row = index + 1; row < footer; row++) content += lines[row].slice(left, right + close.length) + "\n"
+        return { content, left, right: right + close.length, top: index, bottom: footer + 1 }
     }
 }
 
