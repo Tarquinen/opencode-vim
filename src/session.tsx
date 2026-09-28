@@ -33,6 +33,11 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
   let yankTimer: ReturnType<typeof setTimeout> | undefined
   let yankID: string | undefined
 
+  context.keymap.layer(() => ({
+    mode: SESSION_MODE,
+    bindings: ["agent.cycle", "agent.cycle.reverse"],
+  }))
+
   function selected() {
     return transcript?.get(selectedID)
   }
@@ -194,7 +199,6 @@ function MessageReader(props: {
   const theme = () => context.theme.surface("dialog")
   const background = () => theme().background.raised.high
   const state = createVimState("normal")
-  const [line, setLine] = createSignal(1)
   let input!: TextareaRenderable
   const adapter = createVimeeAdapter(state, props.config, () => {}, { readOnly: true, onYank: props.copy })
   const editorContext: PromptContext = {
@@ -232,12 +236,10 @@ function MessageReader(props: {
       const rows = Math.max(1, Math.floor(input.height / (half ? 2 : 1)))
       for (let row = 0; row < rows; row++) adapter.handle({ ...event, ctrl: false } as KeyEvent, down ? "j" : "k", editorContext)
     } else adapter.handle(event, key, editorContext)
-    setLine(input.logicalCursor.row + 1)
   }
   onMount(() => {
     input.cursorOffset = Math.min(props.offset, displayWidth(input.plainText))
     adapter.attach(editorContext)
-    setLine(input.logicalCursor.row + 1)
     input.focus()
     context.renderer.keyInput.prependListener("keypress", onKey)
   })
@@ -268,7 +270,7 @@ function MessageReader(props: {
           backgroundColor={background()} focusedBackgroundColor={background()} focusedTextColor={theme().text.base} />
       </box>
       <box paddingLeft={2} paddingRight={2} paddingBottom={1} flexDirection="row" flexWrap="wrap" columnGap={3}>
-        <text fg={theme().text.muted}>{modeLabel()} · {line()}/{input?.lineCount ?? 1}</text>
+        <text fg={theme().text.muted}>{modeLabel()}</text>
         <text fg={theme().text.muted}>
           {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : `v select · V lines · ${props.config.sessionKey} prompt`)}
         </text>
@@ -281,6 +283,7 @@ function readerKey(context: Context, event: KeyEvent, sessionKey: string, mode =
   if (event.defaultPrevented || context.keymap.mode.current() !== mode) return
   if (context.keymap.pending().length || event.super || event.meta) return
   const key = keyNotation(event)
+  if (key === "<Tab>" && event.shift) return
   if (key && (key === sessionKey || !event.ctrl || key === "<C-[>" || pageCommand(key) || (mode === "modal" && key === "<C-c>"))) return key
 }
 

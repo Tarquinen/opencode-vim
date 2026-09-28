@@ -1,9 +1,7 @@
 import { expect, test } from "bun:test"
 import { createFixture } from "./fixture"
+import { nvim } from "./neovim"
 
-// Neovim is an optional external oracle; the real-textarea regression tests
-// remain runnable on machines without it. Never load the user's Vim config.
-const nvim = Bun.which("nvim")
 const cases: Array<[string, string, number?]> = [
     ["one two three", "dw"],
     ["one two three", "2dw"],
@@ -121,10 +119,10 @@ const cases: Array<[string, string, number?]> = [
 ]
 
 for (const [text, keys, width = 80] of cases) {
-    test.skipIf(!nvim)(`Neovim parity with LazyVim motions (${width} columns): ${JSON.stringify(text)} ${keys}`, async () => {
+    test(`Neovim parity (${width} columns): ${JSON.stringify(text)} ${keys}`, async () => {
         // Match Vim's startofline default (Neovim disables it), and the host's
-        // word wrapping and two-column tabs. Add only LazyVim's vertical mappings;
-        // neither editor loads user settings.
+        // word wrapping and two-column tabs. Use screen-row movement for uncounted
+        // vertical motions; neither editor loads user settings.
         const mappings = `
             vim.keymap.set({'n', 'x'}, 'j', "v:count == 0 ? 'gj' : 'j'", {expr=true})
             vim.keymap.set({'n', 'x'}, 'k', "v:count == 0 ? 'gk' : 'k'", {expr=true})
@@ -132,7 +130,7 @@ for (const [text, keys, width = 80] of cases) {
             vim.keymap.set({'n', 'x'}, '<Up>', "v:count == 0 ? 'gk' : 'k'", {expr=true})
         `
         const lua = `${mappings}\nvim.api.nvim_open_win(0,true,{relative='editor',row=0,col=0,width=${width},height=10,style='minimal'}); vim.o.startofline=true; vim.wo.wrap=true; vim.wo.linebreak=true; vim.bo.tabstop=2; vim.bo.shiftwidth=2; vim.bo.expandtab=true; vim.api.nvim_buf_set_lines(0,0,-1,false,vim.json.decode(${JSON.stringify(JSON.stringify(text.split("\n")))})); vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(${JSON.stringify(keys)},true,false,true),'xt',false); io.write(vim.json.encode({text=table.concat(vim.api.nvim_buf_get_lines(0,0,-1,false),'\\n'),col=vim.api.nvim_win_get_cursor(0)[2],row=vim.api.nvim_win_get_cursor(0)[1]}))`
-        const result = Bun.spawnSync([nvim!, "--headless", "-u", "NONE", "-i", "NONE", "-n", "-c", `lua ${lua}`, "-c", "qa!"])
+        const result = Bun.spawnSync([nvim, "--headless", "-u", "NONE", "-i", "NONE", "-n", "-c", `lua ${lua}`, "-c", "qa!"])
         expect(result.exitCode).toBe(0)
         const reference = JSON.parse(result.stdout.toString()) as { text: string; col: number; row: number }
         const fixture = await createFixture(text, {}, width)

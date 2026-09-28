@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
 import { InputRenderable, KeyEvent, PasteEvent, type CursorStyleOptions } from "@opentui/core"
-import { createEffect, createSignal, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
 import { applyVimCursorStyle, focusedInput } from "./src/modules/vim/actions"
 import { createVimConfig } from "./src/modules/vim/config"
 import { editInput } from "./src/modules/vim/edit"
@@ -163,12 +163,14 @@ function VimHost(props: { context: Context }) {
     if (consumed) syncCursor(true)
   }
 
-  const onFocus = () => {
+  // Focus events can fire inside the host's prompt effects. Do not subscribe
+  // those effects to Vim state or the keymap registry while syncing the editor.
+  const onFocus = () => untrack(() => {
     pendingKeys = undefined
     vimee.suspend()
     dialogVimee.suspend()
     syncCursor()
-  }
+  })
   const onPaste = (event: PasteEvent) => {
     if (!pendingKeys || event.defaultPrevented) return
     pendingKeys.push(new PasteEvent(event.bytes, event.metadata))
@@ -311,6 +313,7 @@ function compatTheme(context: Context) {
 }
 
 function passThroughKey(event: KeyEvent, key: string, mode: string, pending: boolean, mapped: boolean) {
+  if (key === "<Tab>" && event.shift) return true
   if (mode !== "normal") return false
   if (mapped) return false
   if (event.ctrl && key !== "<C-r>" && key !== "<C-[>") return true

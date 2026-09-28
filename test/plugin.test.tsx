@@ -5,7 +5,7 @@ import { createTestRenderer } from "@opentui/core/testing"
 import { render, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
 import { Plugin } from "@opencode/plugin/tui"
-import { createSignal, For, Show } from "solid-js"
+import { createEffect, createRoot, createSignal, For, Show } from "solid-js"
 import type { VimOptions } from "../src/modules/vim/config"
 import { createClipboardFixture } from "./clipboard-fixture"
 
@@ -117,7 +117,10 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
                 else return
                 targetID = navigationID
             },
-            layer(fn: () => { commands: Array<{ run: () => void }> }) { toggle = fn().commands[0].run },
+            layer(fn: () => { commands?: Array<{ run: () => void }> }) {
+                const command = fn().commands?.[0]
+                if (command) toggle = command.run
+            },
         },
         data: { session: { message: { list: messages } } },
         ui: {
@@ -249,7 +252,7 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         setCommands([{ id: "prompt.submit" }])
         dialogReturnInput?.focus()
     }
-    return { ...screen, renderOnce, input, toggle, setSuccess, setPending, openDialog, closeDialog, dispatched, hostMode, setRoute,
+    return { ...screen, renderOnce, input, toggle, setSuccess, setPending, openDialog, closeDialog, dispatched, hostMode, setRoute, setCommands,
         setMessages, copied, clipboard, dialog, dialogOptions, clearModal: () => context.ui.dialog.clear(),
         replaceModal: () => context.ui.dialog.show(() => <text>Another dialog</text>), transcript: () => transcript!,
         async scrollTranscript(position: number | "bottom") {
@@ -266,6 +269,39 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         reader: () => screen.renderer.root.findDescendantById("vim-session-message") as TextareaRenderable,
         unmount: () => setMounted(false) }
 }
+
+test("focus callbacks do not subscribe host tab effects to Vim or keymap state", async () => {
+    const f = await mount({ defaultMode: "insert" })
+    const other = new TextareaRenderable(f.renderer, { id: "other-tab", height: 3, width: 40 })
+    f.renderer.root.add(other)
+    const [tab, setTab] = createSignal(other)
+    let focusRuns = 0
+    const stop = createRoot((dispose) => {
+        createEffect(() => {
+            focusRuns++
+            tab().focus()
+        })
+        return dispose
+    })
+    try {
+        expect(f.renderer.currentFocusedEditor).toBe(other)
+        expect(focusRuns).toBe(1)
+        f.setCommands([{ id: "prompt.submit" }, { id: "prompt.history.previous" }])
+        expect(focusRuns).toBe(1)
+        f.mockInput.pressEscape()
+        await f.renderOnce()
+        expect(other.cursorStyle.style).toBe("block")
+        expect(focusRuns).toBe(1)
+        setTab(f.input)
+        expect(f.renderer.currentFocusedEditor).toBe(f.input)
+        expect(focusRuns).toBe(2)
+        await f.keys("i")
+        expect(f.input.cursorStyle.style).toBe("line")
+        expect(focusRuns).toBe(2)
+    } finally {
+        stop()
+    }
+})
 
 test("plugin intercepts keys before an already-focused textarea", async () => {
     const f = await mount()
@@ -526,6 +562,46 @@ test("host shortcuts and pending leader sequences reach the host", async () => {
     f.mockInput.pressKey("p")
     expect(received).toEqual(["x", "p"])
     expect(f.input.plainText).toBe("hello")
+})
+
+test.each([
+    ["normal", ""], ["insert", "i"], ["visual", "vl"], ["visual-line", "V"], ["session", "s"],
+])("Shift+Tab reaches the host without changing %s mode or selection", async (_mode, keys) => {
+    const f = await mount({}, { messages: [message(1, "Answer")] })
+    await f.keys(keys)
+    const frame = f.captureCharFrame()
+    const offset = f.input.cursorOffset
+    const selection = f.input.getSelectedText()
+    const hostMode = f.hostMode()
+    let received = 0
+    f.renderer.keyInput.on("keypress", (event) => {
+        if (event.name !== "tab" || !event.shift) return
+        received++
+        event.preventDefault()
+    })
+    f.mockInput.pressKey("TAB", { shift: true })
+    await f.renderOnce()
+    expect(received).toBe(1)
+    expect(f.captureCharFrame()).toBe(frame)
+    expect(f.hostMode()).toBe(hostMode)
+    expect(f.input.cursorOffset).toBe(offset)
+    expect(f.input.getSelectedText()).toBe(selection)
+    expect(f.input.plainText).toBe("hello")
+})
+
+test("a plain Tab mapping does not capture Shift+Tab", async () => {
+    const f = await mount({ keymaps: { normal: { "<Tab>": "x" } } })
+    const received: boolean[] = []
+    f.renderer.keyInput.on("keypress", (event) => {
+        received.push(event.shift)
+        event.preventDefault()
+    })
+    f.mockInput.pressKey("TAB", { shift: true })
+    expect(received).toEqual([true])
+    expect(f.input.plainText).toBe("hello")
+    f.mockInput.pressKey("TAB")
+    expect(received).toEqual([true])
+    expect(f.input.plainText).toBe("ello")
 })
 
 test("unmount removes handlers and restores native editing", async () => {

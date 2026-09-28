@@ -143,7 +143,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
                     const actions = applyKeybind(resolved.definition, ctx, map)
                     result = { newCtx: vim, actions }
                 } else {
-                    // Match LazyVim's uncounted j/k and arrow mappings in normal/visual mode.
+                    // Use screen-row movement for uncounted j/k and arrows in normal/visual mode.
                     // Apply this at the input boundary so custom mapping sequences stay literal.
                     if (!event.ctrl && vim.phase === "idle" && vim.count === 0 && (commandKey === "j" || commandKey === "k" || commandKey === "ArrowDown" || commandKey === "ArrowUp")) {
                         vim = processKey("g").newCtx
