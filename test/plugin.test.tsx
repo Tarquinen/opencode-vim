@@ -5,7 +5,7 @@ import { createTestRenderer } from "@opentui/core/testing"
 import { render, useTerminalDimensions, type JSX } from "@opentui/solid"
 import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-support/configure"
 import { Plugin } from "@opencode/plugin/tui"
-import { createSignal, For, Show } from "solid-js"
+import { createEffect, createRoot, createSignal, For, Show } from "solid-js"
 import type { VimOptions } from "../src/modules/vim/config"
 import { createClipboardFixture } from "./clipboard-fixture"
 
@@ -249,7 +249,7 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         setCommands([{ id: "prompt.submit" }])
         dialogReturnInput?.focus()
     }
-    return { ...screen, renderOnce, input, toggle, setSuccess, setPending, openDialog, closeDialog, dispatched, hostMode, setRoute,
+    return { ...screen, renderOnce, input, toggle, setSuccess, setPending, openDialog, closeDialog, dispatched, hostMode, setRoute, setCommands,
         setMessages, copied, clipboard, dialog, dialogOptions, clearModal: () => context.ui.dialog.clear(),
         replaceModal: () => context.ui.dialog.show(() => <text>Another dialog</text>), transcript: () => transcript!,
         async scrollTranscript(position: number | "bottom") {
@@ -266,6 +266,39 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         reader: () => screen.renderer.root.findDescendantById("vim-session-message") as TextareaRenderable,
         unmount: () => setMounted(false) }
 }
+
+test("focus callbacks do not subscribe host tab effects to Vim or keymap state", async () => {
+    const f = await mount({ defaultMode: "insert" })
+    const other = new TextareaRenderable(f.renderer, { id: "other-tab", height: 3, width: 40 })
+    f.renderer.root.add(other)
+    const [tab, setTab] = createSignal(other)
+    let focusRuns = 0
+    const stop = createRoot((dispose) => {
+        createEffect(() => {
+            focusRuns++
+            tab().focus()
+        })
+        return dispose
+    })
+    try {
+        expect(f.renderer.currentFocusedEditor).toBe(other)
+        expect(focusRuns).toBe(1)
+        f.setCommands([{ id: "prompt.submit" }, { id: "prompt.history.previous" }])
+        expect(focusRuns).toBe(1)
+        f.mockInput.pressEscape()
+        await f.renderOnce()
+        expect(other.cursorStyle.style).toBe("block")
+        expect(focusRuns).toBe(1)
+        setTab(f.input)
+        expect(f.renderer.currentFocusedEditor).toBe(f.input)
+        expect(focusRuns).toBe(2)
+        await f.keys("i")
+        expect(f.input.cursorStyle.style).toBe("line")
+        expect(focusRuns).toBe(2)
+    } finally {
+        stop()
+    }
+})
 
 test("plugin intercepts keys before an already-focused textarea", async () => {
     const f = await mount()
