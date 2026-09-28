@@ -39,8 +39,9 @@ jobs:
 
       - name: Install Neovim for reference tests
         run: |
-          sudo apt-get update
-          sudo apt-get install -y neovim
+          curl -fsSL https://github.com/neovim/neovim/releases/download/v0.12.5/nvim-linux-x86_64.tar.gz -o "$RUNNER_TEMP/nvim.tar.gz"
+          tar -xzf "$RUNNER_TEMP/nvim.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/nvim-linux-x86_64/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         run: npm ci
