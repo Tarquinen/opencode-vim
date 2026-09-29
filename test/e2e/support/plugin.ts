@@ -27,7 +27,7 @@ export async function packPlugin(root: string, directory: string, artifacts: str
 export async function copySourcePlugin(root: string, directory: string, delayedClipboard = false) {
     const plugin = path.join(directory, delayedClipboard ? "clipboard-plugin" : "source-plugin")
     await mkdir(plugin)
-    for (const file of ["tui.tsx", "view.tsx", "src"]) {
+    for (const file of ["tui.tsx", "src"]) {
         await cp(path.join(root, file), path.join(plugin, file), { recursive: true })
     }
     const manifest = await Bun.file(path.join(root, "package.json")).json()

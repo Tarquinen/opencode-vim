@@ -8,7 +8,7 @@ import { keyNotation } from "./modules/vim/keys"
 import type { VimLog } from "./modules/vim/log"
 import { createVimState } from "./modules/vim/state"
 import { createVimeeAdapter } from "./modules/vim/vimee"
-import { VimStatus } from "../view"
+import { VimStatus } from "./modules/vim/status"
 
 export function createFormMode(context: Context, config: VimConfig, log: VimLog, enabled: () => boolean) {
     const state = createVimState("normal", log)
