@@ -32,3 +32,12 @@ export const fileChangeMessages: Message[] = [
         { type: "text", text: "Change fixtures ready" },
     ] },
 ]
+
+export const pendingChangeMessages: Message[] = [
+    { id: "msg_patch_user", type: "user", text: "Apply the pending patch", time: { created: 1 } },
+    { id: "msg_patch_running", type: "assistant", agent: "build", model: { providerID: "test", id: "fixture" }, time: { created: 2, completed: 3 }, content: [
+        { type: "tool", id: "pending-patch", name: "patch", time: { created: 2 }, state: {
+            status: "running", input: { patchText: "*** Begin Patch\n*** Add File: pending.ts\n+pending content\n*** End Patch" }, metadata: {},
+        } },
+    ] },
+]

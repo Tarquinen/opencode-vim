@@ -25,6 +25,17 @@ export function sessionControls(key = "s") {
         assert.deepEqual(terminal.cursor(), cursor)
         await type("u")
         await screen("prompt-undo", (text) => text.includes("original draft"))
+        await terminal.resize(32, 20)
+        let promptRow = -1
+        await screen("narrow-prompt", (text) => {
+            promptRow = text.split("\n").findIndex((line) => line.includes("original draft"))
+            return promptRow >= 0 && text.split("\n")[18]?.includes("NORMAL") === true
+        })
+        await press()
+        await screen("narrow-session", (text) => text.includes("SESSION") && text.split("\n")[promptRow]?.includes("original draft") === true)
+        await press()
+        await terminal.resize(120, 38)
+        await screen("wide-prompt", (text) => text.includes("NORMAL") && text.includes("original draft"))
         await press()
         await keys("Enter")
         await screen("reader", (text) => readerContains(text, "one two") && text.includes(`${key} prompt`))

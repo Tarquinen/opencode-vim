@@ -3,9 +3,9 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import path from "node:path"
 import { runWithFixture, type Fixture, type FixtureSetup } from "./fixture"
 import { installOpenCode } from "./opencode"
-import { packPlugin } from "./plugin"
+import { copySourcePlugin, packPlugin } from "./plugin"
 import { agentSwitching } from "./scenarios/agent-switching"
-import { dialogFocus, promptDialog } from "./scenarios/dialog-focus"
+import { dialogFocus, dialogMappings, promptDialog } from "./scenarios/dialog-focus"
 import { tabSwitching } from "./scenarios/tab-switching"
 import { messageReader, readerLayout } from "./scenarios/message-reader"
 import { transcriptGrouped, transcriptLowDetail, transcriptUngrouped, transcriptRunning, transcriptHistory } from "./scenarios/transcript"
@@ -16,20 +16,29 @@ import { backgroundShell } from "./scenarios/background-shell"
 import { sessionKeymaps, sessionAgentBinding } from "./scenarios/session-keymaps"
 import { readMessages } from "./data/read"
 import { readReader } from "./scenarios/read-reader"
-import { fileChangeMessages } from "./data/file-changes"
-import { fileChanges } from "./scenarios/file-changes"
+import { fileChangeMessages, pendingChangeMessages } from "./data/file-changes"
+import { fileChanges, pendingPatch } from "./scenarios/file-changes"
 import { diffReader } from "./scenarios/diff-reader"
 import { emptySession, sessionControls, sessionKeyConflict, sessionLifecycle } from "./scenarios/session-controls"
 import { transcriptLayout, transcriptPartial, transcriptParts, sessionCopy } from "./scenarios/transcript-layout"
 import { layoutMessages, partialMessages, partMessages, copyMessages, longReaderMessages } from "./data/navigation"
 import { transcriptLive } from "./scenarios/transcript-live"
+import { pluginLifecycle } from "./scenarios/plugin-lifecycle"
+import { promptClipboard, promptHistory, promptInput } from "./scenarios/prompt-input"
+import { permissionMessages } from "./data/permission"
+import { permissionTools } from "./scenarios/permission-tools"
 
-const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
+const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; source?: boolean; setup?: FixtureSetup }> = [
+    { name: "prompt-input", run: promptInput, setup: { vim: { defaultMode: "normal", keymaps: { insert: { kj: "normal" }, normal: { "<Tab>": "x" } } } } },
+    { name: "prompt-clipboard", run: promptClipboard, setup: { vim: { keymaps: { normal: { Q: "yiw$p" } } } } },
+    { name: "prompt-history", run: promptHistory, setup: { stream: "history response" } },
     { name: "tab-switching", run: tabSwitching },
     { name: "dialog-focus", run: dialogFocus },
     { name: "dialog-focus-normal", run: dialogFocus, setup: { vim: { defaultMode: "normal" } } },
     { name: "prompt-dialog", run: promptDialog },
+    { name: "dialog-mappings", run: dialogMappings, setup: { vim: { keymaps: { normal: { j: "x" } } } } },
     { name: "agent-switching", run: agentSwitching },
+    { name: "agent-switching-tab-mapping", run: agentSwitching, setup: { vim: { keymaps: { normal: { "<Tab>": "x" } } } } },
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
     { name: "reader-layout", run: readerLayout, setup: { messages: longReaderMessages } },
     { name: "session-empty", run: emptySession },
@@ -45,6 +54,10 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
     { name: "read-reader-low-detail", run: readReader, setup: { messages: readMessages, cli: { session: { verbosity: "low" } } } },
     { name: "file-changes", run: fileChanges, setup: { messages: fileChangeMessages, cli: { diffs: { view: "unified" } } } },
     { name: "file-changes-low-detail", run: fileChanges, setup: { messages: fileChangeMessages, cli: { session: { verbosity: "low" }, diffs: { view: "split" } } } },
+    { name: "file-changes-ungrouped", run: fileChanges, setup: { messages: fileChangeMessages, cli: { session: { grouping: "none" } } } },
+    { name: "patch-running", run: pendingPatch, setup: { messages: pendingChangeMessages } },
+    { name: "permission-tools", run: permissionTools(true), setup: { messages: permissionMessages, cli: { session: { grouping: "auto" } } } },
+    { name: "permission-tools-ungrouped", run: permissionTools(false), setup: { messages: permissionMessages, cli: { session: { grouping: "none" } } } },
     { name: "diff-reader", run: diffReader(), setup: { messages: fileChangeMessages } },
     { name: "diff-reader-before", run: diffReader("before", true), setup: { messages: fileChangeMessages, vim: {
         diffView: "before", keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } },
@@ -60,6 +73,13 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
         vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } },
     } },
 ]
+for (const source of [false, true]) {
+    scenarios.push({ name: source ? "runtime-source" : "runtime-npm", run: pluginLifecycle, source, setup: {
+        messages: readerMessages,
+        cli: { cursor: { style: "underline", blinking: true }, theme: { name: "opencode", mode: "dark" },
+            keybinds: { "plugins.list": ["f6", "ctrl+g"], "theme.switch_mode": "f7" } },
+    } })
+}
 for (const key of ["s", "q", "<C-s>", "<C-c>"]) {
     scenarios.push({ name: `session-key-${key.replace("<C-", "ctrl-").replace(">", "")}`, run: sessionControls(key),
         setup: { messages: readerMessages, vim: { sessionKey: key } } })
@@ -117,6 +137,7 @@ try {
     const opencode = await installOpenCode()
     version = opencode.version
     const plugin = await packPlugin(root, temporary, artifacts)
+    const sourcePlugin = await copySourcePlugin(root, temporary)
 
     for (const scenario of scenarios) {
         if (requested.length && !requested.includes(scenario.name)) continue
@@ -125,7 +146,7 @@ try {
             await runWithFixture({
                 ...scenario.setup,
                 opencode,
-                plugin,
+                plugin: scenario.source ? sourcePlugin : plugin,
                 directory: path.join(temporary, scenario.name),
                 artifacts: path.join(artifacts, scenario.name),
             }, scenario.run)

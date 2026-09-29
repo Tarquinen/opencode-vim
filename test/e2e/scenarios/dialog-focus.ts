@@ -1,5 +1,24 @@
 import type { Fixture } from "../fixture"
 
+export async function dialogMappings({ terminal }: Fixture) {
+    const { keys, type, screen } = terminal
+    await type("prompt stays here")
+    await keys("Escape", "C-p")
+    await screen("mapped-dialog", (text) => text.includes("Commands") && text.includes("NORMAL"))
+    await type("ijOpen settings")
+    await keys("Escape")
+    await type("0j")
+    await screen("mapped-j-edits-query", (text) => /^\s+Open settings\s*$/m.test(text) && text.includes("NORMAL"))
+    await type("fj")
+    await screen("pending-find-is-not-navigation", (text) => /^\s+Open settings\s*$/m.test(text) && text.includes("Commands"))
+    await type("u")
+    await screen("query-undo-events", (text) => /^\s+jOpen settings\s*$/m.test(text))
+    await keys("C-r")
+    await screen("query-redo-events", (text) => /^\s+Open settings\s*$/m.test(text))
+    await keys("Escape")
+    await screen("mapped-dialog-dismissed", (text) => !text.includes("Commands") && text.includes("prompt stays here") && text.includes("NORMAL"))
+}
+
 export async function dialogFocus({ terminal }: Fixture) {
     const { keys, type, screen } = terminal
     await keys("Escape")

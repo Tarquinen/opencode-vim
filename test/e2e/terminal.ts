@@ -74,8 +74,15 @@ export function createTerminal(socket: string, artifacts: string) {
         for (const match of contents.matchAll(/\x1b\]52;[^;]*;([A-Za-z0-9+/=]*)(?:\x07|\x1b\\)/g)) {
             payload = match[1]
         }
-        assert(payload !== undefined, `No OSC52 clipboard write captured in ${output}`)
+        if (payload === undefined) return
         return Buffer.from(payload, "base64").toString("utf8")
+    }
+
+    function cursorStyle() {
+        let style: number | undefined
+        for (const match of readFileSync(output, "utf8").matchAll(/\x1b\[(\d+) q/g)) style = Number(match[1])
+        assert(style !== undefined, "No terminal cursor style captured")
+        return style
     }
 
     async function screen(label: string, matches: (text: string, ansi: string) => boolean, timeout = 5_000) {
@@ -99,5 +106,5 @@ export function createTerminal(socket: string, artifacts: string) {
         }
     }
 
-    return { start, stop, keys, type, screen, cursor, click, paste, resize, clipboard }
+    return { start, stop, keys, type, screen, cursor, cursorStyle, click, paste, resize, clipboard }
 }

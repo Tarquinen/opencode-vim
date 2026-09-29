@@ -18,7 +18,7 @@ export const layoutMessages: Message[] = [
 
 export const partialMessages: Message[] = [
     user("msg_question", "Question", 1),
-    assistant("msg_partial", [{ type: "text", text: Array.from({ length: 80 }, (_, i) => `Reply line ${i}`).join("\n") }], 2),
+    assistant("msg_partial", [{ type: "text", text: Array.from({ length: 80 }, (_, i) => `Reply line ${i} 中 👍🏽 é`).join("\n") }], 2),
 ]
 
 export const partMessages: Message[] = [

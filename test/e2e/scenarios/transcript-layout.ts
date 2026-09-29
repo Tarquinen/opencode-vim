@@ -67,11 +67,28 @@ export async function transcriptPartial({ terminal }: Fixture) {
         }
         return true
     })
+    let normal: string[] = []
+    await screen("partial-before-flash", (_text, ansi) => { normal = ansi.split("\n"); return true })
     await type("yy")
-    await screen("partial-copied", (text) => text.includes("Copied"))
+    await screen("partial-copied", (text, ansi) => {
+        if (!text.includes("Copied")) return false
+        const lines = text.split("\n")
+        for (let y = 0; y < rows.length; y++) {
+            if (rows[y].includes("Reply line")) {
+                if (lines[y].replaceAll("▎", " ").trimEnd() !== rows[y].trimEnd() || ansi.split("\n")[y] === normal[y]) return false
+            } else if (lines[y].includes("▎")) return false
+        }
+        return true
+    })
     const lines: string[] = []
-    for (let i = 0; i < 80; i++) lines.push(`Reply line ${i}`)
+    for (let i = 0; i < 80; i++) lines.push(`Reply line ${i} 中 👍🏽 é`)
     assert.equal(terminal.clipboard(), lines.join("\n"))
+    await screen("partial-flash-expired", (_text, ansi) => {
+        for (let y = 0; y < rows.length; y++) {
+            if (rows[y].includes("Reply line") && ansi.split("\n")[y] !== normal[y]) return false
+        }
+        return true
+    })
     await keys("Enter")
     await screen("partial-whole-reader", (text) => readerContains(text, "Reply line 0"))
     await type("G")

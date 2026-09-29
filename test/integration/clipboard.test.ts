@@ -1,8 +1,41 @@
-import { expect, test } from "bun:test"
-import { InputRenderable } from "@opentui/core"
-import { usePluginFixture } from "../helpers/plugin"
+import { afterAll, afterEach, expect, spyOn, test } from "bun:test"
+import * as OpenTUI from "@opentui/core"
+import { createFixture } from "../helpers/fixture"
+import { createClipboardFixture } from "../helpers/clipboard-fixture"
+import type { VimOptions } from "../../src/modules/vim/config"
+import type { VimClipboard } from "../../src/clipboard"
 
-const mount = usePluginFixture()
+// Exercise our clipboard boundary and editor adapter directly. Only the desktop
+// clipboard is controlled; there is no OpenCode plugin context or host UI here.
+let clipboard = createClipboardFixture()
+const factory = spyOn(OpenTUI, "createHostClipboard").mockImplementation(() => clipboard.host)
+afterAll(() => factory.mockRestore())
+let fixture: Awaited<ReturnType<typeof createFixture>> | undefined
+let vimClipboard: VimClipboard | undefined
+afterEach(async () => {
+    await vimClipboard?.dispose()
+    fixture?.dispose()
+    fixture = undefined
+    vimClipboard = undefined
+})
+
+async function mount(options: VimOptions = {}) {
+    clipboard = createClipboardFixture()
+    const { createVimClipboard } = await import("../../src/clipboard")
+    const f = await createFixture("hello", options, 80, {
+        onYank: (text) => { void vimClipboard!.write(text) },
+        readClipboard: () => vimClipboard!.read(),
+    })
+    fixture = f
+    const copied: string[] = []
+    Object.defineProperty(f.renderer, "capabilities", { value: { remote: false, osc52_support: "supported" }, configurable: true })
+    f.renderer.copyToClipboardOSC52 = (text) => { copied.push(text); return true }
+    vimClipboard = createVimClipboard(f.renderer)
+    return { ...f, clipboard, copied, async keys(keys: string) {
+        await f.keys(keys)
+        await new Promise<void>((resolve) => setImmediate(resolve))
+    } }
+}
 
 test.each(["p", "P", "2p", "2P"])("%s pastes the current desktop clipboard with Vim counts and undo", async (key) => {
     const f = await mount()
@@ -64,11 +97,14 @@ test("rapid ddp waits for the cut to reach the clipboard", async () => {
         f.clipboard.text = text
         return { status: "written" }
     })
-    await f.keys("ddp")
+    await f.keys("dd")
+    f.mockInput.pressKey("p")
+    const put = f.settled()
     expect(f.input.plainText).toBe("")
     expect(f.clipboard.host.read).not.toHaveBeenCalled()
     finish()
-    await f.waitFor(() => f.input.plainText === "hello")
+    expect(await put).toBe(true)
+    expect(f.input.plainText).toBe("hello")
     await f.keys("u")
     expect(f.input.plainText).toBe("")
 })
@@ -82,29 +118,15 @@ test("rapid cuts reach the clipboard in order before a put reads it", async () =
         f.clipboard.text = text
         return { status: "written" }
     })
-    await f.keys("xxp")
+    await f.keys("xx")
+    f.mockInput.pressKey("p")
+    const put = f.settled()
     expect(f.clipboard.host.writeText).toHaveBeenCalledTimes(1)
     finish()
-    await f.waitFor(() => f.input.plainText === "lelo")
+    expect(await put).toBe(true)
+    expect(f.input.plainText).toBe("lelo")
     expect(f.clipboard.text).toBe("e")
     expect(f.copied).toEqual(["h", "e"])
-})
-
-test("a pending paste keeps subsequent puts, native typing and bracketed paste in order", async () => {
-    const f = await mount()
-    f.input.setText("")
-    f.clipboard.text = "A"
-    let finish!: () => void
-    const reading = new Promise<void>((resolve) => { finish = resolve })
-    const read = f.clipboard.host.read.getMockImplementation()!
-    f.clipboard.host.read.mockImplementationOnce(async () => { await reading; return read() })
-    await f.keys("ppiB")
-    await f.mockInput.pasteBracketedText("C")
-    f.mockInput.pressEscape()
-    expect(f.input.plainText).toBe("")
-    finish()
-    await f.waitFor(() => f.input.plainText === "ABCA")
-    expect(f.input.cursorStyle.style).toBe("block")
 })
 
 test("mapped puts and dot repeat refresh the clipboard", async () => {
@@ -140,29 +162,16 @@ test("named yanks and puts stay separate from the clipboard", async () => {
     expect(f.input.plainText).toBe("hellohelloexternal")
 })
 
-test("textarea and input adapters share a fallback when clipboard access fails", async () => {
+test("failed clipboard reads and writes retain the shared fallback", async () => {
     const f = await mount()
     f.clipboard.host.read.mockRejectedValue(new Error("clipboard unavailable"))
     f.clipboard.host.writeText.mockRejectedValue(new Error("clipboard unavailable"))
     f.renderer.copyToClipboardOSC52 = () => false
-    const editor = new InputRenderable(f.renderer, { width: 30, value: "dialog" })
-    f.renderer.root.add(editor)
-    f.setMode("modal")
-    f.setCommands([{ id: "dialog.select.submit" }])
-    editor.focus()
-    await f.keys("0yiw")
-    f.setMode("base")
-    f.setCommands([{ id: "prompt.submit" }])
-    f.input.focus()
+    expect(await vimClipboard!.write("dialog")).toBe(false)
     await f.keys("$p")
     expect(f.input.plainText).toBe("hellodialog")
     await f.keys("0yiw")
-    editor.value = ""
-    f.setMode("modal")
-    f.setCommands([{ id: "dialog.select.submit" }])
-    editor.focus()
-    await f.keys("p")
-    expect(editor.value).toBe("hellodialog")
+    expect(await vimClipboard!.read()).toBe("hellodialog")
 })
 
 test("remote puts use shared yanks without reading the server's clipboard", async () => {
@@ -187,25 +196,35 @@ test("an unavailable clipboard falls back, but an empty clipboard does not paste
     expect(f.input.plainText).toBe("hellohello")
 })
 
-test.each(["focus", "edit", "cursor", "route", "toggle", "unmount"])("a pending put is cancelled on %s", async (change) => {
+test.each(["edit", "cursor", "suspend", "cleanup"])("an adapter's pending put is cancelled on %s", async (change) => {
     const f = await mount()
     let finish!: () => void
     const reading = new Promise<void>((resolve) => { finish = resolve })
     const read = f.clipboard.host.read.getMockImplementation()!
     f.clipboard.text = "late"
     f.clipboard.host.read.mockImplementationOnce(async () => { await reading; return read() })
-    await f.keys("p")
-    const editor = new InputRenderable(f.renderer, { width: 30, value: "query" })
-    f.renderer.root.add(editor)
-    if (change === "focus") editor.focus()
+    f.mockInput.pressKey("p")
+    const put = f.settled()
     if (change === "edit") f.input.setText("edited")
     if (change === "cursor") f.input.cursorOffset = 2
-    if (change === "route") f.setRoute({ type: "session", sessionID: "session-2" })
-    if (change === "toggle") f.toggle()
-    if (change === "unmount") f.unmount()
-    await f.renderOnce()
+    if (change === "suspend") f.adapter.suspend()
+    if (change === "cleanup") f.adapter.cleanup()
     finish()
-    await f.renderOnce()
+    expect(await put).toBe(false)
     expect(f.input.plainText).toBe(change === "edit" ? "edited" : "hello")
-    expect(editor.value).toBe("query")
+})
+
+test("a newer yank wins over a read already in flight", async () => {
+    const f = await mount()
+    let finish!: () => void
+    const reading = new Promise<void>((resolve) => { finish = resolve })
+    f.clipboard.host.read.mockImplementationOnce(async () => {
+        await reading
+        return { status: "read", representation: { mimeType: "text/plain", bytes: new TextEncoder().encode("stale") } }
+    })
+    const read = vimClipboard!.read()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    await vimClipboard!.write("newer")
+    finish()
+    expect(await read).toBe("newer")
 })

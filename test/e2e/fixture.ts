@@ -10,7 +10,7 @@ import { createStreamingModel } from "./model"
 
 export type Fixture = FixtureAPI & { terminal: Terminal; sessionTitle: string; sessionID: string; stream?: ReturnType<typeof createStreamingModel> }
 export type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
-export type FixtureAPI = { request: (endpoint: string, body?: unknown) => Promise<any>; workspace: string }
+export type FixtureAPI = { request: (endpoint: string, body?: unknown, method?: string) => Promise<any>; workspace: string }
 export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown>; vim?: VimOptions; stream?: string }
 
 type Options = FixtureSetup & {
@@ -146,14 +146,15 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
         }
     }
 
-    async function request(endpoint: string, body?: unknown) {
+    async function request(endpoint: string, body?: unknown, method = body === undefined ? "GET" : "POST") {
         const response = await fetch(url + endpoint, {
-            method: body === undefined ? "GET" : "POST",
+            method,
             headers: { authorization: `Basic ${btoa(`opencode:${password}`)}`, "content-type": "application/json" },
             body: body === undefined ? undefined : JSON.stringify(body),
             signal: AbortSignal.timeout(3_000),
         })
         if (!response.ok) throw new Error(`${endpoint}: ${response.status} ${await response.text()}`)
+        if (response.status === 204) return
         return response.json()
     }
 }
