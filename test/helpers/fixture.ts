@@ -22,7 +22,7 @@ export async function createFixture(text = "", options: VimOptions = {}, width =
     let submissions = 0
     const prompt = {
         get current() { return { input: input.plainText, mode: "normal", parts: [] } },
-        set(value: { input: string }) { editInput(input, value.input) },
+        set(value: { input: string }) { editInput(input, value.input, screen.renderer.widthMethod) },
         submit() { submissions++ },
         blur() { input.blur() },
     }

@@ -5,7 +5,7 @@ describe("editInput", () => {
     test("inserts without replacing unchanged placeholders", () => {
         const fixture = createFixture("[Image 1] after")
 
-        editInput(fixture.input, "[Image 1] kafter")
+        editInput(fixture.input, "[Image 1] kafter", "unicode")
 
         expect(fixture.calls).toEqual([["cursor", 10], ["insert", "k"]])
     })
@@ -13,7 +13,7 @@ describe("editInput", () => {
     test("uses display offsets for a minimal deletion", () => {
         const fixture = createFixture("中 [Image 1] abc")
 
-        editInput(fixture.input, "中 [Image 1] ac")
+        editInput(fixture.input, "中 [Image 1] ac", "unicode")
 
         expect(fixture.calls).toEqual([["selection", 14, 15], ["insert", ""]])
     })
@@ -21,9 +21,19 @@ describe("editInput", () => {
     test("does not split graphemes", () => {
         const fixture = createFixture("a👩‍💻b")
 
-        editInput(fixture.input, "axb")
+        editInput(fixture.input, "axb", "unicode")
 
         expect(fixture.calls).toEqual([["selection", 1, 3], ["insert", "x"]])
+    })
+
+    test("uses the terminal width method when deleting or inserting after a joined emoji", () => {
+        const deletion = createFixture("a👩‍💻b")
+        editInput(deletion.input, "ab", "wcwidth")
+        expect(deletion.calls).toEqual([["selection", 1, 5], ["insert", ""]])
+
+        const insertion = createFixture("a👩‍💻b")
+        editInput(insertion.input, "a👩‍💻xb", "wcwidth")
+        expect(insertion.calls).toEqual([["cursor", 5], ["insert", "x"]])
     })
 
     for (const [before, after, start, end, inserted] of [
@@ -35,7 +45,7 @@ describe("editInput", () => {
     ] as const) {
         test(`expands shared text to whole graphemes: ${before} → ${after}`, () => {
             const fixture = createFixture(before)
-            editInput(fixture.input, after)
+            editInput(fixture.input, after, "unicode")
             expect(fixture.calls).toEqual([["selection", start, end], ["insert", inserted]])
         })
     }
