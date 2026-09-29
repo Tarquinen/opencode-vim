@@ -60,3 +60,26 @@ test("removed captures keep saved output and cancelled readers settle without er
     })
     expect(await loadShell(context, "session", source, AbortSignal.abort())).toEqual(shellSnapshot(source))
 })
+
+test("completion notices use the execution ID and keep saved output when captures expire", async () => {
+    const source: Extract<ShellSource, { type: "synthetic" }> = {
+        type: "synthetic", id: "msg_completed", time: { created: 1 }, description: "printf 'done'\nprintf 'next'",
+        metadata: { source: "shell", shellID: "sh_execution", jobID: "job_notification", state: "completed", exit: 3, truncated: true },
+        text: '<shell id="job_notification" state="completed" command="printf \'done\'\nprintf \'next\'">\n\u001b[32msaved output\u001b[0m\n\n</shell>',
+    }
+    const calls: string[] = []
+    const context = { data: { session: { get: () => undefined } }, client: { shell: {
+        get: async ({ id }: { id: string }) => { calls.push(id); throw new Error("expired") },
+        output: async ({ id }: { id: string }) => { calls.push(id); throw new Error("expired") },
+    } } } as unknown as Context
+    expect(await loadShell(context, "session", source, new AbortController().signal)).toMatchObject({
+        command: source.description, status: "Exited · code 3", shellID: "sh_execution", output: "saved output\n",
+        notice: "Capture unavailable · showing saved result · Saved output is truncated",
+    })
+    expect(calls).toEqual(["sh_execution", "sh_execution"])
+    source.metadata = { source: "shell", state: "error" }
+    source.text = "Failed to start command"
+    expect(shellSnapshot(source)).toMatchObject({ status: "Failed", output: source.text, shellID: undefined })
+    source.metadata = { source: "shell", state: "cancelled" }
+    expect(shellSnapshot(source).status).toBe("Cancelled")
+})

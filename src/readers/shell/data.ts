@@ -2,7 +2,7 @@ import { stripVTControlCharacters } from "node:util"
 import type { Context } from "@opencode/plugin/tui/context"
 import type { TranscriptSource } from "../../transcript-items"
 
-export type ShellSource = Extract<TranscriptSource, { type: "shell" | "tool" }>
+export type ShellSource = Extract<TranscriptSource, { type: "shell" | "tool" | "synthetic" }>
 export type ShellSnapshot = {
   command: string
   workdir?: string
@@ -15,6 +15,21 @@ export type ShellSnapshot = {
 export const OUTPUT_LIMIT = 1024 * 1024
 
 export function shellSnapshot(source: ShellSource): ShellSnapshot {
+  if (source.type === "synthetic") {
+    const metadata = source.metadata ?? {}
+    const command = source.description ?? ""
+    const shellID = typeof metadata.shellID === "string" ? metadata.shellID : undefined
+    const prefix = `<shell id="${metadata.jobID ?? shellID}" state="${metadata.state}" command="${command}">\n`
+    const output = source.text.startsWith(prefix) && source.text.endsWith("\n</shell>")
+      ? source.text.slice(prefix.length, -"\n</shell>".length) : source.text
+    let status = "Completed"
+    if (metadata.state === "error") status = "Failed"
+    else if (metadata.state === "cancelled") status = "Cancelled"
+    else if (metadata.timeout === true) status = "Timed out"
+    else if (typeof metadata.signal === "string") status = `Killed · ${metadata.signal}`
+    else if (typeof metadata.exit === "number") status = shellStatus("exited", metadata.exit)
+    return { command, shellID, status, output: cleanOutput(output), notice: metadata.truncated === true ? "Saved output is truncated" : "" }
+  }
   if (source.type === "shell") return {
     command: source.command, shellID: source.shellID,
     status: shellStatus(source.status, source.exit),

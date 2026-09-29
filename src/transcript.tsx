@@ -1,7 +1,7 @@
 // TSX ensures the plugin loader shares the host's OpenTUI classes.
 import type { Context } from "@opencode/plugin/tui/context"
 import { MouseEvent, ScrollBoxRenderable, type OptimizedBuffer, type Renderable } from "@opentui/core"
-import { groupAt, transcriptItems, type TranscriptRange } from "./transcript-items"
+import { transcriptItems, type TranscriptRange } from "./transcript-items"
 
 export function createTranscriptSelection(context: Context, sessionID: string, select: (id: string | undefined) => void) {
   let scroll: ScrollBoxRenderable | undefined
@@ -95,16 +95,9 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
   }
 
   function inspect() {
-    const messages = context.data.session.message.list(sessionID)
-    const ids = new Set(messages.map((message) => message.id))
-    function isRow(node: Renderable) {
-      if (ids.has(node.id) || (node.id?.startsWith("session-part:") && ids.has(node.id.split(":")[1]))) return true
-      const anchor = node.getChildren()[0]
-      return Boolean(anchor && groupAt(anchor))
-    }
     function findScroll(node: Renderable): ScrollBoxRenderable | undefined {
       if (!node.visible) return
-      if (node instanceof ScrollBoxRenderable && node.getChildren().some(isRow)) return node
+      if (node instanceof ScrollBoxRenderable && items(node.getChildren()).ranges.length) return node
       for (const child of node.getChildren()) {
         const found = findScroll(child)
         if (found) return found

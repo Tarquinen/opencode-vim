@@ -36,3 +36,24 @@ export async function shellMessages({ request, workspace }: FixtureAPI): Promise
             output: { output: "saved user shell preview", cursor: 24, size: 24, truncated: false }, time: { created: 4, completed: 5 } },
     ]
 }
+
+export async function backgroundShellMessages(api: FixtureAPI): Promise<Message[]> {
+    const messages = await shellMessages(api)
+    const shell = messages.find((message) => message.type === "shell")!
+    messages.push({
+        id: "msg_shell_4", type: "synthetic", description: shell.command, time: { created: 6 },
+        metadata: { source: "shell", shellID: shell.shellID, jobID: "background-job", state: "completed", exit: 7 },
+        text: `<shell id="background-job" state="completed" command="${shell.command}">\nSaved completion preview\n</shell>`,
+    }, {
+        id: "msg_shell_5", type: "assistant", agent: "build", model: { providerID: "test", id: "fixture" },
+        time: { created: 7, completed: 8 }, finish: "stop", content: [{ type: "text", text: "Background response recorded" }],
+    })
+    for (const [index, state] of ["error", "cancelled"].entries()) {
+        const command = state === "error" ? "printf failed-command" : "printf cancelled-command;\n" + "printf 'long command'; ".repeat(12)
+        const output = state === "error" ? "Saved failure output" : "Saved cancelled output"
+        messages.push({ id: `msg_shell_${6 + index}`, type: "synthetic", description: command, time: { created: 9 + index },
+            metadata: { source: "shell", shellID: `sh_expired_${state}`, state },
+            text: `<shell id="sh_expired_${state}" state="${state}" command="${command}">\n${output}\n</shell>` })
+    }
+    return messages
+}

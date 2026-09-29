@@ -15,7 +15,7 @@ export type TranscriptRange = TranscriptItem & {
   parentID?: string
 }
 
-type Part = TranscriptItem & { messageID: string; kind: string; group?: GroupKind }
+type Part = TranscriptItem & { messageID: string; kind: string; group?: GroupKind; label?: string }
 
 function parts(messages: Message[]) {
   const result: Part[] = []
@@ -38,6 +38,11 @@ function parts(messages: Message[]) {
       if ((message.finish && message.finish !== "tool-calls" && message.finish !== "unknown") || message.error || message.retry) {
         result.push({ id: `footer:${message.id}`, messageID: message.id, kind: "footer", author: "", text: "" })
       }
+    } else if (message.type === "synthetic" && message.metadata?.source === "shell" && message.description?.trim()) {
+      const state = message.metadata.state
+      const status = state === "completed" ? "finished" : state === "error" ? "failed" : state ?? "finished"
+      result.push({ id: message.id, messageID: message.id, kind: "message", author: "Shell", text: message.text, source: message,
+        label: `${state === "completed" ? "↳" : "!"} Shell ${status} · ${message.description.replace(/\s+/g, " ").trim()}` })
     } else {
       result.push({ id: message.id, messageID: message.id, kind: "message", author: message.type === "user" ? "You" : message.type,
         text: message.type === "user" ? message.text : "", source: message })
@@ -165,6 +170,12 @@ export function transcriptItems(rows: Renderable[], messages: Message[], pending
         const match = sources.findIndex((part, position) => position >= cursor && part.messageID === row.id && part.text.trim() === text)
         if (text && match !== -1) index = match
       }
+    }
+    if (index === -1 && !info) {
+      // Completion notices have no native row ID; their visible label identifies the saved message.
+      const text = textOf(row).trim()
+      if (text) index = sources.findIndex((part, position) => position >= cursor && part.label !== undefined &&
+        (part.label === text || (text.endsWith("…") && part.label.startsWith(text.slice(0, -1)))))
     }
     if (index !== -1) cursor = index
     if (!info && index === -1 && sources[cursor]?.kind === "footer") {

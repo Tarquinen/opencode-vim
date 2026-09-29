@@ -10,8 +10,9 @@ import { tabSwitching } from "./scenarios/tab-switching"
 import { messageReader } from "./scenarios/message-reader"
 import { transcriptGrouped, transcriptLowDetail, transcriptUngrouped, transcriptRunning, transcriptHistory } from "./scenarios/transcript"
 import { readerMessages, transcriptMessages, historyMessages } from "./data/transcript"
-import { shellMessages } from "./data/shell"
+import { shellMessages, backgroundShellMessages } from "./data/shell"
 import { shellReader } from "./scenarios/shell-reader"
+import { backgroundShell } from "./scenarios/background-shell"
 import { sessionKeymaps, sessionAgentBinding } from "./scenarios/session-keymaps"
 import { readMessages } from "./data/read"
 import { readReader } from "./scenarios/read-reader"
@@ -26,6 +27,8 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
     { name: "shell-reader", run: shellReader, setup: { messages: shellMessages } },
     { name: "shell-reader-low-detail", run: shellReader, setup: { messages: shellMessages, cli: { session: { verbosity: "low" } } } },
+    { name: "background-shell", run: backgroundShell, setup: { messages: backgroundShellMessages } },
+    { name: "background-shell-low-detail", run: backgroundShell, setup: { messages: backgroundShellMessages, cli: { session: { verbosity: "low" } } } },
     { name: "read-reader", run: readReader, setup: { messages: readMessages } },
     { name: "read-reader-low-detail", run: readReader, setup: { messages: readMessages, cli: { session: { verbosity: "low" } } } },
     { name: "file-changes", run: fileChanges, setup: { messages: fileChangeMessages, cli: { diffs: { view: "unified" } } } },
