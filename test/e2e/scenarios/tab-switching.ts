@@ -1,4 +1,4 @@
-import type { Fixture } from "../fixture"
+import type { Fixture } from "../support/fixture"
 
 export async function tabSwitching({ terminal, sessionTitle }: Fixture) {
     const { keys, type, screen } = terminal

@@ -204,10 +204,17 @@ export function transcriptItems(rows: Renderable[], messages: Message[], pending
         lastSource = cursor++
       } else if (source.group && container && anchor.getChildren().length) {
         // With grouping disabled, the GroupAnchor holds individual EntryAnchors.
-        for (const child of anchor.getChildren()) {
-          add(child, sources[cursor])
-          cursor++
+        // Permission-blocked entries still render after the ordinary entries.
+        const children = anchor.getChildren()
+        const ordinary: Part[] = []
+        const pending: Part[] = []
+        for (const part of sources.slice(cursor, cursor + children.length)) {
+          if (part.source?.type === "tool" && pendingTools.has(part.source.id)) pending.push(part)
+          else ordinary.push(part)
         }
+        const ordered = [...ordinary, ...pending]
+        for (const [index, child] of children.entries()) add(child, ordered[index])
+        cursor += children.length
         lastSource = cursor - 1
       } else {
         add(row, source)

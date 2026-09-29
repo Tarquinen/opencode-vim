@@ -1,5 +1,5 @@
-import type { Fixture } from "../fixture"
-import { readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { readerContains, selected } from "../support/screens"
 
 async function openSelected({ terminal }: Fixture, label: string, value: string) {
     await terminal.screen(`${label}-selected`, (text) => selected(text, value))
@@ -100,6 +100,11 @@ export async function transcriptRunning(fixture: Fixture) {
 export async function transcriptHistory(fixture: Fixture) {
     const { type, screen } = fixture.terminal
     await enterSession(fixture)
+    let latestRow = -1
+    await screen("history-natural-bottom", (text) => {
+        latestRow = text.split("\n").findIndex((line) => line.includes("History entry 239"))
+        return latestRow >= 0
+    })
     await openSelected(fixture, "history-latest", "History entry 239")
     await type("130k")
     await screen("history-loaded-older", (text) => selected(text, "History entry 109"), 15_000)
@@ -107,7 +112,10 @@ export async function transcriptHistory(fixture: Fixture) {
     await type("gg")
     await screen("history-first", (text) => selected(text, "History entry 000"), 15_000)
     await openSelected(fixture, "history-first", "History entry 000")
+    await type("kj")
+    await screen("history-oldest-boundary", (text) => selected(text, "History entry 001"), 15_000)
     await type("G")
     await screen("history-return-to-latest", (text) => selected(text, "History entry 239"), 15_000)
     await openSelected(fixture, "history-restored", "History entry 239")
+    await screen("history-no-navigation-padding", (text) => text.split("\n")[latestRow]?.includes("History entry 239") === true)
 }

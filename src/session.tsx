@@ -174,7 +174,7 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
   return {
     active, enter, close,
     Status() {
-      return <text fg={context.theme.text.feedback.info.base}>
+      return <text fg={context.theme.text.feedback.info.base} flexShrink={0} wrapMode="none">
         {notice() || `SESSION · Enter open · yy copy · ${config.sessionKey} prompt`}
       </text>
     },

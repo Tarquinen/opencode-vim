@@ -1,4 +1,4 @@
-import type { Message } from "../fixture"
+import type { Message } from "../support/fixture"
 
 const files = [
     { file: "first.ts", status: "modified", additions: 2, deletions: 2,
@@ -30,5 +30,14 @@ export const fileChangeMessages: Message[] = [
         } },
         ...edits,
         { type: "text", text: "Change fixtures ready" },
+    ] },
+]
+
+export const pendingChangeMessages: Message[] = [
+    { id: "msg_patch_user", type: "user", text: "Apply the pending patch", time: { created: 1 } },
+    { id: "msg_patch_running", type: "assistant", agent: "build", model: { providerID: "test", id: "fixture" }, time: { created: 2, completed: 3 }, content: [
+        { type: "tool", id: "pending-patch", name: "patch", time: { created: 2 }, state: {
+            status: "running", input: { patchText: "*** Begin Patch\n*** Add File: pending.ts\n+pending content\n*** End Patch" }, metadata: {},
+        } },
     ] },
 ]

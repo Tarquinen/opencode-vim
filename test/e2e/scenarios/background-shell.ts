@@ -1,5 +1,5 @@
-import type { Fixture } from "../fixture"
-import { readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { readerContains, selected } from "../support/screens"
 
 export async function backgroundShell({ terminal }: Fixture) {
     const { keys, type, screen } = terminal

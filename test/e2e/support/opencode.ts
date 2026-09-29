@@ -13,7 +13,7 @@ export async function installOpenCode() {
     console.log(`OpenCode E2E version: ${version} (latest stable)`)
     const architecture = process.arch === "x64" ? "x64-baseline" : "arm64"
     const target = `${process.platform}-${architecture}`
-    const cache = path.resolve(import.meta.dir, "../../node_modules/.cache/opencode")
+    const cache = path.resolve(import.meta.dir, "../../../node_modules/.cache/opencode")
     const directory = path.join(cache, `${version}-${target}`)
     const binary = path.join(directory, "opencode")
     if (await Bun.file(binary).exists()) return { binary, version }

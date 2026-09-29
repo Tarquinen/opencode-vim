@@ -1,5 +1,5 @@
-import type { Fixture } from "../fixture"
-import { readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { reader, readerContains, selected } from "../support/screens"
 
 export async function readReader({ terminal }: Fixture) {
     const { keys, type, screen } = terminal
@@ -43,6 +43,14 @@ export async function readReader({ terminal }: Fixture) {
     await keys("Enter")
     await screen("position-restored", (text) => readerContains(text, "value100")
         && text.split("\n")[terminal.cursor().y]?.includes("value100"))
+    terminal.resize(44, 20)
+    await type("gg")
+    await screen("narrow-file-reader", (text) => {
+        const frame = reader(text)
+        return !!frame && frame.top >= 0 && frame.bottom < 20 && /41\s+const greeting/.test(frame.content)
+    })
+    terminal.resize(120, 38)
+    await screen("wide-file-reader", (text) => readerContains(text, "Lines 41–100"))
     await keys("Escape")
     await screen("session-again", (text) => selected(text, "Read src/sample.ts") && !text.includes("Lines 41–100"))
     await type("j")

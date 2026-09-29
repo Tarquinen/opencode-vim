@@ -1,3 +1,4 @@
+import type { WidthMethod } from "@opentui/core"
 import { charToDisplay } from "./map"
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
@@ -10,7 +11,7 @@ type Input = {
     clearSelection: () => unknown
 }
 
-export function editInput(input: Input, value: string) {
+export function editInput(input: Input, value: string, widthMethod: WidthMethod) {
     const before = input.plainText
     if (before === value) return
     input.clearSelection()
@@ -41,10 +42,10 @@ export function editInput(input: Input, value: string) {
         valueEnd += extra
     }
 
-    const startOffset = charToDisplay(before, start)
+    const startOffset = charToDisplay(before, start, widthMethod)
 
     if (start === end) input.cursorOffset = startOffset
-    else input.setSelection(startOffset, startOffset + charToDisplay(before.slice(start, end), end - start))
+    else input.setSelection(startOffset, startOffset + charToDisplay(before.slice(start, end), end - start, widthMethod))
     input.insertText(value.slice(start, valueEnd))
 }
 

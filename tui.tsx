@@ -249,7 +249,7 @@ function createCompatContext(context: Context) {
     set(value: { input: string }) {
       const input = context.renderer.currentFocusedEditor
       if (input instanceof InputRenderable) input.value = value.input
-      else if (input) editInput(input, value.input)
+      else if (input) editInput(input, value.input, context.renderer.widthMethod)
     },
     submit() {
       if (inputKind(context) === "dialog") {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
-import type { Fixture } from "../fixture"
-import { reader, readerContains } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { reader, readerContains } from "../support/screens"
 
 export async function messageReader({ terminal }: Fixture) {
     const { keys, type, screen, cursor } = terminal
@@ -34,14 +34,23 @@ export async function messageReader({ terminal }: Fixture) {
     await keys("C-c")
     await screen("reader-ctrl-c", (text) => text.includes("SESSION") && !text.includes("v select"))
 
+    for (const dismissal of ["button", "backdrop"]) {
+        await keys("Enter")
+        await screen(`reader-${dismissal}-opened`, (text) => {
+            frame = reader(text)
+            return frame?.content.includes("one two") ?? false
+        })
+        assert.deepEqual(cursor(), remembered)
+        assert(frame)
+        await terminal.click(dismissal === "button" ? frame.right - 2 : 0, dismissal === "button" ? frame.top : 0)
+        await screen(`reader-${dismissal}-closed`, (text) => text.includes("SESSION") && !text.includes("v select"))
+    }
+
     for (const exit of ["s", "Escape"]) {
         await keys("Enter")
         await screen(`reader-${exit}-opened`, (text) => readerContains(text, "second line"))
-        await keys(exit)
-        if (exit === "Escape") {
-            await screen("reader-escape-back", (text) => text.includes("SESSION") && !text.includes("v select"))
-            await keys("Escape")
-        }
+        // Back-to-back keys catch delayed host refocus stealing prompt focus.
+        await keys("Escape", exit)
         await screen(`reader-${exit}-prompt`, (text) => text.includes("NORMAL") && !text.includes("SESSION") && !text.includes("v select"))
         await keys("PageUp")
         await type("A restored")
@@ -53,4 +62,34 @@ export async function messageReader({ terminal }: Fixture) {
         await type("s")
         await screen(`reader-${exit}-session`, (text) => text.includes("SESSION"))
     }
+}
+
+export async function readerLayout({ terminal }: Fixture) {
+    const { type, keys, screen } = terminal
+    await keys("Escape")
+    await type("s")
+    await keys("Enter")
+    await screen("long-reader", (text) => readerContains(text, "Reader line 001"))
+    await keys("C-d", "C-f")
+    let remembered = ""
+    await screen("reader-paged", (text) => {
+        const line = text.split("\n")[terminal.cursor().y] ?? ""
+        remembered = /Reader line \d+/.exec(line)?.[0] ?? ""
+        return !!remembered && remembered !== "Reader line 001"
+    })
+    terminal.resize(44, 20)
+    await screen("reader-resized", (text) => {
+        const frame = reader(text)
+        return !!frame && frame.left > 0 && frame.right < 44 && frame.top >= 0 && frame.bottom < 20
+    })
+    await keys("Escape", "Enter")
+    await screen("reader-position-restored", (text) => text.split("\n")[terminal.cursor().y]?.includes(remembered) === true)
+    await keys("C-u")
+    await screen("reader-page-up", (text) => {
+        const line = text.split("\n")[terminal.cursor().y] ?? ""
+        const number = /Reader line (\d+)/.exec(line)?.[1]
+        return !!number && Number(number) < Number(remembered.slice(-3))
+    })
+    await type("siresized prompt")
+    await screen("resized-prompt-focus", (text) => text.includes("resized prompt") && text.includes("INSERT"))
 }
