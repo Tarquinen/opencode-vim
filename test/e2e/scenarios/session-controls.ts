@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
-import type { Fixture } from "../fixture"
-import { readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { readerContains, selected } from "../support/screens"
 
 export function sessionControls(key = "s") {
     return async ({ terminal }: Fixture) => {

@@ -1,4 +1,5 @@
-import type { Fixture } from "../fixture"
+import assert from "node:assert/strict"
+import type { Fixture } from "../support/fixture"
 
 export async function dialogMappings({ terminal }: Fixture) {
     const { keys, type, screen } = terminal
@@ -9,14 +10,64 @@ export async function dialogMappings({ terminal }: Fixture) {
     await keys("Escape")
     await type("0j")
     await screen("mapped-j-edits-query", (text) => /^\s+Open settings\s*$/m.test(text) && text.includes("NORMAL"))
-    await type("fj")
-    await screen("pending-find-is-not-navigation", (text) => /^\s+Open settings\s*$/m.test(text) && text.includes("Commands"))
     await type("u")
     await screen("query-undo-events", (text) => /^\s+jOpen settings\s*$/m.test(text))
     await keys("C-r")
     await screen("query-redo-events", (text) => /^\s+Open settings\s*$/m.test(text))
     await keys("Escape")
     await screen("mapped-dialog-dismissed", (text) => !text.includes("Commands") && text.includes("prompt stays here") && text.includes("NORMAL"))
+}
+
+export async function dialogScope({ terminal, probe }: Fixture) {
+    const { keys, type, screen } = terminal
+    await type("prompt draft")
+    await keys("Escape")
+    // Use OpenCode's actual select dialog with multiple known choices. Submit
+    // after a pending Vim motion so accidental host navigation is observable.
+    for (const motion of ["fj", "fk", "dj", "dk"]) {
+        await probe("select")
+        await screen(`${motion}-opened`, (text) => text.includes("E2E choices") && text.includes("NORMAL"))
+        // Start away from the boundary so either next or previous is detectable.
+        await keys("Down")
+        await type(motion)
+        await keys("Enter")
+        await screen(`${motion}-submitted`, async () => (await probe()).result === "2")
+    }
+    for (const [key, expected] of [["Down", "2"], ["End", "40"], ["Home", "1"], ["Up", "1"], ["Tab", "2"], ["BTab", "1"]]) {
+        await probe("select")
+        await screen(`${key}-opened`, (text) => text.includes("E2E choices"))
+        if (key === "Home" || key === "Up" || key === "BTab") await keys("Down")
+        await keys(key, "Enter")
+        await screen(`${key}-submitted`, async () => (await probe()).result === expected)
+    }
+    await probe("select")
+    await screen("page-opened", (text) => text.includes("E2E choices") && text.includes("Choice 01"))
+    await keys("NPage")
+    await screen("page-down", (text) => !text.includes("Choice 01") && text.includes("E2E choices"))
+    await keys("PPage", "Enter")
+    await screen("page-up", async () => (await probe()).result === "1")
+
+    await probe("select")
+    await screen("arrows-opened", (text) => text.includes("E2E choices"))
+    await type("iChoice")
+    await keys("Escape")
+    const cursor = (await probe()).editor.cursor
+    await keys("Left")
+    await screen("left-native", async () => (await probe()).editor.cursor === cursor - 1)
+    await keys("Right")
+    await screen("right-native", async () => (await probe()).editor.cursor === cursor)
+    await keys("Escape")
+    await screen("escape-native", (text) => !text.includes("E2E choices") && text.includes("prompt draft"))
+
+    // A real extension dialog without select/prompt commands must stay native.
+    await probe("native")
+    await screen("native-opened", async (text) => text.includes("Native extension input") && (await probe()).editor?.id === "e2e-native")
+    await keys("End")
+    await type("xj")
+    await screen("native-literal-input", async () => (await probe()).editor?.text === "nativexj")
+    await keys("Escape")
+    await screen("native-closed", (text) => !text.includes("Native extension input"))
+    assert.equal((await probe()).editor.text, "prompt draft")
 }
 
 export async function dialogFocus({ terminal }: Fixture) {

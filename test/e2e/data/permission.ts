@@ -1,4 +1,4 @@
-import type { Message } from "../fixture"
+import type { Message } from "../support/fixture"
 
 export const permissionMessages: Message[] = [
     { id: "msg_permission_1", type: "user", text: "Check blocked and ordinary tools", time: { created: 1 } },

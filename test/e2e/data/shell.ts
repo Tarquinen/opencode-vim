@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import type { FixtureAPI, Message } from "../fixture"
+import type { FixtureAPI, Message } from "../support/fixture"
 
 export async function shellMessages({ request, workspace }: FixtureAPI): Promise<Message[]> {
     const command = "printf '\\033[32mcaptured stdout\\033[0m\\n'; printf 'captured stderr\\n' >&2; exit 7"

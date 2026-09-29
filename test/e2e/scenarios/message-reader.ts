@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
-import type { Fixture } from "../fixture"
-import { reader, readerContains } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { reader, readerContains } from "../support/screens"
 
 export async function messageReader({ terminal }: Fixture) {
     const { keys, type, screen, cursor } = terminal

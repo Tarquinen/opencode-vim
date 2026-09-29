@@ -68,8 +68,9 @@ those integrations through real OpenCode E2E scenarios. See `test/README.md` for
 the coverage map.
 
 E2E scenarios live in `test/e2e/scenarios/` and are registered in
-`test/e2e/run.ts`. Reuse the shared fixture and terminal helpers, and wait for
-expected screen content rather than using fixed delays.
+`test/e2e/run.ts`. Prepared conversations belong in `test/e2e/data/`; shared
+setup, drivers and assertions belong in `test/e2e/support/`. Reuse those helpers
+and wait for expected screen content rather than using fixed delays.
 
 ## Pull requests
 

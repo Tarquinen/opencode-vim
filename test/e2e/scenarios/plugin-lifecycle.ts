@@ -1,8 +1,8 @@
 import assert from "node:assert/strict"
-import type { Fixture } from "../fixture"
-import { readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { readerContains, selected } from "../support/screens"
 
-export async function pluginLifecycle({ terminal }: Fixture) {
+export async function pluginLifecycle({ terminal, probe, setVimLoaded }: Fixture) {
     const { keys, type, screen } = terminal
     await type("runtime draft")
     await screen("insert", (text) => text.includes("runtime draft") && text.includes("INSERT"))
@@ -28,6 +28,7 @@ export async function pluginLifecycle({ terminal }: Fixture) {
     await keys("F7")
     await screen("light-status", (text, ansi) => text.includes("NORMAL") && !!statusColor(ansi) && statusColor(ansi) !== dark)
 
+    let nativeListeners = 0
     for (const state of ["visual", "session", "reader"]) {
         if (state === "visual") {
             await type("0vl")
@@ -47,6 +48,7 @@ export async function pluginLifecycle({ terminal }: Fixture) {
         await screen(`${state}-unloaded`, (text) => text.includes("inactive") && !text.includes("NORMAL") && !text.includes("VISUAL") && !text.includes("SESSION"))
         await keys("Escape")
         await screen(`${state}-native`, (text) => !text.includes("Plugins") && !text.includes("▎") && !text.includes("v select"))
+        nativeListeners = (await probe()).listeners
         assert.equal(terminal.cursorStyle(), 3, "Unloading restores the host's underline cursor")
         await keys("C-a")
         await screen(`${state}-native-line-start`, (text) => text.split("\n")[terminal.cursor().y]?.indexOf("runtime draft") === terminal.cursor().x)
@@ -62,6 +64,25 @@ export async function pluginLifecycle({ terminal }: Fixture) {
         await type("0")
         await screen(`${state}-normal-restored`, (text) => text.includes("NORMAL") && !text.includes("SESSION"))
     }
+
+    // Config hot-reload unloads Vim without opening/replacing its active reader.
+    await type("s")
+    await keys("Enter")
+    await screen("direct-reader-open", (text) => readerContains(text, "one two"))
+    await type("vl")
+    await screen("direct-reader-selection", async (text) => text.includes("VISUAL") && (await probe()).editor?.selected)
+    const before = await probe("remember")
+    assert(before.listeners > nativeListeners)
+    await setVimLoaded(false)
+    await screen("direct-reader-unloaded", async (text) => {
+        const state = await probe()
+        return state.remembered?.destroyed && state.mode === "base" && state.listeners === nativeListeners
+            && !text.includes("▎") && !text.includes("v select") && !text.includes("SESSION")
+    })
+    assert.equal(terminal.cursorStyle(), 3)
+    await keys("C-e")
+    await type(" after unload")
+    await screen("direct-unload-native-input", async () => (await probe()).editor?.text === "runtime draft after unload")
 }
 
 function statusColor(ansi: string) {

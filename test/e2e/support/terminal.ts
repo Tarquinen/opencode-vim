@@ -85,12 +85,12 @@ export function createTerminal(socket: string, artifacts: string) {
         return style
     }
 
-    async function screen(label: string, matches: (text: string, ansi: string) => boolean, timeout = 5_000) {
+    async function screen(label: string, matches: (text: string, ansi: string) => boolean | Promise<boolean>, timeout = 5_000) {
         const deadline = Date.now() + timeout
         while (true) {
             const ansi = tmux("capture-pane", "-p", "-e", "-t", "e2e")
             const text = stripVTControlCharacters(ansi)
-            const matched = matches(text, ansi)
+            const matched = await matches(text, ansi)
             if (matched || Date.now() >= deadline) {
                 await Bun.write(path.join(artifacts, `${label}.txt`), text)
                 await Bun.write(path.join(artifacts, `${label}.ansi`), ansi)

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
-import type { Fixture } from "../fixture"
-import { readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { readerContains, selected } from "../support/screens"
 
 export function permissionTools(grouped: boolean) {
     return async ({ terminal, request, sessionID }: Fixture) => {
@@ -19,6 +19,16 @@ export function permissionTools(grouped: boolean) {
         await type("j")
         if (grouped) {
             await screen("collapsed-group", (text) => selected(text, "read") && text.includes("blocked.ts"))
+            await type("j")
+            await screen("collapsed-blocked-selected", (text) => selected(text, "blocked.ts") && !text.includes("ordinary.ts"))
+            await keys("Enter")
+            await screen("collapsed-blocked-reader", (text) => readerContains(text, "Read blocked.ts") && !readerContains(text, "ordinary"))
+            await type("ggVGy")
+            await screen("collapsed-blocked-copied", (text) => text.includes("Copied"))
+            assert.equal(terminal.clipboard(), "Read blocked.ts\n")
+            await keys("Escape")
+            await type("k")
+            await screen("collapsed-group-return", (text) => selected(text, "read") && !text.includes("ordinary.ts"))
             await keys("Enter")
             await screen("expanded", (text) => text.includes("ordinary.ts"))
             await type("j")

@@ -1,11 +1,11 @@
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import path from "node:path"
-import { runWithFixture, type Fixture, type FixtureSetup } from "./fixture"
-import { installOpenCode } from "./opencode"
-import { copySourcePlugin, packPlugin } from "./plugin"
+import { runWithFixture, type Fixture, type FixtureSetup } from "./support/fixture"
+import { installOpenCode } from "./support/opencode"
+import { copySourcePlugin, packPlugin } from "./support/plugin"
 import { agentSwitching } from "./scenarios/agent-switching"
-import { dialogFocus, dialogMappings, promptDialog } from "./scenarios/dialog-focus"
+import { dialogFocus, dialogMappings, dialogScope, promptDialog } from "./scenarios/dialog-focus"
 import { tabSwitching } from "./scenarios/tab-switching"
 import { messageReader, readerLayout } from "./scenarios/message-reader"
 import { transcriptGrouped, transcriptLowDetail, transcriptUngrouped, transcriptRunning, transcriptHistory } from "./scenarios/transcript"
@@ -27,6 +27,7 @@ import { pluginLifecycle } from "./scenarios/plugin-lifecycle"
 import { promptClipboard, promptHistory, promptInput } from "./scenarios/prompt-input"
 import { permissionMessages } from "./data/permission"
 import { permissionTools } from "./scenarios/permission-tools"
+import { clipboardCancellation } from "./scenarios/clipboard-cancel"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; source?: boolean; setup?: FixtureSetup }> = [
     { name: "prompt-input", run: promptInput, setup: { vim: { defaultMode: "normal", keymaps: { insert: { kj: "normal" }, normal: { "<Tab>": "x" } } } } },
@@ -37,6 +38,7 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
     { name: "dialog-focus-normal", run: dialogFocus, setup: { vim: { defaultMode: "normal" } } },
     { name: "prompt-dialog", run: promptDialog },
     { name: "dialog-mappings", run: dialogMappings, setup: { vim: { keymaps: { normal: { j: "x" } } } } },
+    { name: "dialog-scope", run: dialogScope, setup: { probe: true, cli: { keybinds: { "dialog.select.next": ["down", "tab"], "dialog.select.prev": ["up", "shift+tab"] } } } },
     { name: "agent-switching", run: agentSwitching },
     { name: "agent-switching-tab-mapping", run: agentSwitching, setup: { vim: { keymaps: { normal: { "<Tab>": "x" } } } } },
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
@@ -44,7 +46,7 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
     { name: "session-empty", run: emptySession },
     { name: "session-lifecycle", run: sessionLifecycle, setup: { messages: readerMessages,
         vim: { keymaps: { normal: { Q: "command:opencode-vim.toggle" } } } } },
-    { name: "session-copy", run: sessionCopy, setup: { messages: copyMessages } },
+    { name: "session-copy", run: sessionCopy, setup: { messages: copyMessages, probe: true } },
     { name: "session-key-invalid", run: sessionControls(), setup: { messages: readerMessages, vim: { sessionKey: "gs" } } },
     { name: "shell-reader", run: shellReader, setup: { messages: shellMessages } },
     { name: "shell-reader-low-detail", run: shellReader, setup: { messages: shellMessages, cli: { session: { verbosity: "low" } } } },
@@ -73,9 +75,12 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
         vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } },
     } },
 ]
+for (const action of ["focus", "route", "toggle", "unload"] as const) {
+    scenarios.push({ name: `clipboard-cancel-${action}`, run: clipboardCancellation(action), setup: { probe: true, delayedClipboard: true } })
+}
 for (const source of [false, true]) {
     scenarios.push({ name: source ? "runtime-source" : "runtime-npm", run: pluginLifecycle, source, setup: {
-        messages: readerMessages,
+        messages: readerMessages, probe: true,
         cli: { cursor: { style: "underline", blinking: true }, theme: { name: "opencode", mode: "dark" },
             keybinds: { "plugins.list": ["f6", "ctrl+g"], "theme.switch_mode": "f7" } },
     } })
@@ -111,7 +116,7 @@ for (const animations of [true, false]) {
         ["parts", transcriptParts, partMessages],
     ] as const) {
         scenarios.push({ name: `transcript-${name}-${suffix}`, run, setup: {
-            messages, cli: { animations, session: { grouping: "none", thinking: "show" } },
+            messages, probe: name === "partial", cli: { animations, session: { grouping: "none", thinking: "show" } },
         } })
     }
 }
@@ -138,6 +143,7 @@ try {
     version = opencode.version
     const plugin = await packPlugin(root, temporary, artifacts)
     const sourcePlugin = await copySourcePlugin(root, temporary)
+    const clipboardPlugin = await copySourcePlugin(root, temporary, true)
 
     for (const scenario of scenarios) {
         if (requested.length && !requested.includes(scenario.name)) continue
@@ -146,7 +152,7 @@ try {
             await runWithFixture({
                 ...scenario.setup,
                 opencode,
-                plugin: scenario.source ? sourcePlugin : plugin,
+                plugin: scenario.setup?.delayedClipboard ? clipboardPlugin : scenario.source ? sourcePlugin : plugin,
                 directory: path.join(temporary, scenario.name),
                 artifacts: path.join(artifacts, scenario.name),
             }, scenario.run)

@@ -1,4 +1,4 @@
-import type { Message } from "../fixture"
+import type { Message } from "../support/fixture"
 
 const lines = ['const greeting = "你好 👩‍💻";', `const wrapped = "${"wrapped text ".repeat(12)}";`]
 for (let number = 43; number <= 100; number++) lines.push(`const value${number} = ${number};`)

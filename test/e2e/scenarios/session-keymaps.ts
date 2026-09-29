@@ -1,5 +1,5 @@
-import type { Fixture } from "../fixture"
-import { readerContains } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { readerContains } from "../support/screens"
 
 export async function sessionKeymaps({ terminal }: Fixture) {
     const { keys, type, screen } = terminal

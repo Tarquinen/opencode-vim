@@ -1,5 +1,5 @@
-import type { Fixture } from "../fixture"
-import { readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { readerContains, selected } from "../support/screens"
 
 async function openSelected({ terminal }: Fixture, label: string, value: string) {
     await terminal.screen(`${label}-selected`, (text) => selected(text, value))

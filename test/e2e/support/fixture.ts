@@ -4,14 +4,16 @@ import { cp, mkdir } from "node:fs/promises"
 import { createServer } from "node:net"
 import path from "node:path"
 import type { Context } from "@opencode/plugin/tui/context"
-import type { VimOptions } from "../../src/modules/vim/config"
+import type { VimOptions } from "../../../src/modules/vim/config"
 import { createTerminal, type Terminal } from "./terminal"
 import { createStreamingModel } from "./model"
+import { createDelayedClipboard } from "./clipboard-server"
 
-export type Fixture = FixtureAPI & { terminal: Terminal; sessionTitle: string; sessionID: string; stream?: ReturnType<typeof createStreamingModel> }
+export type Fixture = FixtureAPI & { terminal: Terminal; sessionTitle: string; sessionID: string; stream?: ReturnType<typeof createStreamingModel>;
+    clipboard?: ReturnType<typeof createDelayedClipboard>; probe: (action?: string, body?: unknown) => Promise<any>; setVimLoaded: (loaded: boolean) => Promise<void> }
 export type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
 export type FixtureAPI = { request: (endpoint: string, body?: unknown, method?: string) => Promise<any>; workspace: string }
-export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown>; vim?: VimOptions; stream?: string }
+export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown>; vim?: VimOptions; stream?: string; probe?: boolean; delayedClipboard?: boolean }
 
 type Options = FixtureSetup & {
     opencode: { binary: string; version: string }
@@ -27,11 +29,15 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
     const sessionTitle = "E2E existing session"
     const terminal = createTerminal(path.join(directory, "tmux.sock"), artifacts)
     const stream = options.stream === undefined ? undefined : createStreamingModel(options.stream)
+    const clipboard = options.delayedClipboard ? createDelayedClipboard() : undefined
+    const configFile = path.join(directory, "tui/config/cli.json")
+    const probeFile = path.join(artifacts, "probe-url")
     let server: Bun.Subprocess | undefined
     let url = ""
 
     function stop() {
         stream?.stop()
+        clipboard?.stop()
         terminal.stop()
         if (server) {
             try {
@@ -54,8 +60,10 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
             await mkdir(path.join(directory, home, "config"), { recursive: true })
         }
         assert.equal(execFileSync(opencode.binary, ["--version"], { env: environment("server"), encoding: "utf8" }).trim(), `opencode v${opencode.version}`)
-        await Bun.write(path.join(directory, "tui/config/cli.json"), JSON.stringify({
-            plugins: [{ package: plugin, options: { vim: options.vim ?? {} } }],
+        const plugins: unknown[] = [{ package: plugin, options: { vim: options.vim ?? {} } }]
+        if (options.probe) plugins.push(path.join(import.meta.dir, "probe"))
+        await Bun.write(configFile, JSON.stringify({
+            plugins,
             tabs: { mode: "on" },
             attention: { notifications: false, sound: false },
             ...options.cli,
@@ -108,7 +116,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
         const initialMode = options.vim?.defaultMode === "normal" ? "NORMAL" : "INSERT"
         await terminal.screen("startup", (text) => text.includes(sessionTitle) && text.includes(initialMode), 60_000)
 
-        await run({ terminal, sessionTitle, sessionID: session.id, request, workspace, stream })
+        await run({ terminal, sessionTitle, sessionID: session.id, request, workspace, stream, clipboard, probe, setVimLoaded })
         assert.equal((await request(`/api/session/${session.id}`)).data.id, session.id)
     } finally {
         process.off("SIGINT", interrupt)
@@ -143,7 +151,24 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
             XDG_DATA_HOME: path.join(directory, "data"),
             XDG_CACHE_HOME: path.join(directory, "cache"),
             XDG_STATE_HOME: path.join(directory, "state"),
+            VIM_E2E_PROBE: probeFile,
+            ...(clipboard ? { VIM_E2E_CLIPBOARD: clipboard.url } : {}),
         }
+    }
+
+    async function probe(action = "state", body?: unknown) {
+        const url = await Bun.file(probeFile).text()
+        const response = await fetch(`${url}/${action}`, { method: body === undefined ? "GET" : "POST",
+            body: body === undefined ? undefined : JSON.stringify(body), headers: { "content-type": "application/json" } })
+        assert(response.ok, await response.clone().text())
+        return response.json()
+    }
+
+    async function setVimLoaded(loaded: boolean) {
+        const config = await Bun.file(configFile).json()
+        config.plugins = config.plugins.filter((entry: unknown) => entry !== "-opencode-vim")
+        if (!loaded) config.plugins.push("-opencode-vim")
+        await Bun.write(configFile, JSON.stringify(config))
     }
 
     async function request(endpoint: string, body?: unknown, method = body === undefined ? "GET" : "POST") {

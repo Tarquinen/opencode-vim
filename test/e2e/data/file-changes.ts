@@ -1,4 +1,4 @@
-import type { Message } from "../fixture"
+import type { Message } from "../support/fixture"
 
 const files = [
     { file: "first.ts", status: "modified", additions: 2, deletions: 2,

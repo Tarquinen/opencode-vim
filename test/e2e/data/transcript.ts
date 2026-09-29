@@ -1,4 +1,4 @@
-import type { Message } from "../fixture"
+import type { Message } from "../support/fixture"
 
 export const readerMessages: Message[] = [
     { id: "msg_e2e_reader", type: "user", text: "one two\nsecond line", time: { created: 1 } },

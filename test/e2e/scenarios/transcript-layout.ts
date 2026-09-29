@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
-import type { Fixture } from "../fixture"
-import { readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { readerContains, selected } from "../support/screens"
+import { yankFlashMatches } from "../support/colors"
 
 export async function transcriptLayout({ terminal }: Fixture) {
     const { keys, type, screen } = terminal
@@ -48,7 +49,7 @@ export async function transcriptLayout({ terminal }: Fixture) {
     assert.equal(terminal.clipboard(), "Second part\nSecond end")
 }
 
-export async function transcriptPartial({ terminal }: Fixture) {
+export async function transcriptPartial({ terminal, probe }: Fixture) {
     const { keys, type, screen } = terminal
     await keys("Escape")
     let rows: string[] = []
@@ -68,17 +69,12 @@ export async function transcriptPartial({ terminal }: Fixture) {
         return true
     })
     let normal: string[] = []
+    const colors = (await probe()).colors
     await screen("partial-before-flash", (_text, ansi) => { normal = ansi.split("\n"); return true })
     await type("yy")
     await screen("partial-copied", (text, ansi) => {
         if (!text.includes("Copied")) return false
-        const lines = text.split("\n")
-        for (let y = 0; y < rows.length; y++) {
-            if (rows[y].includes("Reply line")) {
-                if (lines[y].replaceAll("▎", " ").trimEnd() !== rows[y].trimEnd() || ansi.split("\n")[y] === normal[y]) return false
-            } else if (lines[y].includes("▎")) return false
-        }
-        return true
+        return yankFlashMatches(normal.join("\n"), ansi, colors)
     })
     const lines: string[] = []
     for (let i = 0; i < 80; i++) lines.push(`Reply line ${i} 中 👍🏽 é`)
@@ -126,7 +122,7 @@ export async function transcriptParts({ terminal }: Fixture) {
     await screen("counted-parts", (text) => selected(text, "Finished"))
 }
 
-export async function sessionCopy({ terminal }: Fixture) {
+export async function sessionCopy({ terminal, probe }: Fixture) {
     const { keys, type, screen } = terminal
     await type("draft")
     await keys("Escape")
@@ -147,15 +143,17 @@ export async function sessionCopy({ terminal }: Fixture) {
     await type("s")
     await screen("quote-selected", (text) => selected(text, "quoted 中 👩‍💻"))
     let normal = ""
+    let beforeFlash = ""
+    const colors = (await probe()).colors
     await screen("quote-before-flash", (text, ansi) => {
+        beforeFlash = ansi
         const row = text.split("\n").findIndex((line) => line.includes("quoted 中 👩‍💻"))
         normal = ansi.split("\n")[row]
         return !!normal
     })
     await type("yy")
     await screen("quote-flashed", (text, ansi) => {
-        const row = text.split("\n").findIndex((line) => line.includes("quoted 中 👩‍💻"))
-        return text.includes("Copied") && ansi.split("\n")[row] !== normal
+        return text.includes("Copied") && yankFlashMatches(beforeFlash, ansi, colors)
     })
     assert.equal(terminal.clipboard(), "quoted 中 👩‍💻\nsecond line")
     await screen("quote-flash-expired", (text, ansi) => {

@@ -1,6 +1,6 @@
 import type { DiffView } from "../../../src/modules/vim/config"
-import type { Fixture } from "../fixture"
-import { reader, readerContains, selected } from "../screens"
+import type { Fixture } from "../support/fixture"
+import { reader, readerContains, selected } from "../support/screens"
 
 export function diffReader(initial: DiffView = "after", remapped = false) {
     return async ({ terminal }: Fixture) => {

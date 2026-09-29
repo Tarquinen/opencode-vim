@@ -1,4 +1,4 @@
-import type { Message } from "../fixture"
+import type { Message } from "../support/fixture"
 
 function user(id: string, text: string, created: number): Message {
     return { id, type: "user", text, time: { created } }

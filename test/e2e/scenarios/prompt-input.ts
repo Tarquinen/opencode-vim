@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import type { Fixture } from "../fixture"
+import type { Fixture } from "../support/fixture"
 
 export async function promptInput({ terminal }: Fixture) {
     const { keys, type, screen } = terminal
