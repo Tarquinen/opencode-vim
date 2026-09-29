@@ -1,9 +1,23 @@
-import type { Fixture } from "../fixture"
-import { reader, selected } from "../screens"
+import assert from "node:assert/strict"
+import type { Fixture } from "../support/fixture"
+import { reader, readerContains, selected } from "../support/screens"
+
+export async function pendingPatch({ terminal }: Fixture) {
+    const { keys, type, screen } = terminal
+    await keys("Escape")
+    await type("s")
+    await screen("patch-running", (text) => selected(text, "Patching"))
+    await keys("Enter")
+    await screen("patch-fallback-reader", (text) => readerContains(text, "Patching pending.ts") && !text.includes("Saved excerpts"))
+    await type("yy")
+    await screen("patch-fallback-copied", (text) => text.includes("Copied"))
+    assert.equal(terminal.clipboard(), "Patching pending.ts\n")
+}
 
 export async function fileChanges({ terminal }: Fixture) {
     const { keys, type, screen } = terminal
     const names = ["first.ts", "added.ts", "deleted.ts", "edited-one.ts", "edited-two.ts"]
+    const contents = ['const first = "new first";\n\nconst last = "new last";\n', "added content\n", "deleted content\n", "after\n", "after\n"]
     await type("change draft")
     await keys("Escape")
     await screen("normal", (text) => text.includes("NORMAL"))
@@ -35,6 +49,9 @@ export async function fileChanges({ terminal }: Fixture) {
             }
             return true
         })
+        await type("ggVGy")
+        await screen(`file-${index}-copied`, (text) => text.includes("Copied"))
+        assert.equal(terminal.clipboard(), contents[index])
         await keys("Escape")
         await screen(`file-${index}-returned`, (text) => selectionIs(text, name) && !text.includes("v select"))
         await type("j")

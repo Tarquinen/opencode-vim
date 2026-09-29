@@ -82,6 +82,22 @@ The footer follows the active editor's mode. Closing the dialog restores the
 prompt's mode or the session footer. Prompt and dialog edits have separate undo
 histories.
 
+## Questions
+
+Questions start in normal mode. `j`/`k` move between every answer, including away
+from "Type your own answer". `h`/`l` or Tab switch question fields. Enter selects
+an option, and Space toggles a multi-select answer.
+
+Press `i` to open or reopen the custom answer. Enter also opens an empty custom
+answer; for an existing multi-select answer it keeps the native toggle behavior.
+Type in insert mode; `Esc`, `Ctrl+[`, or your configured insert-mode mapping to `normal`
+returns to navigation and preserves the answer. `Esc` in normal mode dismisses
+the question. The mode is shown above the question, and the prompt's previous
+mode is restored when it closes.
+
+Insert mappings use the same configuration and timeout as the prompt. There is
+no default two-letter binding for leaving insert mode.
+
 ## Vim compatibility
 
 This is a Vim-style subset powered by `@vimee/core`, with OpenCode-specific

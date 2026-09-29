@@ -48,8 +48,9 @@ entering session mode.
 ### Custom keymaps
 
 Mappings apply to `insert`, `normal`, `visual`, and `visual-line` editing modes in
-the prompt and search dialogs. Use `keymaps.session` for transcript browsing and
-its message/tool modals.
+the prompt and search dialogs. Insert-mode mappings also apply while typing a
+question answer. Use `keymaps.session` for transcript browsing and its
+message/tool modals.
 
 See [Custom Keymaps](./keymap-actions.md) for actions, key notation, and examples.
 See [Keybindings and Modes](./vim-behavior.md) for the default behavior.

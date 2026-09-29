@@ -7,7 +7,7 @@ import { keyNotation } from "../../src/modules/vim/keys"
 import { createVimState } from "../../src/modules/vim/state"
 import { createVimeeAdapter } from "../../src/modules/vim/vimee"
 
-export async function createFixture(text = "", options: VimOptions = {}, width = 80) {
+export async function createFixture(text = "", options: VimOptions = {}, width = 80, adapterOptions: Parameters<typeof createVimeeAdapter>[3] = {}) {
     const screen = await createTestRenderer({ width, height: 12, kittyKeyboard: true })
     const input = new TextareaRenderable(screen.renderer, {
         id: "prompt", width, height: 10, initialValue: text, wrapMode: "word",
@@ -17,12 +17,12 @@ export async function createFixture(text = "", options: VimOptions = {}, width =
     await screen.renderOnce()
     const config = createVimConfig({ defaultMode: "normal", ...options })
     const state = createVimState(config.defaultMode)
-    const adapter = createVimeeAdapter(state, config, () => {})
+    const adapter = createVimeeAdapter(state, config, () => {}, adapterOptions)
     const commands: string[] = []
     let submissions = 0
     const prompt = {
         get current() { return { input: input.plainText, mode: "normal", parts: [] } },
-        set(value: { input: string }) { editInput(input, value.input) },
+        set(value: { input: string }) { editInput(input, value.input, screen.renderer.widthMethod) },
         submit() { submissions++ },
         blur() { input.blur() },
     }
@@ -35,9 +35,11 @@ export async function createFixture(text = "", options: VimOptions = {}, width =
         prompt: () => input.focused ? prompt : undefined,
         requestRender: () => screen.renderer.requestRender(),
     }
+    let handled: boolean | Promise<boolean> = false
     const onKey = (event: KeyEvent) => {
         const key = keyNotation(event)
-        if (key && adapter.handle(event, key, context)) {
+        handled = key ? adapter.handle(event, key, context) : false
+        if (handled) {
             event.preventDefault()
             event.stopPropagation()
         }
@@ -46,9 +48,13 @@ export async function createFixture(text = "", options: VimOptions = {}, width =
     screen.renderer.keyInput.prependListener("keypress", onKey)
     return {
         ...screen, input, state, adapter, commands,
+        settled: () => handled,
         get submissions() { return submissions },
         async keys(keys: string) {
-            for (const key of keys) screen.mockInput.pressKey(key, { shift: key !== key.toLowerCase() })
+            for (const key of keys) {
+                screen.mockInput.pressKey(key, { shift: key !== key.toLowerCase() })
+                if (typeof handled !== "boolean") await handled
+            }
             await screen.renderOnce()
         },
         dispose() {

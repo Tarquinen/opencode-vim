@@ -43,7 +43,7 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
-      - name: Test source and npm package
+      - name: Test units and components
         run: bun run test
 
   e2e:
@@ -72,7 +72,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test in OpenCode
+      - name: Test source and npm package in OpenCode
         run: bun run test:e2e
 
       - name: Upload failure diagnostics

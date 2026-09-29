@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import type { FixtureAPI, Message } from "../fixture"
+import type { FixtureAPI, Message } from "../support/fixture"
 
 export async function shellMessages({ request, workspace }: FixtureAPI): Promise<Message[]> {
     const command = "printf '\\033[32mcaptured stdout\\033[0m\\n'; printf 'captured stderr\\n' >&2; exit 7"
@@ -41,6 +41,8 @@ export async function backgroundShellMessages(api: FixtureAPI): Promise<Message[
     const messages = await shellMessages(api)
     const shell = messages.find((message) => message.type === "shell")!
     messages.push({
+        id: "msg_shell_hidden", type: "synthetic", text: "Hidden fixture context", time: { created: 5 }, metadata: { source: "fixture" },
+    }, {
         id: "msg_shell_4", type: "synthetic", description: shell.command, time: { created: 6 },
         metadata: { source: "shell", shellID: shell.shellID, jobID: "background-job", state: "completed", exit: 7 },
         text: `<shell id="background-job" state="completed" command="${shell.command}">\nSaved completion preview\n</shell>`,

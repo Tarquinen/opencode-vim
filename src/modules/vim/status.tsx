@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import type { TextRenderable } from "@opentui/core"
 import type { Accessor } from "solid-js"
-import type { VimMode } from "./src/modules/vim/state"
+import type { VimMode } from "./state"
 
 type VimStatusProps = {
   mode: Accessor<VimMode>
