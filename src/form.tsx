@@ -46,7 +46,7 @@ export function createFormMode(context: Context, config: VimConfig, log: VimLog,
     const removeStatus = context.ui.slot({
         append: "session.composer.top",
         render: () => <Show when={active()}>
-            <box paddingLeft={2} flexDirection="row">
+            <box paddingLeft={3} marginBottom={1} flexDirection="row">
                 <VimStatus mode={state.mode} enabled={enabled} theme={{
                     success: context.theme.text.feedback.success.base,
                     warning: context.theme.text.feedback.warning.base,
