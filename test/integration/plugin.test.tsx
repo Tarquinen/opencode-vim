@@ -7,6 +7,7 @@ import { ensureRuntimePluginSupport } from "@opentui/solid/runtime-plugin-suppor
 import { Plugin } from "@opencode/plugin/tui"
 import { createEffect, createRoot, createSignal, For, Show } from "solid-js"
 import type { VimOptions } from "../../src/modules/vim/config"
+import type { ShellSource } from "../../src/readers/shell/data"
 import { createClipboardFixture } from "../helpers/clipboard-fixture"
 
 // Install before the runtime loader snapshots OpenTUI's shared exports.
@@ -21,7 +22,7 @@ const { default: plugin }: typeof import("../../tui") = await import(entrypoint 
 let dispose: (() => void) | undefined
 afterEach(() => { dispose?.(); dispose = undefined })
 
-type TestMessage = { id: string; type: "user" | "assistant"; time: { created: number }; text?: string; content?: Array<{ type: string; text: string; id?: string; name?: string }> }
+type TestMessage = { id: string; type: "user" | "assistant"; time: { created: number }; text?: string; content?: Array<{ type: string; text: string; id?: string; name?: string; state?: Extract<ShellSource, { type: "tool" }>["state"] }> }
 function message(id: number, text: string, type: "user" | "assistant" = "assistant"): TestMessage {
     return { id: String(id), type, time: { created: id }, ...(type === "user" ? { text } : { content: [{ type: "text", text }] }) }
 }
@@ -66,9 +67,12 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
         renderer: screen.renderer,
         options: { defaultMode: "normal", pendingDisplayDelay: 0, ...options },
         get theme() {
-            const tokens = { background: { base: RGBA.fromHex("#000000"), raised: { high: RGBA.fromHex("#222222") } }, text: { base: RGBA.fromHex("#ffffff"), muted: RGBA.fromHex("#888888"), feedback: {
+            const tokens = { background: { base: RGBA.fromHex("#000000"), raised: { high: RGBA.fromHex("#222222") }, action: { primary: { focused: RGBA.fromHex("#006699") } } }, text: { base: RGBA.fromHex("#ffffff"), muted: RGBA.fromHex("#888888"), action: { primary: { focused: RGBA.fromHex("#ffffff") } }, feedback: {
                 success: { base: success() }, warning: { base: RGBA.fromHex("#ffff00") }, info: { base: RGBA.fromHex("#00ffff") },
-            } } }
+            } }, syntax: { function: RGBA.fromHex("#00ffff"), string: RGBA.fromHex("#00ff00") },
+                diff: { text: { added: success(), removed: RGBA.fromHex("#ff0000"), hunkHeader: RGBA.fromHex("#00ffff") },
+                    background: { added: RGBA.fromHex("#003300"), removed: RGBA.fromHex("#330000") },
+                    lineNumber: { background: { added: RGBA.fromHex("#004400"), removed: RGBA.fromHex("#440000") } } } }
             return { ...tokens, surface: () => tokens }
         },
         storage: { store: () => [{ get enabled() { return enabled() } }, (fn: (draft: { enabled: boolean }) => void) => {
@@ -122,8 +126,9 @@ async function mount(options: VimOptions = {}, session?: { messages: TestMessage
                 if (command) toggle = command.run
             },
         },
-        data: { session: { message: { list: messages } } },
+        data: { session: { message: { list: messages }, permission: { list: () => [] } } },
         ui: {
+            format: { path: (value: string) => value },
             router: { current: route }, toast: { show() {} },
             dialog: {
                 show(view: () => JSX.Element, onClose?: () => void) {
@@ -799,7 +804,7 @@ test("sessionKey changes the toggle and footer hints in browsing and the message
     await f.keys("q")
     f.mockInput.pressEnter()
     await f.renderOnce()
-    expect(f.captureCharFrame()).toContain("v select · V lines · q prompt")
+    expect(f.captureCharFrame()).toContain("v select · q prompt")
     await f.keys("sfq")
     expect(f.hostMode()).toBe("modal")
     expect(f.reader().cursorOffset).toBe(4)
@@ -999,7 +1004,7 @@ test("reader blocks edits, custom editing maps and bracketed paste", async () =>
     await f.keys("iaAoOdDcxpru.Q")
     await f.mockInput.pasteBracketedText("MUTATION")
     expect(f.reader().plainText).toBe(text)
-    expect(f.captureCharFrame()).toContain("MESSAGE")
+    expect(f.captureCharFrame()).toContain("v select · s prompt")
     await f.keys("0fs")
     expect(f.reader()).toBeDefined()
     await f.keys("0yiw")
@@ -1010,6 +1015,441 @@ test("reader blocks edits, custom editing maps and bracketed paste", async () =>
     await f.keys("s")
     expect(f.reader()).toBeUndefined()
     expect(f.hostMode()).toBe("base")
+})
+
+test("shell readers separate command and output and preserve read-only Vim controls", async () => {
+    const f = await mount({}, { messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
+            status: "completed", input: { command: "printf output", workdir: "/workspace" },
+            content: [{ type: "text", text: "first output\nsecond output\n" }], metadata: { exit: 0 },
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("Shell output")
+    expect(f.captureCharFrame()).toContain("Command")
+    expect(f.captureCharFrame()).toContain("Output")
+    expect(f.captureCharFrame()).toContain("printf output")
+    expect(f.captureCharFrame()).toContain("v select · tab switch section · s prompt")
+    const command = f.renderer.currentFocusedEditor as TextareaRenderable
+    expect(command.id).toBe("vim-shell-command")
+    expect(command.cursorOffset).toBe(0)
+    await f.keys("xviwy")
+    expect(command.plainText).toBe("printf output")
+    expect(f.copied.at(-1)).toBe("printf")
+    f.mockInput.pressKey("TAB")
+    await f.renderOnce()
+    expect(f.renderer.currentFocusedEditor).toBe(f.reader())
+    expect(f.reader().plainText).toBe("first output\nsecond output")
+    await f.keys("xVjy")
+    expect(f.reader().plainText).toBe("first output\nsecond output")
+    expect(f.copied.at(-1)).toBe("first output\nsecond output\n")
+    f.mockInput.pressKey("TAB")
+    await f.renderOnce()
+    expect(f.renderer.currentFocusedEditor).toBe(command)
+    await f.keys("v")
+    expect(command.hasSelection()).toBe(true)
+    f.reader().focus()
+    await f.renderOnce()
+    expect(command.hasSelection()).toBe(false)
+    await f.keys("s")
+    expect(f.renderer.currentFocusedEditor).toBe(f.input)
+    expect(f.input.plainText).toBe("hello")
+})
+
+test.each(["", "v", "V"])("session keymaps remap panel switching and release Tab in modal mode %j", async (mode) => {
+    const f = await mount({ keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } }, {
+        messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
+            type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
+                status: "completed", input: { command: "printf output" }, content: [{ type: "text", text: "first output" }],
+            },
+        }] }],
+    })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    const command = f.renderer.currentFocusedEditor as TextareaRenderable
+    expect(f.captureCharFrame()).toContain("v select · <C-w>w switch section · s prompt")
+    expect(f.captureCharFrame()).not.toContain("tab switch")
+    await f.keys(mode)
+    const selection = command.getSelectedText()
+    let passed = 0
+    f.renderer.keyInput.on("keypress", (event) => { if (event.name === "tab" && !event.defaultPrevented) passed++ })
+    f.mockInput.pressKey("TAB")
+    await f.renderOnce()
+    expect(passed).toBe(1)
+    expect(f.renderer.currentFocusedEditor).toBe(command)
+    expect(command.getSelectedText()).toBe(selection)
+    f.mockInput.pressKey("w", { ctrl: true })
+    await f.renderOnce()
+    expect(f.renderer.currentFocusedEditor).toBe(command)
+    await f.keys("w")
+    expect(f.renderer.currentFocusedEditor).toBe(f.reader())
+    expect(command.hasSelection()).toBe(false)
+    expect(command.plainText).toBe("printf output")
+    expect(f.reader().plainText).toBe("first output")
+
+    f.mockInput.pressKey("w", { ctrl: true })
+    command.focus()
+    await f.keys("w")
+    expect(f.renderer.currentFocusedEditor).toBe(command)
+    expect(command.cursorOffset).toBe(7)
+    f.mockInput.pressKey("w", { ctrl: true })
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.reader()).toBeUndefined()
+})
+
+test("session Tab passthrough hides disabled panel hints and leaves generic modals read-only", async () => {
+    const f = await mount({ keymaps: { session: { "<Tab>": "passthrough" } } }, { messages: [message(1, "one two")] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("v select · s prompt")
+    expect(f.captureCharFrame()).not.toContain("switch")
+    let passed = 0
+    f.renderer.keyInput.on("keypress", (event) => { if (event.name === "tab" && !event.defaultPrevented) passed++ })
+    f.mockInput.pressKey("TAB")
+    await f.keys("xw")
+    expect(passed).toBe(1)
+    expect(f.reader().plainText).toBe("one two")
+    expect(f.reader().cursorOffset).toBe(4)
+})
+
+test("session passthrough applies while browsing and reading without changing prompt mappings", async () => {
+    const f = await mount({ keymaps: {
+        normal: { j: "x" },
+        session: { j: "passthrough", "<Tab>": "passthrough", "<C-w>w": "switch-panel" },
+    } }, { messages: [message(1, "first message"), message(2, "last message")] })
+    await f.keys("j")
+    expect(f.input.plainText).toBe("ello")
+    await f.keys("s")
+    const before = f.captureCharFrame()
+    const passed: string[] = []
+    f.renderer.keyInput.on("keypress", (event) => {
+        if (!event.defaultPrevented) passed.push(event.ctrl ? `ctrl+${event.name}` : event.name)
+    })
+    f.mockInput.pressKey("TAB")
+    f.mockInput.pressKey("w", { ctrl: true })
+    await f.keys("j")
+    expect(passed).toEqual(["tab", "ctrl+w", "j"])
+    expect(f.captureCharFrame()).toBe(before)
+    expect(f.hostMode()).toBe("opencode-vim.session")
+    await f.keys("k")
+    expect(f.captureCharFrame()).toContain("▎first message")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    const offset = f.reader().cursorOffset
+    await f.keys("j")
+    expect(passed.at(-1)).toBe("j")
+    expect(f.reader().cursorOffset).toBe(offset)
+    expect(f.reader().plainText).toBe("first message")
+    await f.keys("s")
+    await f.keys("j")
+    expect(f.input.plainText).toBe("llo")
+})
+
+test("shell output keeps deliberate blank lines and trailing spaces", async () => {
+    const f = await mount({}, { messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
+            status: "completed", input: { command: "printf output" },
+            content: [{ type: "text", text: "output  \n\n" }], metadata: { exit: 0 },
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.reader().plainText).toBe("output  \n")
+})
+
+test("shell command highlighting preserves Unicode and an active selection", async () => {
+    let finish!: (value: { highlights: [number, number, string][] }) => void
+    const highlighting = spyOn(OpenTUI.getTreeSitterClient(), "highlightOnce").mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    try {
+        const command = "printf '你好' | cat"
+        const f = await mount({}, { messages: [{ id: "shell-message", type: "assistant", time: { created: 1 }, content: [{
+            type: "tool", id: "shell-call", name: "shell", text: "Shell summary", state: {
+                status: "completed", input: { command }, content: [{ type: "text", text: "你好\n" }], metadata: { exit: 0 },
+            },
+        }] }] })
+        await f.keys("s")
+        f.mockInput.pressEnter()
+        await f.renderOnce()
+        expect(highlighting).toHaveBeenCalledWith(command, "bash")
+        const input = f.renderer.currentFocusedEditor as TextareaRenderable
+        await f.keys("viw")
+        const offset = input.cursorOffset
+        finish({ highlights: [[0, 6, "function"], [7, 11, "string"], [14, 17, "function"]] })
+        await f.renderOnce()
+        expect(input.plainText).toBe(command)
+        expect(input.getSelectedText()).toBe("printf")
+        expect(input.cursorOffset).toBe(offset)
+        expect(input.getLineHighlights(0)).toEqual(expect.arrayContaining([
+            expect.objectContaining({ start: 7, end: 13 }), expect.objectContaining({ start: 16, end: 19 }),
+        ]))
+    } finally {
+        highlighting.mockRestore()
+    }
+})
+
+test("shell diff colors preserve Unicode output, selection and copying", async () => {
+    const output = "diff --git a/file b/file\n--- a/file\n+++ b/file\n@@ -1 +1 @@\n-hello\n+你好 👩‍💻"
+    const f = await mount({}, { messages: [{ id: "diff-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "diff-call", name: "shell", text: "Diff summary", state: {
+            status: "completed", input: { command: "git diff" }, content: [{ type: "text", text: output }], metadata: { exit: 0 },
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    const input = f.reader()
+    expect(input.getLineHighlights(4)[0]?.styleId).not.toBe(input.getLineHighlights(5)[0]?.styleId)
+    expect(input.getLineHighlights(5)[0]?.end).toBe(Bun.stringWidth("+你好 👩‍💻"))
+    f.mockInput.pressKey("TAB")
+    await f.keys("GVy")
+    expect(f.copied.at(-1)).toBe("+你好 👩‍💻\n")
+    expect(input.plainText).toBe(output)
+    f.mockInput.pressEscape()
+    await f.renderOnce()
+    expect(f.hostMode()).toBe("opencode-vim.session")
+})
+
+test.each([[80, 16], [120, 38]])("read tools show saved code with scrolling line numbers and copy without the gutter at %ix%i", async (width, height) => {
+    let finish!: (value: { highlights: [number, number, string][] }) => void
+    const highlighting = spyOn(OpenTUI.getTreeSitterClient(), "highlightOnce").mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    try {
+        const lines = ['const greeting = "你好 👩‍💻";', `const wrapped = "${"long text ".repeat(15)}";`]
+        for (let number = 43; number <= 100; number++) lines.push(`const value${number} = ${number};`)
+        const text = lines.join("\n")
+        const result = ["Read file src/example.ts, lines 41-100", ...lines.map((line, index) => `${index + 41}: ${line}`), "[Output truncated. Continue reading with offset: 101]"].join("\n")
+        const f = await mount({}, { messages: [{ id: "read-message", type: "assistant", time: { created: 1 }, content: [{
+            type: "tool", id: "read-call", name: "read", text: "Read src/example.ts", state: {
+                status: "completed", input: { path: "src/example.ts", offset: 41 }, content: [{ type: "text", text: result }],
+            },
+        }] }] })
+        f.resize(width, height)
+        await f.keys("s")
+        f.mockInput.pressEnter()
+        await f.renderOnce()
+        const input = f.reader()
+        expect(input.plainText).toBe(text)
+        expect(f.renderer.currentFocusedEditor).toBe(input)
+        expect(f.captureCharFrame()).toContain("src/example.ts")
+        expect(f.captureCharFrame()).toContain("Lines 41–100")
+        expect(f.captureCharFrame()).toContain("Partial file")
+        expect(f.captureCharFrame()).toMatch(/41\s+const greeting/)
+        expect(highlighting).toHaveBeenCalledWith(text, "typescript")
+        await f.keys("wviw")
+        const offset = input.cursorOffset
+        finish({ highlights: [[17, lines[0].length - 1, "string"]] })
+        await f.renderOnce()
+        expect(input.getSelectedText()).toBe("greeting")
+        expect(input.cursorOffset).toBe(offset)
+        expect(input.getLineHighlights(0)[0]).toMatchObject({ start: 17, end: Bun.stringWidth(lines[0]) - 1 })
+        f.mockInput.pressEscape()
+        await f.keys("ggVyxG")
+        expect(f.copied.at(-1)).toBe(lines[0] + "\n")
+        expect(input.plainText).toBe(text)
+        expect(input.scrollY).toBeGreaterThan(0)
+        expect(f.captureCharFrame()).toMatch(/100\s+const value100/)
+        const cursor = f.renderer.getCursorState()
+        expect(cursor.visible).toBe(true)
+        expect(f.captureCharFrame().split("\n")[cursor.y - 1]).toContain("value100")
+        const remembered = input.cursorOffset
+        f.mockInput.pressEscape()
+        f.mockInput.pressEnter()
+        await f.renderOnce()
+        expect(f.reader().cursorOffset).toBe(remembered)
+        f.resize(44, 20)
+        await f.keys("gg")
+        expect(f.captureCharFrame()).toMatch(/41\s+const greeting/)
+        expect(f.reader().plainText).toBe(text)
+        const modal = f.renderer.root.findDescendantById("host-dialog")!
+        expect(modal.y).toBeGreaterThanOrEqual(0)
+        expect(modal.y + modal.height).toBeLessThanOrEqual(20)
+        await f.keys("s")
+        expect(f.renderer.currentFocusedEditor).toBe(f.input)
+        expect(f.input.plainText).toBe("hello")
+        finish({ highlights: [[0, 5, "function"]] })
+        await f.renderOnce()
+    } finally {
+        highlighting.mockRestore()
+    }
+})
+
+test.each(["Read directory src, 0 entries", "Image read successfully", "Custom read result"])("non-file read results keep the default view: %s", async (result) => {
+    const f = await mount({}, { messages: [{ id: "read-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "read-call", name: "read", text: "Original read summary", state: {
+            status: "completed", input: { path: "src" }, content: [{ type: "text", text: result }],
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.reader().plainText).toBe("Original read summary")
+    expect(f.renderer.root.findDescendantById("vim-file-lines")).toBeUndefined()
+})
+
+test.each(["Read file empty.unknown, 0 lines", "Read file empty.unknown, lines 1-1\n1: "])("empty and blank read files stay empty when copied: %s", async (result) => {
+    const f = await mount({}, { messages: [{ id: "read-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "read-call", name: "read", text: "Read empty.unknown", state: {
+            status: "completed", input: { path: "empty.unknown" }, content: [{ type: "text", text: result }],
+        },
+    }] }] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.keys("yy")
+    expect(f.reader().plainText).toBe("")
+    expect(f.copied.at(-1)).toBe("\n")
+    expect(f.captureCharFrame()).toContain(result.endsWith("0 lines") ? "Empty file" : "Lines 1–1")
+})
+
+function changeMessage(status = "modified", patch = '--- src/change.ts\n+++ src/change.ts\n@@ -10,3 +10,4 @@\n const keep = 1;\n-const text = "old";\n+const text = "你好 👩‍💻";\n+const extra = 2;\n console.log(text);\n@@ -90,1 +91,1 @@\n-const tail = "old";\n+const tail = "new";\n'): TestMessage {
+    return { id: "change-message", type: "assistant", time: { created: 1 }, content: [{
+        type: "tool", id: "edit-change", name: "edit", text: "Edit src/change.ts", state: {
+            status: "completed", input: { path: "src/change.ts", oldString: "stale input", newString: "unformatted input" },
+            content: [{ type: "text", text: "Edited src/change.ts" }], metadata: { files: [
+                { file: "src/change.ts", status, additions: 3, deletions: 2, patch },
+            ] },
+        },
+    }] }
+}
+
+test.each(["after", "before", "diff"] as const)("change views honor diffView=%s", async (diffView) => {
+    const f = await mount({ diffView }, { messages: [changeMessage()] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    const active = f.renderer.root.findDescendantById(`vim-change-view-${diffView}`) as OpenTUI.TextRenderable
+    expect(active.bg).toEqual(RGBA.fromHex("#006699"))
+    for (const view of ["After", "Before", "Diff"]) expect(f.captureCharFrame()).toContain(view)
+    expect(f.captureCharFrame()).toContain("v select · tab switch view · s prompt")
+    expect(f.reader().plainText.includes('const text = "old";')).toBe(diffView !== "after")
+    expect(f.reader().plainText.includes('const text = "你好 👩‍💻";')).toBe(diffView !== "before")
+    expect(f.reader().plainText).not.toContain("@@")
+    expect(f.renderer.currentFocusedEditor).toBe(f.reader())
+    const next = diffView === "after" ? "before" : "after"
+    const tab = f.renderer.root.findDescendantById(`vim-change-view-${next}`)!
+    await f.mockMouse.click(tab.x, tab.y)
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain(next === "after" ? "Code after change" : "Code before change")
+    expect(f.reader().plainText.includes('const text = "old";')).toBe(next === "before")
+    expect(f.renderer.currentFocusedEditor).toBe(f.reader())
+})
+
+test("change views scroll through all excerpts, copy code without signs, and preserve per-view positions", async () => {
+    const f = await mount({}, { messages: [changeMessage()] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.keys("xjVy")
+    expect(f.copied.at(-1)).toBe('const text = "你好 👩‍💻";\n')
+    const afterOffset = f.reader().cursorOffset
+    f.mockInput.pressTab()
+    await f.keys("jVy")
+    expect(f.copied.at(-1)).toBe('const text = "old";\n')
+    f.mockInput.pressTab()
+    await f.keys("jVy")
+    expect(f.copied.at(-1)).toBe('const text = "old";\n')
+    const gutter = f.renderer.root.findDescendantById("vim-file-lines") as OpenTUI.LineNumberRenderable
+    expect(gutter.getLineColors().content.get(1)).toEqual(RGBA.fromHex("#330000"))
+    expect(gutter.getLineColors().content.get(2)).toEqual(RGBA.fromHex("#003300"))
+    expect(f.captureCharFrame()).toMatch(/11\s*-\s*const text/)
+    expect(f.captureCharFrame()).toMatch(/11\s*\+\s*const text/)
+    await f.keys("GVy")
+    expect(f.copied.at(-1)).toBe('const tail = "new";\n')
+    expect(f.reader().scrollY).toBeGreaterThan(0)
+    expect(f.captureCharFrame()).toMatch(/90\s*-\s*const tail/)
+    expect(f.captureCharFrame()).toMatch(/91\s*\+\s*const tail/)
+    const diffOffset = f.reader().cursorOffset
+    f.mockInput.pressTab()
+    await f.renderOnce()
+    expect(f.reader().cursorOffset).toBe(afterOffset)
+    expect(f.captureCharFrame()).toMatch(/10\s+const keep/)
+    await f.keys("ggVGy")
+    expect(f.copied.at(-1)).toBe('const keep = 1;\nconst text = "你好 👩‍💻";\nconst extra = 2;\nconsole.log(text);\n\nconst tail = "new";\n')
+    await f.keys("v")
+    f.mockInput.pressTab()
+    await f.renderOnce()
+    expect(f.reader().hasSelection()).toBe(false)
+    expect(f.captureCharFrame()).not.toContain("VISUAL")
+    f.mockInput.pressTab()
+    await f.renderOnce()
+    expect(f.reader().cursorOffset).toBe(diffOffset)
+    f.resize(44, 20)
+    await f.renderOnce()
+    const modal = f.renderer.root.findDescendantById("host-dialog")!
+    expect(modal.y).toBeGreaterThanOrEqual(0)
+    expect(modal.y + modal.height).toBeLessThanOrEqual(20)
+    await f.keys("s")
+    expect(f.renderer.currentFocusedEditor).toBe(f.input)
+    expect(f.input.plainText).toBe("hello")
+})
+
+test("change shortcuts can be remapped while Tab passes through", async () => {
+    const f = await mount({ keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } }, { messages: [changeMessage()] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("v select · <C-w>w switch view · s prompt")
+    expect(f.captureCharFrame()).not.toContain("tab switch view")
+    const original = f.reader()
+    let tabs = 0
+    f.renderer.keyInput.on("keypress", (event) => { if (event.name === "tab" && !event.defaultPrevented) tabs++ })
+    f.mockInput.pressTab()
+    expect(tabs).toBe(1)
+    expect(f.reader()).toBe(original)
+    f.mockInput.pressKey("w", { ctrl: true })
+    await f.keys("w")
+    expect(f.captureCharFrame()).toContain("Code before change")
+    await f.keys("GVy")
+    expect(f.copied.at(-1)).toBe('const tail = "old";\n')
+})
+
+test("change views remain clickable when keyboard cycling is disabled", async () => {
+    const f = await mount({ keymaps: { session: { "<Tab>": "passthrough" } } }, { messages: [changeMessage()] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("v select · s prompt")
+    expect(f.captureCharFrame()).not.toContain("switch view")
+    await f.keys("v")
+    const tab = f.renderer.root.findDescendantById("vim-change-view-diff")!
+    await f.mockMouse.click(tab.x, tab.y)
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("Changes")
+    expect(f.reader().plainText).toContain('const text = "old";')
+    expect(f.reader().plainText).toContain('const text = "你好 👩‍💻";')
+    expect(f.reader().hasSelection()).toBe(false)
+    expect(f.renderer.currentFocusedEditor).toBe(f.reader())
+})
+
+test.each([
+    ["added", "before", "--- /dev/null\n+++ src/change.ts\n@@ -0,0 +1,1 @@\n+added line\n", "After", "added line"],
+    ["deleted", "after", "--- src/change.ts\n+++ /dev/null\n@@ -1,1 +0,0 @@\n-deleted line\n", "Before", "deleted line"],
+] as const)("%s files fall back from the unavailable %s view", async (status, diffView, patch, label, text) => {
+    const f = await mount({ diffView }, { messages: [changeMessage(status, patch)] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.reader().plainText).toBe(text)
+    expect(f.captureCharFrame()).toContain(`Code ${label.toLowerCase()} change`)
+    expect(f.renderer.root.findDescendantById(status === "added" ? "vim-change-view-before" : "vim-change-view-after")).toBeUndefined()
+    f.mockInput.pressTab()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain("Changes")
+    f.mockInput.pressTab()
+    await f.renderOnce()
+    expect(f.captureCharFrame()).toContain(`Code ${label.toLowerCase()} change`)
+})
+
+test("unrecognized saved changes retain the generic view", async () => {
+    const f = await mount({}, { messages: [changeMessage("modified", "no patch available")] })
+    await f.keys("s")
+    f.mockInput.pressEnter()
+    await f.renderOnce()
+    expect(f.reader().plainText).toBe("Edit src/change.ts")
+    expect(f.renderer.root.findDescendantById("vim-change-view-after")).toBeUndefined()
 })
 
 test("streaming updates do not move a selection, and browsing refreshes the text", async () => {
@@ -1240,9 +1680,13 @@ test("native marker selects one text part at a time and clips to the viewport", 
 
 test("collapsed tool groups expand in place and individual calls can be read and copied", async () => {
     const first = message(1, "Read first.ts\nFirst output")
-    first.content![0] = { type: "tool", id: "tool-1", name: "read", text: "Read first.ts\nFirst output" }
+    first.content![0] = { type: "tool", id: "tool-1", name: "read", text: "Read first.ts\nFirst output", state: {
+        status: "completed", input: { path: "first.ts" }, content: [{ type: "text", text: "Read file first.ts, lines 1-1\n1: First output" }],
+    } }
     const second = message(2, "Read second.ts\nSecond output")
-    second.content![0] = { type: "tool", id: "tool-2", name: "read", text: "Read second.ts\nSecond output" }
+    second.content![0] = { type: "tool", id: "tool-2", name: "read", text: "Read second.ts\nSecond output", state: {
+        status: "completed", input: { path: "second.ts" }, content: [{ type: "text", text: "Read file second.ts, lines 1-1\n1: Second output" }],
+    } }
     const f = await mount({}, { messages: [first, second, message(3, "Done")], group: ["1", "2"] })
     await f.keys("sk")
     expect(f.captureCharFrame()).toContain("▎→Explored: 2 reads")
@@ -1256,7 +1700,7 @@ test("collapsed tool groups expand in place and individual calls can be read and
     expect(f.captureCharFrame()).toContain("▎First output")
     expect(f.captureCharFrame()).not.toContain("▎Second output")
     f.mockInput.pressEnter()
-    expect(f.reader().plainText).toBe("Read first.ts\nFirst output")
+    expect(f.reader().plainText).toBe("First output")
     f.mockInput.pressEscape()
     await f.keys("jyy")
     expect(f.copied.at(-1)).toBe("Read second.ts\nSecond output")
@@ -1270,7 +1714,9 @@ test("collapsed tool groups expand in place and individual calls can be read and
 
 test("session entry and navigation work when the first native row has no ID", async () => {
     const tool = message(1, "Read file.ts\nFile contents")
-    tool.content![0] = { type: "tool", id: "read-1", name: "read", text: "Read file.ts\nFile contents" }
+    tool.content![0] = { type: "tool", id: "read-1", name: "read", text: "Read file.ts\nFile contents", state: {
+        status: "completed", input: { path: "file.ts" }, content: [{ type: "text", text: "Read file file.ts, lines 1-1\n1: File contents" }],
+    } }
     const f = await mount({}, { messages: [tool, message(2, "Done")], group: ["1"] })
     Reflect.set(f.transcript().getRenderable("1")!, "id", undefined)
     await f.keys("s")

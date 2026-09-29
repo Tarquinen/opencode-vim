@@ -10,12 +10,43 @@ import { tabSwitching } from "./scenarios/tab-switching"
 import { messageReader } from "./scenarios/message-reader"
 import { transcriptGrouped, transcriptLowDetail, transcriptUngrouped, transcriptRunning, transcriptHistory } from "./scenarios/transcript"
 import { readerMessages, transcriptMessages, historyMessages } from "./data/transcript"
+import { shellMessages, backgroundShellMessages } from "./data/shell"
+import { shellReader } from "./scenarios/shell-reader"
+import { backgroundShell } from "./scenarios/background-shell"
+import { sessionKeymaps, sessionAgentBinding } from "./scenarios/session-keymaps"
+import { readMessages } from "./data/read"
+import { readReader } from "./scenarios/read-reader"
+import { fileChangeMessages } from "./data/file-changes"
+import { fileChanges } from "./scenarios/file-changes"
+import { diffReader } from "./scenarios/diff-reader"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
     { name: "tab-switching", run: tabSwitching },
     { name: "dialog-focus", run: dialogFocus },
     { name: "agent-switching", run: agentSwitching },
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
+    { name: "shell-reader", run: shellReader, setup: { messages: shellMessages } },
+    { name: "shell-reader-low-detail", run: shellReader, setup: { messages: shellMessages, cli: { session: { verbosity: "low" } } } },
+    { name: "background-shell", run: backgroundShell, setup: { messages: backgroundShellMessages } },
+    { name: "background-shell-low-detail", run: backgroundShell, setup: { messages: backgroundShellMessages, cli: { session: { verbosity: "low" } } } },
+    { name: "read-reader", run: readReader, setup: { messages: readMessages } },
+    { name: "read-reader-low-detail", run: readReader, setup: { messages: readMessages, cli: { session: { verbosity: "low" } } } },
+    { name: "file-changes", run: fileChanges, setup: { messages: fileChangeMessages, cli: { diffs: { view: "unified" } } } },
+    { name: "file-changes-low-detail", run: fileChanges, setup: { messages: fileChangeMessages, cli: { session: { verbosity: "low" }, diffs: { view: "split" } } } },
+    { name: "diff-reader", run: diffReader(), setup: { messages: fileChangeMessages } },
+    { name: "diff-reader-before", run: diffReader("before", true), setup: { messages: fileChangeMessages, vim: {
+        diffView: "before", keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } },
+    } } },
+    { name: "diff-reader-low-detail", run: diffReader("diff"), setup: { messages: fileChangeMessages,
+        cli: { session: { verbosity: "low" }, diffs: { view: "split" } }, vim: { diffView: "diff" } } },
+    { name: "session-keymaps", run: sessionKeymaps, setup: {
+        messages: shellMessages, cli: { keybinds: { "session.new": "tab" } },
+        vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } },
+    } },
+    { name: "session-agent-binding", run: sessionAgentBinding, setup: {
+        messages: shellMessages, cli: { keybinds: { "agent.cycle": "tab", "dialog.select.next": "tab" } },
+        vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } },
+    } },
 ]
 for (const animations of [true, false]) {
     const suffix = animations ? "animated" : "static"

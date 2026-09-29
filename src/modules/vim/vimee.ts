@@ -1,4 +1,4 @@
-import type { KeyEvent } from "@opentui/core"
+import type { KeyEvent, WidthMethod } from "@opentui/core"
 import { TextBuffer, createInitialContext, createKeybindMap, executeOperatorOnRange, parseKeySequence, processKeystroke, resetContext, resolveMotion } from "@vimee/core"
 import type { CursorPosition, KeybindDefinition, KeybindMap, MotionRange, Operator, ValidKeySequence, VimAction as VimeeAction, VimContext, VimMode as VimeeMode } from "@vimee/core"
 import { focusedInput, setInput, type EditBufferLike, type PromptContext } from "./actions"
@@ -39,6 +39,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     let nativeInsertUndoSaved = false
     let historyText: string | undefined
     let activeInput: EditBufferLike | undefined
+    let widthMethod: WidthMethod = "unicode"
     let preferredColumn: number | undefined
     let preferredScreen = false
     let generation = 0
@@ -183,7 +184,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         if (activeInput === input) return
         suspend()
         activeInput = input
-        activeMap = createPromptMap(input?.plainText ?? ctx.prompt()?.current.input ?? "", codec)
+        widthMethod = ctx.api.renderer.widthMethod ?? "unicode"
+        activeMap = createPromptMap(input?.plainText ?? ctx.prompt()?.current.input ?? "", codec, widthMethod)
         buffer = new TextBuffer(activeMap.vimText)
         nativeInsertUndoSaved = false
         vim = { ...resetContext(vim), cursor: hostPosition(activeMap, input?.cursorOffset ?? 0), mode: state.mode() }
@@ -212,7 +214,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
 
     function mapForHostText(text: string) {
         if (activeMap.hostText === text) return activeMap
-        const nextMap = createPromptMap(text, codec)
+        const nextMap = createPromptMap(text, codec, widthMethod)
         if (state.mode() === "insert") recordNativeChange(nextMap)
         activeMap = nextMap
         if (state.mode() === "insert") {
@@ -253,7 +255,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         for (const action of actions) {
             switch (action.type) {
                 case "content-change":
-                    currentMap = createPromptMap(codec.decode(action.content), codec)
+                    currentMap = createPromptMap(codec.decode(action.content), codec, widthMethod)
                     activeMap = currentMap
                     setInput(ref, currentMap.hostText)
                     // Decoding can join neighboring graphemes; use the map's units.
@@ -532,7 +534,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         const up = key === "k" || key === "ArrowUp"
         if (!down && !up && !(screen && (key === "0" || key === "^" || key === "$"))) return
 
-        const map = buffer.getContent() === activeMap.vimText ? activeMap : createPromptMap(codec.decode(buffer.getContent()), codec)
+        const map = buffer.getContent() === activeMap.vimText ? activeMap : createPromptMap(codec.decode(buffer.getContent()), codec, widthMethod)
         const offset = hostOffset(map, vim.cursor)
         const count = vim.count || 1
         let start: number
@@ -638,7 +640,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
             input.clearSelection?.()
             input.cursorOffset = offset
             input.insertText!(value)
-            input.cursorOffset = cursor >= offset ? cursor + displayWidth(value) : cursor
+            input.cursorOffset = cursor >= offset ? cursor + displayWidth(value, widthMethod) : cursor
             return
         }
         const ref = ctx.prompt()
@@ -646,12 +648,12 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         const input = focusedInput(ctx)
         const text = input?.plainText ?? ref.current.input
         const currentDisplayOff = input?.cursorOffset ?? 0
-        const currentCharOff = displayToChar(text, currentDisplayOff)
+        const currentCharOff = displayToChar(text, currentDisplayOff, widthMethod)
         const insertAtChar = charOffset ?? currentCharOff
         const next = text.slice(0, insertAtChar) + value + text.slice(insertAtChar)
         setInput(ref, next)
         const nextCharOff = currentCharOff >= insertAtChar ? currentCharOff + value.length : currentCharOff
-        if (input) input.cursorOffset = displayWidth(next.slice(0, nextCharOff))
+        if (input) input.cursorOffset = displayWidth(next.slice(0, nextCharOff), widthMethod)
     }
 
     function setCursor(input: EditBufferLike | undefined, map: PromptMap, position: CursorPosition) {
@@ -867,7 +869,7 @@ function dispatchCommand(command: string, ctx: PromptContext) {
     // the cursor in that unit. Restore the display-width offset after dispatch.
     if (command !== "prompt.history.next" || !result.ok) return result
     const nextInput = focusedInput(ctx)
-    if (nextInput?.plainText !== undefined) nextInput.cursorOffset = displayWidth(nextInput.plainText)
+    if (nextInput?.plainText !== undefined) nextInput.cursorOffset = displayWidth(nextInput.plainText, ctx.api.renderer.widthMethod)
     return result
 }
 
@@ -891,7 +893,8 @@ function createKeybinds(config: VimConfig, log: VimLog): KeybindMap | undefined 
     const map = createKeybindMap()
     let count = 0
 
-    for (const [mode, keymaps] of Object.entries(config.keymaps) as Array<[VimeeMode, Record<string, string> | undefined]>) {
+    for (const mode of ["insert", "normal", "visual", "visual-line"] as const) {
+        const keymaps = config.keymaps[mode]
         if (!keymaps) continue
         for (const [keys, action] of Object.entries(keymaps)) {
             try {

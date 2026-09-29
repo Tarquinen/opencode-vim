@@ -20,7 +20,8 @@
     "bench": "bun test/benchmark.ts"
   },
   "dependencies": {
-    "@vimee/core": "^0.3.0"
+    "@vimee/core": "^0.3.0",
+    "diff": "^9.0.0"
   },
   "peerDependencies": {
     "@opencode/plugin": "2.0.10",

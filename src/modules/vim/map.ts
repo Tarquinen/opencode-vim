@@ -1,37 +1,44 @@
 import type { CursorPosition } from "@vimee/core"
+import type { WidthMethod } from "@opentui/core"
 import { createGraphemeCodec } from "./graphemes"
 
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" })
 
-function graphemeWidth(value: string) {
+function graphemeWidth(value: string, method: WidthMethod) {
     // Textarea offsets count newlines as one position; Bun.stringWidth counts them as zero.
     // OpenTUI's edit buffer gives tabs a fixed two-column width by default.
     if (value === "\t") return 2
-    return value === "\n" ? 1 : Bun.stringWidth(value)
+    if (value === "\n") return 1
+    if (method === "wcwidth") {
+        let width = 0
+        for (const character of value) width += Bun.stringWidth(character)
+        return width
+    }
+    return Bun.stringWidth(value)
 }
 
-export function charToDisplay(text: string, charIndex: number): number {
+export function charToDisplay(text: string, charIndex: number, method: WidthMethod = "unicode"): number {
     let width = 0
     const limit = Math.max(0, Math.min(charIndex, text.length))
     for (const part of graphemes.segment(text)) {
         if (part.index + part.segment.length > limit) break
-        width += graphemeWidth(part.segment)
+        width += graphemeWidth(part.segment, method)
     }
     return width
 }
 
-export function displayToChar(text: string, displayOffset: number): number {
+export function displayToChar(text: string, displayOffset: number, method: WidthMethod = "unicode"): number {
     let width = 0
     for (const part of graphemes.segment(text)) {
-        const next = width + graphemeWidth(part.segment)
+        const next = width + graphemeWidth(part.segment, method)
         if (next > displayOffset) return part.index
         width = next
     }
     return text.length
 }
 
-export function displayWidth(text: string): number {
-    return charToDisplay(text, text.length)
+export function displayWidth(text: string, method: WidthMethod = "unicode"): number {
+    return charToDisplay(text, text.length, method)
 }
 
 export type PromptMap = {
@@ -44,7 +51,7 @@ export type PromptMap = {
     displayWidth: number
 }
 
-export function createPromptMap(hostText: string, codec = createGraphemeCodec()): PromptMap {
+export function createPromptMap(hostText: string, codec = createGraphemeCodec(), method: WidthMethod = "unicode"): PromptMap {
     const hostToVim: number[] = []
     const vimToHost: number[] = []
     const vimToDisplay: number[] = []
@@ -59,7 +66,7 @@ export function createPromptMap(hostText: string, codec = createGraphemeCodec())
         vimText += encoded
         vimToHost[vimOffset] = hostOffset
         vimToDisplay[vimOffset] = width
-        width += graphemeWidth(segment)
+        width += graphemeWidth(segment, method)
         vimOffset++
         if (encoded === "\n") lineStarts.push(vimOffset)
     }

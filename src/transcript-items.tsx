@@ -5,7 +5,8 @@ import { MarkdownRenderable, TextBufferRenderable, type Renderable } from "@open
 
 type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
 type GroupKind = "reasoning" | "exploration" | "activity" | "instructions"
-export type TranscriptItem = { id: string; author: string; text: string }
+export type TranscriptSource = Message | Extract<Message, { type: "assistant" }>["content"][number]
+export type TranscriptItem = { id: string; author: string; text: string; source?: TranscriptSource; fileIndex?: number }
 export type TranscriptRange = TranscriptItem & {
   node: Renderable
   top: number
@@ -14,7 +15,7 @@ export type TranscriptRange = TranscriptItem & {
   parentID?: string
 }
 
-type Part = TranscriptItem & { messageID: string; kind: string; group?: GroupKind }
+type Part = TranscriptItem & { messageID: string; kind: string; group?: GroupKind; label?: string }
 
 function parts(messages: Message[]) {
   const result: Part[] = []
@@ -28,7 +29,7 @@ function parts(messages: Message[]) {
         if (part.type !== "tool" && !text.trim()) continue
         result.push({ id: `session-part:${message.id}:${partID}`, messageID: message.id, kind: part.type,
           author: part.type === "text" ? "Assistant" : part.type === "reasoning" ? "Reasoning" : part.name,
-          text,
+          text, source: part,
           group: part.type === "reasoning" ? "reasoning"
             : part.type === "tool" && ["read", "glob", "grep", "webfetch", "websearch"].includes(part.name.toLowerCase())
               ? "exploration" : undefined })
@@ -37,9 +38,14 @@ function parts(messages: Message[]) {
       if ((message.finish && message.finish !== "tool-calls" && message.finish !== "unknown") || message.error || message.retry) {
         result.push({ id: `footer:${message.id}`, messageID: message.id, kind: "footer", author: "", text: "" })
       }
+    } else if (message.type === "synthetic" && message.metadata?.source === "shell" && message.description?.trim()) {
+      const state = message.metadata.state
+      const status = state === "completed" ? "finished" : state === "error" ? "failed" : state ?? "finished"
+      result.push({ id: message.id, messageID: message.id, kind: "message", author: "Shell", text: message.text, source: message,
+        label: `${state === "completed" ? "↳" : "!"} Shell ${status} · ${message.description.replace(/\s+/g, " ").trim()}` })
     } else {
       result.push({ id: message.id, messageID: message.id, kind: "message", author: message.type === "user" ? "You" : message.type,
-        text: message.type === "user" ? message.text : "" })
+        text: message.type === "user" ? message.text : "", source: message })
     }
   }
   return result
@@ -84,33 +90,68 @@ export function groupAt(node: Renderable) {
   return { header, kind, label, children: node.getChildren().slice(1) }
 }
 
-export function transcriptItems(rows: Renderable[], messages: Message[]) {
+function patchFiles(node: Renderable): Renderable[] {
+  if (!node.visible || !node.height) return []
+  const header = node.getChildren()[0]
+  const label = header?.getChildren()[0]
+  if (label instanceof TextBufferRenderable && ["← Patched", "# Created", "# Deleted"].includes(label.plainText)) {
+    return [node]
+  }
+  const files: Renderable[] = []
+  for (const child of node.getChildren()) files.push(...patchFiles(child))
+  return files
+}
+
+export function transcriptItems(rows: Renderable[], messages: Message[], pendingTools = new Set<string>()) {
   const sources = parts(messages)
   const ranges: TranscriptRange[] = []
   let cursor = 0
   let lastSource = -1
 
   function add(node: Renderable, source?: Part, parentID?: string) {
+    if (source?.source?.type === "tool" && source.source.name === "patch") {
+      const files = patchFiles(node)
+      if (files.length > 1) {
+        for (const [index, file] of files.entries()) add(file, { ...source, id: `${source.id}:file:${index}`, fileIndex: index }, parentID)
+        return
+      }
+    }
     const text = source?.text || textOf(node)
     if (!text.trim()) return
-    ranges.push({ id: source?.id ?? node.id, author: source?.author ?? "Tool", text, node,
+    ranges.push({ id: source?.id ?? node.id, author: source?.author ?? "Tool", text, source: source?.source, fileIndex: source?.fileIndex, node,
       top: node.y, bottom: node.y + node.height, parentID })
   }
 
-  function group(node: Renderable, parentID?: string): boolean {
+  function belongs(part: Part, kind: GroupKind) {
+    if (kind !== "activity") return part.group === kind
+    if (part.source?.type === "tool" && part.source.name === "question") return false
+    return part.kind === "tool" || part.kind === "reasoning"
+  }
+
+  function group(node: Renderable, items: Part[], parentID?: string, pending: Part[] = []): boolean {
     const info = groupAt(node)
     if (!info) return false
     const id = node.id
     ranges.push({ id, author: info.label, text: info.label, node: info.header,
       top: info.header.y, bottom: info.header.y + info.header.height, toggle: info.header, parentID })
-    let children = info.children
+    const ordinaryCount = info.children.length - pending.length
+    let children = info.children.slice(0, ordinaryCount)
     // Only exploration groups have EntryAnchors directly under GroupAnchor.
     if (info.kind !== "exploration" && children.length) {
-      children = [...children[0].getChildren(), ...children.slice(1)]
+      children = children[0].getChildren()
     }
+    let index = 0
     for (const child of children) {
       if (!child.visible || !child.height) continue
-      if (!group(child, id)) add(child, undefined, id)
+      const nested = groupAt(child)
+      if (nested) {
+        const start = index
+        while (index < items.length && belongs(items[index], nested.kind)) index++
+        group(child, items.slice(start, index), id)
+      } else add(child, items[index++], id)
+    }
+    for (let index = 0; index < pending.length; index++) {
+      add(info.children[ordinaryCount + index], pending[index], id)
     }
     return true
   }
@@ -130,6 +171,12 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
         if (text && match !== -1) index = match
       }
     }
+    if (index === -1 && !info) {
+      // Completion notices have no native row ID; their visible label identifies the saved message.
+      const text = textOf(row).trim()
+      if (text) index = sources.findIndex((part, position) => position >= cursor && part.label !== undefined &&
+        (part.label === text || (text.endsWith("…") && part.label.startsWith(text.slice(0, -1)))))
+    }
     if (index !== -1) cursor = index
     if (!info && index === -1 && sources[cursor]?.kind === "footer") {
       lastSource = cursor++
@@ -137,14 +184,20 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
     }
     const container = anchor && !(anchor instanceof TextBufferRenderable) && !(anchor instanceof MarkdownRenderable)
     if (index === -1 && !info && sources[cursor]?.group && container) index = cursor
+    if (index === -1 && !info && sources[cursor]?.source?.type === "shell" && container) index = cursor
     if (anchor && info) {
-      group(anchor)
       // Track grouped sources to detect newer cached rows that aren't mounted yet.
+      const items: Part[] = []
+      const pending: Part[] = []
       while (cursor < sources.length) {
         const part = sources[cursor]
-        if (info.kind === "activity" ? part.kind !== "tool" && part.kind !== "reasoning" : part.group !== info.kind) break
+        if (!belongs(part, info.kind)) break
+        if (part.source?.type === "tool" && pendingTools.has(part.source.id)) pending.push(part)
+        else items.push(part)
         lastSource = cursor++
       }
+      // OpenCode renders permission-blocked tools after the ordinary group entries.
+      group(anchor, items, undefined, pending)
     } else if (index !== -1) {
       const source = sources[index]
       if (source.kind === "footer") {
@@ -163,6 +216,7 @@ export function transcriptItems(rows: Renderable[], messages: Message[]) {
     }
   }
   let last = sources.length - 1
-  while (last >= 0 && (sources[last].kind === "message" || sources[last].kind === "footer") && !sources[last].text) last--
+  while (last >= 0 && (sources[last].kind === "footer" ||
+    (sources[last].kind === "message" && sources[last].source?.type !== "shell")) && !sources[last].text) last--
   return { ranges, hasLatest: lastSource >= last }
 }

@@ -1,8 +1,28 @@
 import { describe, expect, test } from "bun:test"
+import { EditBuffer } from "@opentui/core"
 import { createGraphemeCodec } from "../../src/modules/vim/graphemes"
 import { charToDisplay, createPromptMap, displayToChar, displayWidth, hostCharOffset, hostFromVimOffset, hostOffset, hostPosition, vimLineLength } from "../../src/modules/vim/map"
 
 describe("vim display offsets", () => {
+    test.each(["unicode", "wcwidth", "unicode-wide"] as const)("matches OpenTUI's %s offsets", (method) => {
+        const lines = ["你好 👩‍💻", "👨‍👩‍👧‍👦", "e\u0301\tend", "x·Ω", "last"]
+        const text = lines.join("\n")
+        const buffer = EditBuffer.create(method)
+        try {
+            buffer.setText(text)
+            const map = createPromptMap(text, undefined, method)
+            let prefix = ""
+            for (let line = 0; line < lines.length; line++) {
+                const offset = buffer.positionToOffset(line, 0)
+                expect(hostOffset(map, { line, col: 0 })).toBe(offset)
+                expect(charToDisplay(text, prefix.length, method)).toBe(offset)
+                expect(displayToChar(text, offset, method)).toBe(prefix.length)
+                prefix += lines[line] + "\n"
+            }
+        } finally {
+            buffer.destroy()
+        }
+    })
     test("maps ASCII and CJK offsets", () => {
         const text = "a中b"
 

@@ -8,6 +8,7 @@ export type VimCursorStyle = {
 
 export type VimConfig = {
     defaultMode: VimMode
+    diffView: DiffView
     sessionKey: string
     keymapTimeout: number
     pendingDisplayDelay: number
@@ -19,6 +20,7 @@ export type VimConfig = {
 
 export type VimOptions = {
     defaultMode?: VimMode
+    diffView?: DiffView
     sessionKey?: string
     keymapTimeout?: number
     pendingDisplayDelay?: number
@@ -28,7 +30,11 @@ export type VimOptions = {
     keymaps?: VimKeymaps
 }
 
-export type VimKeymaps = Partial<Record<VimMode, Record<string, VimMappedAction>>>
+export type DiffView = "after" | "before" | "diff"
+export type SessionAction = "switch-panel" | "passthrough"
+export type VimKeymaps = Partial<Record<VimMode, Record<string, VimMappedAction>>> & {
+    session?: Record<string, SessionAction>
+}
 export type VimMappedAction = string
 
 const DEFAULT_CURSOR_STYLES: Record<VimMode, VimCursorStyle> = {
@@ -42,6 +48,7 @@ export function createVimConfig(options: unknown): VimConfig {
     const input = readOptions(options)
     return {
         defaultMode: input.defaultMode ?? "insert",
+        diffView: input.diffView ?? "after",
         sessionKey: input.sessionKey ?? "s",
         keymapTimeout: Math.max(0, input.keymapTimeout ?? 500),
         pendingDisplayDelay: Math.max(0, input.pendingDisplayDelay ?? 120),
@@ -65,6 +72,7 @@ function readOptions(options: unknown): VimOptions {
     const source = raw as Record<string, unknown>
     return {
         defaultMode: isMode(source.defaultMode) ? source.defaultMode : undefined,
+        diffView: source.diffView === "after" || source.diffView === "before" || source.diffView === "diff" ? source.diffView : undefined,
         sessionKey: readSessionKey(source.sessionKey),
         keymapTimeout: readNumber(source.keymapTimeout),
         pendingDisplayDelay: typeof source.pendingDisplayDelay === "number" ? source.pendingDisplayDelay : undefined,
@@ -93,6 +101,12 @@ function readKeymaps(input: unknown): VimKeymaps | undefined {
         keymaps[mode] = {}
         for (const [key, action] of Object.entries(raw as Record<string, unknown>)) {
             if (isMappedAction(action)) keymaps[mode][key] = action
+        }
+    }
+    if (source.session && typeof source.session === "object") {
+        keymaps.session = {}
+        for (const [key, action] of Object.entries(source.session)) {
+            if (action === "switch-panel" || action === "passthrough") keymaps.session[key] = action
         }
     }
 
