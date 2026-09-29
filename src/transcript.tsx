@@ -3,16 +3,22 @@ import type { Context } from "@opencode/plugin/tui/context"
 import { MouseEvent, ScrollBoxRenderable, type OptimizedBuffer, type Renderable } from "@opentui/core"
 import { transcriptItems, type TranscriptRange } from "./transcript-items"
 
-export function createTranscriptSelection(context: Context, sessionID: string, select: (id: string | undefined) => void) {
+export function createTranscriptSelection(
+  context: Context,
+  sessionID: string,
+  select: (id: string | undefined) => void,
+) {
   let scroll: ScrollBoxRenderable | undefined
   let requestedID: string | undefined
   let selectedParents: string[] = []
-  let navigation: {
-    from: string | undefined
-    offset: number
-    latest?: boolean
-    loading?: { key: string; frame: number; up: boolean; height: number }
-  } | undefined
+  let navigation:
+    | {
+        from: string | undefined
+        offset: number
+        latest?: boolean
+        loading?: { key: string; frame: number; up: boolean; height: number }
+      }
+    | undefined
 
   function items(rows: Renderable[]) {
     const pending = new Set<string>()
@@ -45,7 +51,10 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     const view = inspect()
     const ranges = view?.ranges ?? []
     const from = navigation.from ? ranges.findIndex((range) => range.id === navigation!.from) : ranges.length
-    if (navigation.from && from === -1) { navigation = undefined; return }
+    if (navigation.from && from === -1) {
+      navigation = undefined
+      return
+    }
     const target = navigation.latest ? ranges.length - 1 : from + navigation.offset
     const loading = navigation.loading
     // OpenCode compensates for prepended rows after two animation frames.
@@ -85,7 +94,12 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
   }
 
   function move(direction: "next" | "previous", count: number) {
-    if (navigation && (navigation.latest || (navigation.offset < 0 && direction === "next") || (navigation.offset > 0 && direction === "previous"))) {
+    if (
+      navigation &&
+      (navigation.latest ||
+        (navigation.offset < 0 && direction === "next") ||
+        (navigation.offset > 0 && direction === "previous"))
+    ) {
       navigation = undefined
     }
     navigation ??= { from: requestedID ?? inspect()?.selected?.id, offset: 0 }
@@ -104,7 +118,10 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
       }
     }
     if (!scroll || scroll.isDestroyed) scroll = findScroll(context.renderer.root)
-    if (!scroll) { select(undefined); return }
+    if (!scroll) {
+      select(undefined)
+      return
+    }
     const { ranges, hasLatest } = items(scroll.getChildren())
     const top = scroll.viewport.y
     const bottom = top + scroll.viewport.height
@@ -112,12 +129,16 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     if (!selected && requestedID) {
       for (const id of selectedParents) {
         selected = ranges.find((range) => range.id === id)
-        if (selected) { requestedID = id; break }
+        if (selected) {
+          requestedID = id
+          break
+        }
       }
       if (!selected) requestedID = undefined
     }
-    selected ??= ranges.find((range) => range.top <= top + 1 && range.bottom > top + 1)
-      ?? ranges.find((range) => range.bottom > top && range.top < bottom)
+    selected ??=
+      ranges.find((range) => range.top <= top + 1 && range.bottom > top + 1) ??
+      ranges.find((range) => range.bottom > top && range.top < bottom)
     selectedParents = []
     let parent = selected?.parentID
     while (parent) {
@@ -129,7 +150,8 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
   }
 
   return {
-    latest, move,
+    latest,
+    move,
     get(id: string | undefined) {
       if (!scroll || scroll.isDestroyed) return
       return items(scroll.getChildren()).ranges.find((range) => range.id === id)
@@ -140,13 +162,28 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
       navigation = undefined
       requestedID = range.id
       const node = range.toggle
-      node.processMouseEvent(new MouseEvent(node, { type: "up", button: 0, x: node.x, y: node.y,
-        modifiers: { shift: false, alt: false, ctrl: false } }))
+      node.processMouseEvent(
+        new MouseEvent(node, {
+          type: "up",
+          button: 0,
+          x: node.x,
+          y: node.y,
+          modifiers: { shift: false, alt: false, ctrl: false },
+        }),
+      )
       context.renderer.requestRender()
       return true
     },
-    followViewport() { navigation = undefined; requestedID = undefined; selectedParents = [] },
-    sync() { advance(); navigation = undefined; return inspect() },
+    followViewport() {
+      navigation = undefined
+      requestedID = undefined
+      selectedParents = []
+    },
+    sync() {
+      advance()
+      navigation = undefined
+      return inspect()
+    },
     draw(buffer: OptimizedBuffer, yankID?: string) {
       advance()
       const view = inspect()

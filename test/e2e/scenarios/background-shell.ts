@@ -2,44 +2,59 @@ import type { Fixture } from "../support/fixture"
 import { readerContains, selected } from "../support/screens"
 
 export async function backgroundShell({ terminal }: Fixture) {
-    const { keys, type, screen } = terminal
-    await type("background draft")
-    await keys("Escape")
-    await screen("normal", (text) => text.includes("NORMAL"))
-    await type("s")
-    await screen("latest-notice", (text) => selected(text, "Shell cancelled"))
-    await keys("Enter")
-    await screen("cancelled-reader", (text) => text.includes("Shell output") && readerContains(text, "Saved cancelled output")
-        && text.includes("Capture unavailable") && text.includes("Cancelled"))
-    await keys("Escape")
-    await screen("cancelled-closed", (text) => !text.includes("v select") && selected(text, "Shell cancelled"))
-    await type("k")
-    await screen("failed-notice", (text) => selected(text, "Shell failed"))
-    await keys("Enter")
-    await screen("failed-reader", (text) => readerContains(text, "Saved failure output") && text.includes("Failed"))
-    await keys("Escape")
-    await screen("failed-closed", (text) => !text.includes("v select") && selected(text, "Shell failed"))
-    await type("k")
-    await screen("assistant-response", (text) => selected(text, "Background response recorded"))
-    await type("k")
-    await screen("finished-notice", (text) => selected(text, "Shell finished"))
-    await keys("Enter")
-    await screen("finished-reader", (text) => text.includes("Shell output") && text.includes("Exited · code 7")
-        && readerContains(text, "captured stdout") && readerContains(text, "captured stderr")
-        && !readerContains(text, "Saved completion preview"))
-    await keys("Tab")
-    await type("Vjy")
-    await screen("output-copied", (text) => text.includes("Copied"))
-    await keys("Escape")
-    await screen("finished-closed", (text) => !text.includes("v select") && selected(text, "Shell finished"))
-    await type("j")
-    await screen("next-response", (text) => selected(text, "Background response recorded"))
-    await type("j")
-    await screen("next-notice", (text) => selected(text, "Shell failed"))
-    await type("G")
-    await screen("last-notice", (text) => selected(text, "Shell cancelled"))
-    await type("s")
-    await screen("prompt", (text) => text.includes("NORMAL") && !text.includes("SESSION") && text.includes("background draft"))
-    await type("A restored")
-    await screen("prompt-focus", (text) => text.includes("background draft restored") && text.includes("INSERT"))
+  const { keys, type, screen } = terminal
+  await type("background draft")
+  await keys("Escape")
+  await screen("normal", (text) => text.includes("NORMAL"))
+  await type("s")
+  await screen("latest-notice", (text) => selected(text, "Shell cancelled"))
+  await keys("Enter")
+  await screen(
+    "cancelled-reader",
+    (text) =>
+      text.includes("Shell output") &&
+      readerContains(text, "Saved cancelled output") &&
+      text.includes("Capture unavailable") &&
+      text.includes("Cancelled"),
+  )
+  await keys("Escape")
+  await screen("cancelled-closed", (text) => !text.includes("v select") && selected(text, "Shell cancelled"))
+  await type("k")
+  await screen("failed-notice", (text) => selected(text, "Shell failed"))
+  await keys("Enter")
+  await screen("failed-reader", (text) => readerContains(text, "Saved failure output") && text.includes("Failed"))
+  await keys("Escape")
+  await screen("failed-closed", (text) => !text.includes("v select") && selected(text, "Shell failed"))
+  await type("k")
+  await screen("assistant-response", (text) => selected(text, "Background response recorded"))
+  await type("k")
+  await screen("finished-notice", (text) => selected(text, "Shell finished"))
+  await keys("Enter")
+  await screen(
+    "finished-reader",
+    (text) =>
+      text.includes("Shell output") &&
+      text.includes("Exited · code 7") &&
+      readerContains(text, "captured stdout") &&
+      readerContains(text, "captured stderr") &&
+      !readerContains(text, "Saved completion preview"),
+  )
+  await keys("Tab")
+  await type("Vjy")
+  await screen("output-copied", (text) => text.includes("Copied"))
+  await keys("Escape")
+  await screen("finished-closed", (text) => !text.includes("v select") && selected(text, "Shell finished"))
+  await type("j")
+  await screen("next-response", (text) => selected(text, "Background response recorded"))
+  await type("j")
+  await screen("next-notice", (text) => selected(text, "Shell failed"))
+  await type("G")
+  await screen("last-notice", (text) => selected(text, "Shell cancelled"))
+  await type("s")
+  await screen(
+    "prompt",
+    (text) => text.includes("NORMAL") && !text.includes("SESSION") && text.includes("background draft"),
+  )
+  await type("A restored")
+  await screen("prompt-focus", (text) => text.includes("background draft restored") && text.includes("INSERT"))
 }

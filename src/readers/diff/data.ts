@@ -1,5 +1,5 @@
 import { parsePatch, type StructuredPatchHunk } from "diff"
-import type { DiffView } from "../../modules/vim/config"
+import type { DiffView } from "../../vim/config"
 import type { TranscriptItem } from "../../transcript-items"
 
 export type DiffSnapshot = {
@@ -12,15 +12,34 @@ export type DiffSnapshot = {
 
 export function diffSnapshot(message: TranscriptItem): DiffSnapshot | undefined {
   const source = message.source
-  if (source?.type !== "tool" || (source.name !== "edit" && source.name !== "patch") || source.state.status !== "completed") return
+  if (
+    source?.type !== "tool" ||
+    (source.name !== "edit" && source.name !== "patch") ||
+    source.state.status !== "completed"
+  )
+    return
   const raw = source.state.metadata?.files
   if (!Array.isArray(raw)) return
   const files: Array<Omit<DiffSnapshot, "hunks"> & { patch: string }> = []
   for (const item of raw) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue
     const path = item.file ?? item.relativePath
-    const status = item.status ?? (item.type === "add" ? "added" : item.type === "delete" ? "deleted" : item.type === "update" ? "modified" : undefined)
-    if (typeof path !== "string" || typeof item.patch !== "string" || typeof item.additions !== "number" || typeof item.deletions !== "number") continue
+    const status =
+      item.status ??
+      (item.type === "add"
+        ? "added"
+        : item.type === "delete"
+          ? "deleted"
+          : item.type === "update"
+            ? "modified"
+            : undefined)
+    if (
+      typeof path !== "string" ||
+      typeof item.patch !== "string" ||
+      typeof item.additions !== "number" ||
+      typeof item.deletions !== "number"
+    )
+      continue
     if (status !== "added" && status !== "deleted" && status !== "modified") continue
     files.push({ path, status, additions: item.additions, deletions: item.deletions, patch: item.patch })
   }
@@ -31,7 +50,13 @@ export function diffSnapshot(message: TranscriptItem): DiffSnapshot | undefined 
   try {
     const patches = parsePatch(file.patch)
     if (patches.length !== 1 || !patches[0].hunks.length) return
-    return { path: file.path, status: file.status, additions: file.additions, deletions: file.deletions, hunks: patches[0].hunks }
+    return {
+      path: file.path,
+      status: file.status,
+      additions: file.additions,
+      deletions: file.deletions,
+      hunks: patches[0].hunks,
+    }
   } catch {
     return
   }

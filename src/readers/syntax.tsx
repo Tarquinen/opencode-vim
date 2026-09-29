@@ -1,7 +1,13 @@
-import { getTreeSitterClient, SyntaxStyle, type StyleDefinitionInput, type TextareaRenderable, type WidthMethod } from "@opentui/core"
+import {
+  getTreeSitterClient,
+  SyntaxStyle,
+  type StyleDefinitionInput,
+  type TextareaRenderable,
+  type WidthMethod,
+} from "@opentui/core"
 import type { Context } from "@opencode/plugin/tui/context"
 import { createEffect, onCleanup } from "solid-js"
-import { createPromptMap, hostPosition } from "../modules/vim/map"
+import { createPromptMap, hostPosition } from "../vim/map"
 
 export function createReaderSyntax(context: Context) {
   const style = SyntaxStyle.create()
@@ -19,7 +25,13 @@ export function createReaderSyntax(context: Context) {
   return style
 }
 
-export async function highlightCode(input: TextareaRenderable, style: SyntaxStyle, filetype: string, signal: AbortSignal, widthMethod: WidthMethod) {
+export async function highlightCode(
+  input: TextareaRenderable,
+  style: SyntaxStyle,
+  filetype: string,
+  signal: AbortSignal,
+  widthMethod: WidthMethod,
+) {
   const text = input.plainText
   let result
   try {
@@ -34,7 +46,9 @@ export async function highlightCode(input: TextareaRenderable, style: SyntaxStyl
     const styleId = style.getStyleId(scope)
     if (styleId === null) continue
     input.addHighlightByCharRange({
-      start: highlightOffset(start), end: highlightOffset(end), styleId,
+      start: highlightOffset(start),
+      end: highlightOffset(end),
+      styleId,
     })
   }
   input.requestRender()

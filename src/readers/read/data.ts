@@ -37,7 +37,10 @@ export function readSnapshot(source: ReadSource): ReadSnapshot | undefined {
     lines.push(line)
   }
   return {
-    path: header[1], text: lines.join("\n"), start, end,
+    path: header[1],
+    text: lines.join("\n"),
+    start,
+    end,
     partial: start > 1 || continuation || state.metadata?.truncated === true || clipped,
     clipped,
   }

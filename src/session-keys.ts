@@ -1,15 +1,24 @@
 import type { Context } from "@opencode/plugin/tui/context"
 import type { KeyEvent } from "@opentui/core"
 import { createKeybindMap, parseKeySequence, type KeybindDefinition } from "@vimee/core"
-import type { SessionAction, VimConfig } from "./modules/vim/config"
-import { keyNotation } from "./modules/vim/keys"
+import type { SessionAction, VimConfig } from "./vim/config"
+import { keyNotation } from "./vim/keys"
 
-export function sessionModeKey(context: Context, event: KeyEvent, sessionKey: string, mode: string, mapped?: (key: string) => boolean) {
+export function sessionModeKey(
+  context: Context,
+  event: KeyEvent,
+  sessionKey: string,
+  mode: string,
+  mapped?: (key: string) => boolean,
+) {
   if (event.defaultPrevented || context.keymap.mode.current() !== mode) return
   if (context.keymap.pending().length || event.super || event.meta) return
   const key = keyNotation(event)
-  if (key === "<Tab>" && event.shift) return
-  if (key && (mapped?.(key) || key === sessionKey || !event.ctrl || key === "<C-[>" || pageCommand(key) || (mode === "modal" && key === "<C-c>"))) return key
+  if (!key || (key === "<Tab>" && event.shift)) return
+  if (mapped?.(key) || key === sessionKey) return key
+  if (!event.ctrl || key === "<C-[>") return key
+  if (pageCommand(key)) return key
+  if (mode === "modal" && key === "<C-c>") return key
 }
 
 export function pageCommand(key: string) {
@@ -27,7 +36,8 @@ export function createSessionKeymaps(config: VimConfig, panels: boolean) {
   let deadline = 0
   let hint = ""
   const bindings: Record<string, SessionAction> = {
-    "<Tab>": "switch-panel", ...config.keymaps.session,
+    "<Tab>": "switch-panel",
+    ...config.keymaps.session,
   }
   for (const [keys, action] of Object.entries(bindings)) {
     if (action === "switch-panel" && !panels) continue
