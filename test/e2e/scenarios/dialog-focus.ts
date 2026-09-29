@@ -2,6 +2,8 @@ import type { Fixture } from "../fixture"
 
 export async function dialogFocus({ terminal }: Fixture) {
     const { keys, type, screen } = terminal
+    await keys("Escape")
+    await type("i")
     for (const mode of ["INSERT", "NORMAL"]) {
         const label = `dialog-${mode.toLowerCase()}`
         await type("original draft")
@@ -42,7 +44,9 @@ export async function dialogFocus({ terminal }: Fixture) {
         await screen(`${label}-cleared`, (text) => !text.includes("draft restored"))
     }
 
-    await keys("C-p", "Escape")
+    await keys("C-p")
+    await screen("dialog-navigation-opened", (text) => text.includes("Commands") && text.includes("INSERT"))
+    await keys("Escape")
     await screen("dialog-navigation-start", (text) => text.includes("Commands") && text.includes("Switch session") && text.includes("NORMAL"))
     await type("j".repeat(30))
     await screen("dialog-scrolled-down", (text) => text.includes("Commands") && !text.includes("Switch session"))
@@ -60,4 +64,42 @@ export async function dialogFocus({ terminal }: Fixture) {
     await screen("dialog-submit-closed", (text) => !text.includes("Settings") && text.includes("INSERT"))
     await type("after dialog submit")
     await screen("dialog-submit-focus", (text) => text.includes("after dialog submit") && text.includes("INSERT"))
+
+    await keys("C-c")
+    await type("original draft")
+    await keys("Escape")
+    await type("0x")
+    await screen("undo-prompt-edited", (text) => text.includes("riginal draft"))
+    await keys("C-p")
+    await screen("undo-dialog-opened", (text) => text.includes("Commands") && text.includes("NORMAL"))
+    await type("iOpen settings")
+    await keys("Escape")
+    await type("0x")
+    await screen("undo-dialog-edited", (text) => /^\s+pen settings\s*$/m.test(text))
+    await keys("Escape")
+    await screen("undo-dialog-closed", (text) => !text.includes("Commands") && text.includes("NORMAL"))
+    await type("u")
+    await screen("undo-prompt-restored", (text) => text.includes("original draft"))
+}
+
+export async function promptDialog({ terminal, request, sessionID }: Fixture) {
+    const { keys, type, screen } = terminal
+    await type("unsent draft")
+    for (const mode of ["INSERT", "NORMAL"]) {
+        if (mode === "NORMAL") await keys("Escape")
+        await keys("C-p")
+        await screen(`rename-${mode}-palette`, (text) => text.includes("Commands") && text.includes(mode))
+        if (mode === "NORMAL") await type("i")
+        await type("Rename session")
+        await screen(`rename-${mode}-command`, (text) => text.includes("Rename session") && !text.includes("New session"))
+        if (mode === "NORMAL") await keys("Escape")
+        await keys("Enter")
+        await screen(`rename-${mode}-opened`, (text) => text.includes("Rename") && !text.includes("Commands") && text.includes(mode))
+        if (mode === "INSERT") await keys("Escape")
+        await type("0d$iRenamed fixture")
+        await keys("Escape", "Enter")
+        await screen(`rename-${mode}-submitted`, (text) => text.includes("Renamed fixture") && text.includes("unsent draft") && text.includes(mode) && !text.includes("submit"))
+    }
+    const exported = (await request(`/api/experimental/session/${sessionID}/export`)).data
+    if (exported.messages.length !== 0) throw new Error("Renaming submitted the main prompt")
 }

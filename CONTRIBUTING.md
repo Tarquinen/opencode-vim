@@ -56,6 +56,13 @@ shared fixtures and setup in `test/helpers/`.
 Add focused regression coverage for bug fixes. Use E2E scenarios when the behavior
 depends on real OpenCode keyboard handling, focus, dialogs, or tabs.
 
+Test plugin-owned behavior directly with OpenTUI: input and clipboard tests use
+`test/helpers/plugin.tsx`; reader component tests use `test/helpers/reader.tsx`.
+Keep these fixtures limited to controlled API inputs and recorded calls. Do not
+implement OpenCode's transcript, scrolling, history, dialogs, or command handling
+in a local fixture; add those checks to real-OpenCode E2E scenarios instead.
+See `test/README.md` for the coverage map and runtime-loading smoke test.
+
 E2E scenarios live in `test/e2e/scenarios/` and are registered in
 `test/e2e/run.ts`. Reuse the shared fixture and terminal helpers, and wait for
 expected screen content rather than using fixed delays.

@@ -77,6 +77,13 @@ export function diffReader(initial: DiffView = "after", remapped = false) {
         await screen("last-change-copied", (text) => text.includes("Copied"))
         await type("gg")
         await screen("first-change", (text) => text.split("\n")[terminal.cursor().y]?.includes("first") === true)
+        terminal.resize(44, 20)
+        await screen("narrow-change-reader", (text) => {
+            const frame = reader(text)
+            return !!frame && frame.top >= 0 && frame.bottom < 20 && frame.content.includes(description(clicked))
+        })
+        terminal.resize(120, 38)
+        await screen("wide-change-reader", (text) => readerContains(text, description(clicked)))
         await type("s")
         await screen("prompt-restored", (text) => text.includes("diff draft") && text.includes("NORMAL") && !text.includes("SESSION"))
         await type("A restored")

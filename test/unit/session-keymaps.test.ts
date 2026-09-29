@@ -2,6 +2,11 @@ import { expect, spyOn, test } from "bun:test"
 import { createVimConfig } from "../../src/modules/vim/config"
 import { createSessionKeymaps } from "../../src/session-keys"
 
+test("session toggle accepts a single normal key or control chord, not a sequence", () => {
+  for (const key of ["q", "<C-s>", "<C-c>"]) expect(createVimConfig({ sessionKey: key }).sessionKey).toBe(key)
+  expect(createVimConfig({ sessionKey: "gs" }).sessionKey).toBe("s")
+})
+
 test("session bindings replace defaults without changing prompt mappings", () => {
   const config = createVimConfig({ keymaps: {
     normal: { "<Tab>": "x" },

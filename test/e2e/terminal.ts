@@ -31,6 +31,13 @@ export function createTerminal(socket: string, artifacts: string) {
 
     async function keys(...keys: string[]) {
         await appendFile(path.join(artifacts, "keys.log"), `${Date.now()} ${keys.join(" ")}\n`)
+        // CSI-u makes Escape unambiguous when another key immediately follows.
+        // A bare ESC byte plus "s", for example, is decoded as Alt+s.
+        if (keys[0] !== "-l") {
+            for (let i = 0; i < keys.length; i++) {
+                if (keys[i] === "Escape") keys[i] = "\x1b[27u"
+            }
+        }
         tmux("send-keys", "-t", "e2e", ...keys)
     }
 
@@ -45,6 +52,14 @@ export function createTerminal(socket: string, artifacts: string) {
 
     async function click(x: number, y: number) {
         await keys("-l", `\x1b[<0;${x + 1};${y + 1}M\x1b[<0;${x + 1};${y + 1}m`)
+    }
+
+    async function paste(text: string) {
+        await keys("-l", `\x1b[200~${text}\x1b[201~`)
+    }
+
+    function resize(width: number, height: number) {
+        tmux("resize-window", "-t", "e2e", "-x", String(width), "-y", String(height))
     }
 
     async function screen(label: string, matches: (text: string, ansi: string) => boolean, timeout = 5_000) {
@@ -68,5 +83,5 @@ export function createTerminal(socket: string, artifacts: string) {
         }
     }
 
-    return { start, stop, keys, type, screen, cursor, click }
+    return { start, stop, keys, type, screen, cursor, click, paste, resize }
 }

@@ -35,7 +35,7 @@ test.each(["source", "npm"])("%s plugin shares the host's runtime", async (kind)
         // A fresh process installs OpenCode's runtime loader before importing the
         // plugin; it must not reuse modules preloaded by the ordinary test suite.
         await run([
-            process.execPath, "test", "--conditions=browser", "--preload", "@opentui/solid/preload", "test/integration/plugin.test.tsx",
+            process.execPath, "test", "--conditions=browser", "--preload", "@opentui/solid/preload", "test/helpers/runtime-smoke.test.ts",
         ], root, { OPENCODE_VIM_TEST_ENTRYPOINT: entrypoint })
     } finally {
         await rm(directory, { recursive: true, force: true })

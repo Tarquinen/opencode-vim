@@ -5,9 +5,9 @@ import { runWithFixture, type Fixture, type FixtureSetup } from "./fixture"
 import { installOpenCode } from "./opencode"
 import { packPlugin } from "./plugin"
 import { agentSwitching } from "./scenarios/agent-switching"
-import { dialogFocus } from "./scenarios/dialog-focus"
+import { dialogFocus, promptDialog } from "./scenarios/dialog-focus"
 import { tabSwitching } from "./scenarios/tab-switching"
-import { messageReader } from "./scenarios/message-reader"
+import { messageReader, readerLayout } from "./scenarios/message-reader"
 import { transcriptGrouped, transcriptLowDetail, transcriptUngrouped, transcriptRunning, transcriptHistory } from "./scenarios/transcript"
 import { readerMessages, transcriptMessages, historyMessages } from "./data/transcript"
 import { shellMessages, backgroundShellMessages } from "./data/shell"
@@ -19,12 +19,23 @@ import { readReader } from "./scenarios/read-reader"
 import { fileChangeMessages } from "./data/file-changes"
 import { fileChanges } from "./scenarios/file-changes"
 import { diffReader } from "./scenarios/diff-reader"
+import { emptySession, sessionControls, sessionKeyConflict, sessionLifecycle } from "./scenarios/session-controls"
+import { transcriptLayout, transcriptPartial, transcriptParts, sessionCopy } from "./scenarios/transcript-layout"
+import { layoutMessages, partialMessages, partMessages, copyMessages, longReaderMessages } from "./data/navigation"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
     { name: "tab-switching", run: tabSwitching },
     { name: "dialog-focus", run: dialogFocus },
+    { name: "dialog-focus-normal", run: dialogFocus, setup: { vim: { defaultMode: "normal" } } },
+    { name: "prompt-dialog", run: promptDialog },
     { name: "agent-switching", run: agentSwitching },
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
+    { name: "reader-layout", run: readerLayout, setup: { messages: longReaderMessages } },
+    { name: "session-empty", run: emptySession },
+    { name: "session-lifecycle", run: sessionLifecycle, setup: { messages: readerMessages,
+        vim: { keymaps: { normal: { Q: "command:opencode-vim.toggle" } } } } },
+    { name: "session-copy", run: sessionCopy, setup: { messages: copyMessages } },
+    { name: "session-key-invalid", run: sessionControls(), setup: { messages: readerMessages, vim: { sessionKey: "gs" } } },
     { name: "shell-reader", run: shellReader, setup: { messages: shellMessages } },
     { name: "shell-reader-low-detail", run: shellReader, setup: { messages: shellMessages, cli: { session: { verbosity: "low" } } } },
     { name: "background-shell", run: backgroundShell, setup: { messages: backgroundShellMessages } },
@@ -48,6 +59,15 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
         vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } },
     } },
 ]
+for (const key of ["s", "q", "<C-s>", "<C-c>"]) {
+    scenarios.push({ name: `session-key-${key.replace("<C-", "ctrl-").replace(">", "")}`, run: sessionControls(key),
+        setup: { messages: readerMessages, vim: { sessionKey: key } } })
+}
+for (const key of ["s", "q"]) {
+    scenarios.push({ name: `session-key-${key}-mapping`, run: sessionKeyConflict(key), setup: {
+        messages: readerMessages, vim: { sessionKey: key, keymaps: { normal: { [key + key]: "x" } } },
+    } })
+}
 for (const animations of [true, false]) {
     const suffix = animations ? "animated" : "static"
     for (const [name, run, session, running] of [
@@ -61,6 +81,15 @@ for (const animations of [true, false]) {
         scenarios.push({ name: `transcript-${name}-${suffix}`, run, setup: { messages, cli: { animations, session } } })
     }
     scenarios.push({ name: `transcript-history-${suffix}`, run: transcriptHistory, setup: { messages: historyMessages(), cli: { animations } } })
+    for (const [name, run, messages] of [
+        ["layout", transcriptLayout, layoutMessages],
+        ["partial", transcriptPartial, partialMessages],
+        ["parts", transcriptParts, partMessages],
+    ] as const) {
+        scenarios.push({ name: `transcript-${name}-${suffix}`, run, setup: {
+            messages, cli: { animations, session: { grouping: "none", thinking: "show" } },
+        } })
+    }
 }
 
 const requested = Bun.argv.slice(2)

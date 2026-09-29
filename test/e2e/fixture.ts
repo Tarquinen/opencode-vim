@@ -7,7 +7,7 @@ import type { Context } from "@opencode/plugin/tui/context"
 import type { VimOptions } from "../../src/modules/vim/config"
 import { createTerminal, type Terminal } from "./terminal"
 
-export type Fixture = { terminal: Terminal; sessionTitle: string }
+export type Fixture = FixtureAPI & { terminal: Terminal; sessionTitle: string; sessionID: string }
 export type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
 export type FixtureAPI = { request: (endpoint: string, body?: unknown) => Promise<any>; workspace: string }
 export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown>; vim?: VimOptions }
@@ -102,9 +102,10 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
         for (const [key, value] of Object.entries(environment("tui"))) command.push(`${key}=${value}`)
         command.push(opencode.binary, "--server", url, "--session", session.id, workspace)
         terminal.start(command, workspace)
-        await terminal.screen("startup", (text) => text.includes(sessionTitle) && text.includes("INSERT"), 60_000)
+        const initialMode = options.vim?.defaultMode === "normal" ? "NORMAL" : "INSERT"
+        await terminal.screen("startup", (text) => text.includes(sessionTitle) && text.includes(initialMode), 60_000)
 
-        await run({ terminal, sessionTitle })
+        await run({ terminal, sessionTitle, sessionID: session.id, request, workspace })
         assert.equal((await request(`/api/session/${session.id}`)).data.id, session.id)
     } finally {
         process.off("SIGINT", interrupt)
