@@ -1,4 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process"
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import { appendFile } from "node:fs/promises"
 import path from "node:path"
 import { stripVTControlCharacters } from "node:util"
@@ -7,6 +9,7 @@ export type Terminal = ReturnType<typeof createTerminal>
 
 export function createTerminal(socket: string, artifacts: string) {
     let pid: number | undefined
+    const output = path.join(artifacts, "terminal.raw")
 
     function tmux(...args: string[]) {
         return execFileSync("tmux", ["-S", socket, ...args], { encoding: "utf8", timeout: 5_000 })
@@ -16,6 +19,8 @@ export function createTerminal(socket: string, artifacts: string) {
         pid = Number(tmux("-u", "-f", "/dev/null", "new-session", "-d", "-s", "e2e", "-x", "120", "-y", "38", "-c", workspace,
             "-P", "-F", "#{pane_pid}", ...command).trim())
         tmux("set-option", "-t", "e2e", "remain-on-exit", "on")
+        // Capture raw output, including clipboard escapes that capture-pane drops.
+        tmux("pipe-pane", "-t", "e2e", `cat > '${output.replaceAll("'", "'\\''")}'`)
     }
 
     function stop() {
@@ -62,6 +67,17 @@ export function createTerminal(socket: string, artifacts: string) {
         tmux("resize-window", "-t", "e2e", "-x", String(width), "-y", String(height))
     }
 
+    function clipboard() {
+        let payload: string | undefined
+        // OpenTUI doubles escape bytes inside tmux passthrough sequences.
+        const contents = readFileSync(output, "utf8").replaceAll("\x1b\x1b", "\x1b")
+        for (const match of contents.matchAll(/\x1b\]52;[^;]*;([A-Za-z0-9+/=]*)(?:\x07|\x1b\\)/g)) {
+            payload = match[1]
+        }
+        assert(payload !== undefined, `No OSC52 clipboard write captured in ${output}`)
+        return Buffer.from(payload, "base64").toString("utf8")
+    }
+
     async function screen(label: string, matches: (text: string, ansi: string) => boolean, timeout = 5_000) {
         const deadline = Date.now() + timeout
         while (true) {
@@ -83,5 +99,5 @@ export function createTerminal(socket: string, artifacts: string) {
         }
     }
 
-    return { start, stop, keys, type, screen, cursor, click, paste, resize }
+    return { start, stop, keys, type, screen, cursor, click, paste, resize, clipboard }
 }

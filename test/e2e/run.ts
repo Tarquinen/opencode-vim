@@ -22,6 +22,7 @@ import { diffReader } from "./scenarios/diff-reader"
 import { emptySession, sessionControls, sessionKeyConflict, sessionLifecycle } from "./scenarios/session-controls"
 import { transcriptLayout, transcriptPartial, transcriptParts, sessionCopy } from "./scenarios/transcript-layout"
 import { layoutMessages, partialMessages, partMessages, copyMessages, longReaderMessages } from "./data/navigation"
+import { transcriptLive } from "./scenarios/transcript-live"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
     { name: "tab-switching", run: tabSwitching },
@@ -81,6 +82,9 @@ for (const animations of [true, false]) {
         scenarios.push({ name: `transcript-${name}-${suffix}`, run, setup: { messages, cli: { animations, session } } })
     }
     scenarios.push({ name: `transcript-history-${suffix}`, run: transcriptHistory, setup: { messages: historyMessages(), cli: { animations } } })
+    scenarios.push({ name: `transcript-live-${suffix}`, run: transcriptLive, setup: {
+        messages: readerMessages, stream: "hello", cli: { animations },
+    } })
     for (const [name, run, messages] of [
         ["layout", transcriptLayout, layoutMessages],
         ["partial", transcriptPartial, partialMessages],

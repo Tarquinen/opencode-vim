@@ -38,8 +38,14 @@ export async function transcriptLayout({ terminal }: Fixture) {
     await screen("reentry-selects-latest", (text) => selected(text, "Latest end") && position(text.split("\n"), "Latest end") === position(before, "Latest end"))
     await type("3k")
     await screen("first-part-only", (text) => selected(text, "First part") && !selected(text, "Second part") && !selected(text, "Second end"))
+    await type("yy")
+    await screen("first-part-copied", (text) => text.includes("Copied"))
+    assert.equal(terminal.clipboard(), "First part\nFirst end")
     await type("j")
     await screen("second-part-only", (text) => selected(text, "Second part") && selected(text, "Second end") && !selected(text, "First part"))
+    await type("yy")
+    await screen("second-part-copied", (text) => text.includes("Copied"))
+    assert.equal(terminal.clipboard(), "Second part\nSecond end")
 }
 
 export async function transcriptPartial({ terminal }: Fixture) {
@@ -63,6 +69,9 @@ export async function transcriptPartial({ terminal }: Fixture) {
     })
     await type("yy")
     await screen("partial-copied", (text) => text.includes("Copied"))
+    const lines: string[] = []
+    for (let i = 0; i < 80; i++) lines.push(`Reply line ${i}`)
+    assert.equal(terminal.clipboard(), lines.join("\n"))
     await keys("Enter")
     await screen("partial-whole-reader", (text) => readerContains(text, "Reply line 0"))
     await type("G")
@@ -77,11 +86,20 @@ export async function transcriptParts({ terminal }: Fixture) {
     await keys("s", "Enter")
     await screen("latest-reasoning", (text) => readerContains(text, "Still thinking"))
     await keys("Escape")
-    for (const [label, value] of [["answer", "Finished"], ["tool", "pwd"], ["reasoning", "Check something"], ["start", "Start"]]) {
+    await type("yy")
+    await screen("latest-reasoning-copied", (text) => text.includes("Copied"))
+    assert.equal(terminal.clipboard(), "Still thinking")
+    for (const [label, value, copied] of [
+        ["answer", "Finished", "Finished"],
+        ["tool", "pwd", "$ pwd\n/work"],
+        ["reasoning", "Check something", "Check something"],
+        ["start", "Start", "Start"],
+    ]) {
         await type("k")
         await screen(`${label}-selected`, (text) => selected(text, value))
         await type("yy")
         await screen(`${label}-copied`, (text) => text.includes("Copied"))
+        assert.equal(terminal.clipboard(), copied)
         await keys("Enter")
         await screen(`${label}-reader`, (text) => readerContains(text, value))
         await keys("Escape")
@@ -104,6 +122,7 @@ export async function sessionCopy({ terminal }: Fixture) {
     })
     await type("yy")
     await screen("markdown-copied", (text) => text.includes("Copied"))
+    assert.equal(terminal.clipboard(), "# Heading\n\n```ts\nconst 中 = '👍🏽'\n```")
     await type("s$p")
     await screen("markdown-pasted", (text) => text.includes("draft# Heading") && text.includes("```ts") && /const 中 = '👍🏽\s*'/.test(text))
     await type("i")
@@ -121,6 +140,7 @@ export async function sessionCopy({ terminal }: Fixture) {
         const row = text.split("\n").findIndex((line) => line.includes("quoted 中 👩‍💻"))
         return text.includes("Copied") && ansi.split("\n")[row] !== normal
     })
+    assert.equal(terminal.clipboard(), "quoted 中 👩‍💻\nsecond line")
     await screen("quote-flash-expired", (text, ansi) => {
         const row = text.split("\n").findIndex((line) => line.includes("quoted 中 👩‍💻"))
         return ansi.split("\n")[row] === normal
@@ -138,6 +158,7 @@ export async function sessionCopy({ terminal }: Fixture) {
     await screen("quote-reader", (text) => readerContains(text, "quoted 中 👩‍💻"))
     await type("Vjy")
     await screen("quote-lines-copied", (text) => text.includes("Copied"))
+    assert.equal(terminal.clipboard(), "quoted 中 👩‍💻\nsecond line\n")
     await type("sp")
     await screen("quote-pasted", (text) => text.includes("NORMAL") && !text.includes("SESSION") && text.split("\n")[terminal.cursor().y]?.slice(terminal.cursor().x).startsWith("quoted 中 👩‍💻") === true)
     const cursor = terminal.cursor()

@@ -24,6 +24,8 @@ The former `integration/plugin.test.tsx` coverage lives in these focused suites:
 | Change views, per-view cursors, signs/colors, exact copy, mouse tabs, added/deleted/unknown patches | `integration/readers/diff.test.ts`, `unit/diff-reader.test.ts` | `diff-reader*`, `file-changes*` (including native modal resize) |
 | Selection marker and yank colors, Unicode, viewport clipping, unchanged geometry | `integration/selection.test.ts` | `session-copy` (flash expiry and cancellation), `transcript-layout-*`, `transcript-partial-*` |
 | Transcript source matching, anonymous/grouped tool rows and patch files | `integration/transcript.test.ts` | `transcript-grouped-*`, `transcript-low-detail-*`, `transcript-ungrouped-*`, `transcript-running-*`, `transcript-parts-*` |
+| Exact whole-message/part clipboard payloads, including offscreen text, Markdown and Unicode | | `session-copy`, `transcript-layout-*`, `transcript-partial-*`, `transcript-parts-*` (captured OSC52 writes) |
+| Messages arriving while browsing, streaming reader snapshot/selection and refreshed transcript | `integration/readers/text.test.ts` | `transcript-live-*` (real server with a controlled local model stream) |
 | Visible and offscreen navigation, separate parts, latest/reasoning selection, natural bottom, virtualization and history compensation | | `transcript-layout-*`, `transcript-partial-*`, `transcript-parts-*`, `transcript-history-*` (animations on/off) |
 | Source and published-package shared runtime | `integration/runtime.test.ts` launches `helpers/runtime-smoke.test.ts` in fresh processes | All E2E scenarios load the packed plugin |
 

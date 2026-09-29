@@ -6,11 +6,12 @@ import path from "node:path"
 import type { Context } from "@opencode/plugin/tui/context"
 import type { VimOptions } from "../../src/modules/vim/config"
 import { createTerminal, type Terminal } from "./terminal"
+import { createStreamingModel } from "./model"
 
-export type Fixture = FixtureAPI & { terminal: Terminal; sessionTitle: string; sessionID: string }
+export type Fixture = FixtureAPI & { terminal: Terminal; sessionTitle: string; sessionID: string; stream?: ReturnType<typeof createStreamingModel> }
 export type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
 export type FixtureAPI = { request: (endpoint: string, body?: unknown) => Promise<any>; workspace: string }
-export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown>; vim?: VimOptions }
+export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown>; vim?: VimOptions; stream?: string }
 
 type Options = FixtureSetup & {
     opencode: { binary: string; version: string }
@@ -25,10 +26,12 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
     const password = crypto.randomUUID()
     const sessionTitle = "E2E existing session"
     const terminal = createTerminal(path.join(directory, "tmux.sock"), artifacts)
+    const stream = options.stream === undefined ? undefined : createStreamingModel(options.stream)
     let server: Bun.Subprocess | undefined
     let url = ""
 
     function stop() {
+        stream?.stop()
         terminal.stop()
         if (server) {
             try {
@@ -105,7 +108,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
         const initialMode = options.vim?.defaultMode === "normal" ? "NORMAL" : "INSERT"
         await terminal.screen("startup", (text) => text.includes(sessionTitle) && text.includes(initialMode), 60_000)
 
-        await run({ terminal, sessionTitle, sessionID: session.id, request, workspace })
+        await run({ terminal, sessionTitle, sessionID: session.id, request, workspace, stream })
         assert.equal((await request(`/api/session/${session.id}`)).data.id, session.id)
     } finally {
         process.off("SIGINT", interrupt)
@@ -131,7 +134,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
             COLORTERM: "truecolor",
             OPENCODE_TEST_HOME: directory,
             OPENCODE_CONFIG_DIR: path.join(directory, "config"),
-            OPENCODE_CONFIG_CONTENT: "{}",
+            OPENCODE_CONFIG_CONTENT: JSON.stringify(stream?.config ?? {}),
             OPENCODE_DISABLE_PROJECT_CONFIG: "true",
             OPENCODE_DISABLE_FILEWATCHER: "true",
             OPENCODE_DISABLE_MODELS_FETCH: "true",
