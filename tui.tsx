@@ -13,6 +13,7 @@ import { createVimeeAdapter } from "./src/modules/vim/vimee"
 import { VimStatus } from "./view"
 import { SESSION_MODE, createSessionMode } from "./src/session"
 import { createVimClipboard } from "./src/clipboard"
+import { createFormMode } from "./src/form"
 
 type Context = Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0]
 
@@ -39,6 +40,7 @@ function VimHost(props: { context: Context }) {
   let dialogInput: typeof props.context.renderer.currentFocusedEditor = null
   const [saved, setSaved] = props.context.storage.store("state", { initial: { enabled: true } })
   const enabled = () => saved.enabled
+  const form = createFormMode(props.context, config, log, enabled)
   const ctx = createCompatContext(props.context)
   let cursorMode = ""
   let cursorInput: typeof props.context.renderer.currentFocusedEditor = null
@@ -88,6 +90,7 @@ function VimHost(props: { context: Context }) {
 
   const onKey = (event: KeyEvent) => {
     if (!enabled() || event.defaultPrevented) return
+    if (form.handle(event)) return
     if (pendingKeys) {
       pendingKeys.push(new KeyEvent(event))
       event.preventDefault()
@@ -170,9 +173,14 @@ function VimHost(props: { context: Context }) {
     vimee.suspend()
     dialogVimee.suspend()
     syncCursor()
+    form.focus()
   })
   const onPaste = (event: PasteEvent) => {
-    if (!pendingKeys || event.defaultPrevented) return
+    if (event.defaultPrevented) return
+    if (!pendingKeys) {
+      form.paste(event)
+      return
+    }
     pendingKeys.push(new PasteEvent(event.bytes, event.metadata))
     event.preventDefault()
     event.stopPropagation()

@@ -29,6 +29,8 @@ Each entry maps a key sequence to an action in one Vim mode. Put `keymaps` insid
 Mappings apply while editing the prompt or a search dialog, in `insert`, `normal`,
 `visual`, or `visual-line` mode. `session` mappings apply to transcript browsing
 and its message/tool modals; use `sessionKey` to change the session toggle.
+Insert-mode mappings also apply to question answers; `submit` uses the question's
+native confirm/submit action.
 
 | Action | Behavior |
 | --- | --- |
