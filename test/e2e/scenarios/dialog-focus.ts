@@ -1,19 +1,21 @@
 import assert from "node:assert/strict"
 import type { Fixture } from "../support/fixture"
 
-export async function dialogMappings({ terminal }: Fixture) {
+export async function dialogMappings({ terminal, probe }: Fixture, mapping = "j") {
     const { keys, type, screen } = terminal
     await type("prompt stays here")
     await keys("Escape", "C-p")
     await screen("mapped-dialog", (text) => text.includes("Commands") && text.includes("NORMAL"))
     await type("ijOpen settings")
     await keys("Escape")
-    await type("0j")
-    await screen("mapped-j-edits-query", (text) => /^\s+Open settings\s*$/m.test(text) && text.includes("NORMAL"))
+    // A multi-key prefix must reach Vim instead of navigating the host's list.
+    await type("0" + mapping)
+    // Inspect the input so a matching command-list label cannot satisfy the check.
+    await screen("mapped-query-edit", async (text) => (await probe()).editor.text === "Open settings" && text.includes("NORMAL"))
     await type("u")
-    await screen("query-undo-events", (text) => /^\s+jOpen settings\s*$/m.test(text))
+    await screen("query-undo-events", async () => (await probe()).editor.text === "jOpen settings")
     await keys("C-r")
-    await screen("query-redo-events", (text) => /^\s+Open settings\s*$/m.test(text))
+    await screen("query-redo-events", async () => (await probe()).editor.text === "Open settings")
     await keys("Escape")
     await screen("mapped-dialog-dismissed", (text) => !text.includes("Commands") && text.includes("prompt stays here") && text.includes("NORMAL"))
 }

@@ -86,7 +86,42 @@ export async function promptClipboard({ terminal }: Fixture) {
     await screen("prompt-to-dialog", (text) => text.includes("Commands") && /^\s+Open shared\s*$/m.test(text))
 }
 
-export async function promptHistory({ terminal, stream }: Fixture) {
+export async function promptHistory(fixture: Fixture) {
+    const { terminal } = fixture
+    const { keys, type, screen } = terminal
+    await seedHistory(fixture)
+    const start = terminal.cursor()
+    await type("k")
+    await screen("history-older", (text) => promptLine(text, terminal.cursor().y) === "older 中中")
+    await type("j")
+    await screen("history-forward", (text) => promptLine(text, terminal.cursor().y) === "newer 文文")
+    assert.equal(terminal.cursor().x, start.x + 10, "History forward restores display-width cursor offsets")
+    await type("j")
+    await screen("history-empty", (text) => promptLine(text, terminal.cursor().y) === "")
+    await type("k")
+    await screen("history-recalled", (text) => promptLine(text, terminal.cursor().y) === "newer 文文")
+    // Movement alone must end history navigation. Edit only after the second k
+    // so the edit cannot hide a missing reset, and wait for all keys to finish.
+    await type("hkiX")
+    await screen("movement-ended-history", (text) => promptLine(text, terminal.cursor().y) === "Xnewer 文文" && text.includes("INSERT"))
+    await keys("Escape")
+    await type("k")
+    await screen("edited-history-is-draft", (text) => promptLine(text, terminal.cursor().y) === "Xnewer 文文" && text.includes("NORMAL"))
+}
+
+export async function promptCommandCursor(fixture: Fixture) {
+    const { terminal } = fixture
+    const { type, screen } = terminal
+    await seedHistory(fixture)
+    await type("k")
+    await screen("history-older", (text) => promptLine(text, terminal.cursor().y) === "older 中中")
+    // Q dispatches history-next. The adapter must retain the host's new cursor,
+    // including the display width of Unicode text, instead of restoring its old one.
+    await type("QiX")
+    await screen("mapped-command-retained-cursor", (text) => promptLine(text, terminal.cursor().y) === "newer 文文X" && text.includes("INSERT"))
+}
+
+async function seedHistory({ terminal, stream }: Fixture) {
     assert(stream)
     const { keys, type, screen } = terminal
     for (const [index, value] of ["older 中中", "newer 文文"].entries()) {
@@ -98,18 +133,6 @@ export async function promptHistory({ terminal, stream }: Fixture) {
     await keys("Escape")
     await type("k")
     await screen("history-newest", (text) => promptLine(text, terminal.cursor().y) === "newer 文文")
-    const start = terminal.cursor()
-    await type("k")
-    await screen("history-older", (text) => promptLine(text, terminal.cursor().y) === "older 中中")
-    await type("j")
-    await screen("history-forward", (text) => promptLine(text, terminal.cursor().y) === "newer 文文")
-    assert.equal(terminal.cursor().x, start.x + 10, "History forward restores display-width cursor offsets")
-    await type("j")
-    await screen("history-empty", (text) => promptLine(text, terminal.cursor().y) === "")
-    await type("khiX")
-    await keys("Escape")
-    await type("k")
-    await screen("edited-history-is-draft", (text) => promptLine(text, terminal.cursor().y) === "Xnewer 文文" && text.includes("NORMAL"))
 }
 
 function promptLine(text: string, row: number) {

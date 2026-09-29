@@ -24,7 +24,7 @@ import { transcriptLayout, transcriptPartial, transcriptParts, sessionCopy } fro
 import { layoutMessages, partialMessages, partMessages, copyMessages, longReaderMessages } from "./data/navigation"
 import { transcriptLive } from "./scenarios/transcript-live"
 import { pluginLifecycle } from "./scenarios/plugin-lifecycle"
-import { promptClipboard, promptHistory, promptInput } from "./scenarios/prompt-input"
+import { promptClipboard, promptCommandCursor, promptHistory, promptInput } from "./scenarios/prompt-input"
 import { permissionMessages } from "./data/permission"
 import { permissionTools } from "./scenarios/permission-tools"
 import { clipboardCancellation } from "./scenarios/clipboard-cancel"
@@ -33,11 +33,15 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
     { name: "prompt-input", run: promptInput, setup: { vim: { defaultMode: "normal", keymaps: { insert: { kj: "normal" }, normal: { "<Tab>": "x" } } } } },
     { name: "prompt-clipboard", run: promptClipboard, setup: { vim: { keymaps: { normal: { Q: "yiw$p" } } } } },
     { name: "prompt-history", run: promptHistory, setup: { stream: "history response" } },
+    { name: "prompt-command-cursor", run: promptCommandCursor, setup: {
+        stream: "history response", vim: { keymaps: { normal: { Q: "command:prompt.history.next" } } },
+    } },
     { name: "tab-switching", run: tabSwitching },
     { name: "dialog-focus", run: dialogFocus },
     { name: "dialog-focus-normal", run: dialogFocus, setup: { vim: { defaultMode: "normal" } } },
     { name: "prompt-dialog", run: promptDialog },
-    { name: "dialog-mappings", run: dialogMappings, setup: { vim: { keymaps: { normal: { j: "x" } } } } },
+    { name: "dialog-mappings", run: dialogMappings, setup: { probe: true, vim: { keymaps: { normal: { j: "x" } } } } },
+    { name: "dialog-multikey-mappings", run: (fixture) => dialogMappings(fixture, "jj"), setup: { probe: true, vim: { keymaps: { normal: { jj: "x" } } } } },
     { name: "dialog-scope", run: dialogScope, setup: { probe: true, cli: { keybinds: { "dialog.select.next": ["down", "tab"], "dialog.select.prev": ["up", "shift+tab"] } } } },
     { name: "agent-switching", run: agentSwitching },
     { name: "agent-switching-tab-mapping", run: agentSwitching, setup: { vim: { keymaps: { normal: { "<Tab>": "x" } } } } },
