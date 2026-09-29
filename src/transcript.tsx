@@ -1,7 +1,7 @@
 // TSX ensures the plugin loader shares the host's OpenTUI classes.
 import type { Context } from "@opencode/plugin/tui/context"
 import { MouseEvent, ScrollBoxRenderable, type OptimizedBuffer, type Renderable } from "@opentui/core"
-import { groupAt, transcriptItems, type TranscriptRange } from "./transcript-items"
+import { transcriptItems, type TranscriptRange } from "./transcript-items"
 
 export function createTranscriptSelection(context: Context, sessionID: string, select: (id: string | undefined) => void) {
   let scroll: ScrollBoxRenderable | undefined
@@ -13,6 +13,14 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     latest?: boolean
     loading?: { key: string; frame: number; up: boolean; height: number }
   } | undefined
+
+  function items(rows: Renderable[]) {
+    const pending = new Set<string>()
+    for (const request of context.data.session.permission.list(sessionID) ?? []) {
+      if (request.source?.type === "tool") pending.add(request.source.id)
+    }
+    return transcriptItems(rows, context.data.session.message.list(sessionID), pending)
+  }
 
   function choose(range: TranscriptRange, view: NonNullable<ReturnType<typeof inspect>>) {
     requestedID = range.id
@@ -87,16 +95,9 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
   }
 
   function inspect() {
-    const messages = context.data.session.message.list(sessionID)
-    const ids = new Set(messages.map((message) => message.id))
-    function isRow(node: Renderable) {
-      if (ids.has(node.id) || (node.id?.startsWith("session-part:") && ids.has(node.id.split(":")[1]))) return true
-      const anchor = node.getChildren()[0]
-      return Boolean(anchor && groupAt(anchor))
-    }
     function findScroll(node: Renderable): ScrollBoxRenderable | undefined {
       if (!node.visible) return
-      if (node instanceof ScrollBoxRenderable && node.getChildren().some(isRow)) return node
+      if (node instanceof ScrollBoxRenderable && items(node.getChildren()).ranges.length) return node
       for (const child of node.getChildren()) {
         const found = findScroll(child)
         if (found) return found
@@ -104,7 +105,7 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     }
     if (!scroll || scroll.isDestroyed) scroll = findScroll(context.renderer.root)
     if (!scroll) { select(undefined); return }
-    const { ranges, hasLatest } = transcriptItems(scroll.getChildren(), messages)
+    const { ranges, hasLatest } = items(scroll.getChildren())
     const top = scroll.viewport.y
     const bottom = top + scroll.viewport.height
     let selected = ranges.find((range) => range.id === requestedID)
@@ -131,7 +132,7 @@ export function createTranscriptSelection(context: Context, sessionID: string, s
     latest, move,
     get(id: string | undefined) {
       if (!scroll || scroll.isDestroyed) return
-      return transcriptItems(scroll.getChildren(), context.data.session.message.list(sessionID)).ranges.find((range) => range.id === id)
+      return items(scroll.getChildren()).ranges.find((range) => range.id === id)
     },
     toggle() {
       const range = inspect()?.selected

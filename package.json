@@ -1,7 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "name": "opencode-vim",
-  "version": "0.0.26",
+  "version": "0.0.27",
+  "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
@@ -14,12 +15,13 @@
     "build": "bun scripts/build.ts",
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --conditions=browser --preload @opentui/solid/preload",
+    "test": "bun test --conditions=browser --preload @opentui/solid/preload ./test/unit ./test/integration",
     "test:e2e": "bun test/e2e/run.ts",
     "bench": "bun test/benchmark.ts"
   },
   "dependencies": {
-    "@vimee/core": "^0.3.0"
+    "@vimee/core": "^0.3.0",
+    "diff": "^9.0.0"
   },
   "peerDependencies": {
     "@opencode/plugin": "2.0.10",

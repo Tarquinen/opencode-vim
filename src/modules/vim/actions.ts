@@ -1,4 +1,4 @@
-import type { CursorStyleOptions, LineInfo, RGBA } from "@opentui/core"
+import type { CursorStyleOptions, LineInfo, RGBA, WidthMethod } from "@opentui/core"
 import type { VimCursorStyle } from "./config"
 
 type PromptInfo = {
@@ -16,7 +16,7 @@ type PromptRef = {
 
 export type PromptContext = {
     api: {
-        renderer: { currentFocusedRenderable?: unknown }
+        renderer: { currentFocusedRenderable?: unknown; widthMethod?: WidthMethod }
         keymap: { dispatchCommand: (command: string) => { ok: boolean } }
         theme: { current: { warning: RGBA; info: RGBA; background: RGBA } }
     }

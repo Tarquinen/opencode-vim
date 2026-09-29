@@ -3,11 +3,16 @@ import { execFileSync } from "node:child_process"
 import { cp, mkdir } from "node:fs/promises"
 import { createServer } from "node:net"
 import path from "node:path"
+import type { Context } from "@opencode/plugin/tui/context"
+import type { VimOptions } from "../../src/modules/vim/config"
 import { createTerminal, type Terminal } from "./terminal"
 
 export type Fixture = { terminal: Terminal; sessionTitle: string }
+export type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
+export type FixtureAPI = { request: (endpoint: string, body?: unknown) => Promise<any>; workspace: string }
+export type FixtureSetup = { messages?: Message[] | ((api: FixtureAPI) => Promise<Message[]>); cli?: Record<string, unknown>; vim?: VimOptions }
 
-type Options = {
+type Options = FixtureSetup & {
     opencode: { binary: string; version: string }
     plugin: string
     directory: string
@@ -47,9 +52,10 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
         }
         assert.equal(execFileSync(opencode.binary, ["--version"], { env: environment("server"), encoding: "utf8" }).trim(), `opencode v${opencode.version}`)
         await Bun.write(path.join(directory, "tui/config/cli.json"), JSON.stringify({
-            plugins: [plugin],
+            plugins: [{ package: plugin, options: { vim: options.vim ?? {} } }],
             tabs: { mode: "on" },
             attention: { notifications: false, sound: false },
+            ...options.cli,
         }))
 
         const listener = createServer()
@@ -80,7 +86,18 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
                 await Bun.sleep(100)
             }
         }
-        const session = (await request("/api/session", { title: sessionTitle, location: { directory: workspace } })).data
+        let session = (await request("/api/session", { title: sessionTitle, location: { directory: workspace } })).data
+        if (options.messages) {
+            const messages = typeof options.messages === "function"
+                ? await options.messages({ request, workspace }) : options.messages
+            session = (await request("/api/experimental/session/import", {
+                info: { ...session, id: `ses_${crypto.randomUUID().replaceAll("-", "")}` },
+                messages,
+                location: { directory: workspace },
+            })).data
+            const imported = (await request(`/api/experimental/session/${session.id}/export`)).data
+            assert.equal(imported.messages.length, messages.length)
+        }
         const command = ["env", "-i"]
         for (const [key, value] of Object.entries(environment("tui"))) command.push(`${key}=${value}`)
         command.push(opencode.binary, "--server", url, "--session", session.id, workspace)

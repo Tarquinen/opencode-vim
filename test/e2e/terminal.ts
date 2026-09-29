@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from "node:child_process"
 import { appendFile } from "node:fs/promises"
 import path from "node:path"
+import { stripVTControlCharacters } from "node:util"
 
 export type Terminal = ReturnType<typeof createTerminal>
 
@@ -37,23 +38,35 @@ export function createTerminal(socket: string, artifacts: string) {
         await keys("-l", text)
     }
 
-    async function screen(label: string, matches: (text: string) => boolean, timeout = 5_000) {
+    function cursor() {
+        const [x, y] = tmux("display-message", "-p", "-t", "e2e", "#{cursor_x} #{cursor_y}").trim().split(" ")
+        return { x: Number(x), y: Number(y) }
+    }
+
+    async function click(x: number, y: number) {
+        await keys("-l", `\x1b[<0;${x + 1};${y + 1}M\x1b[<0;${x + 1};${y + 1}m`)
+    }
+
+    async function screen(label: string, matches: (text: string, ansi: string) => boolean, timeout = 5_000) {
         const deadline = Date.now() + timeout
         while (true) {
-            const text = tmux("capture-pane", "-p", "-t", "e2e")
-            const matched = matches(text)
+            const ansi = tmux("capture-pane", "-p", "-e", "-t", "e2e")
+            const text = stripVTControlCharacters(ansi)
+            const matched = matches(text, ansi)
             if (matched || Date.now() >= deadline) {
                 await Bun.write(path.join(artifacts, `${label}.txt`), text)
+                await Bun.write(path.join(artifacts, `${label}.ansi`), ansi)
                 if (!matched) throw new Error(`Timed out waiting for ${label}; see ${artifacts}/${label}.txt`)
                 return
             }
             if (tmux("display-message", "-p", "-t", "e2e", "#{pane_dead}").trim() === "1") {
                 await Bun.write(path.join(artifacts, `${label}.txt`), text)
+                await Bun.write(path.join(artifacts, `${label}.ansi`), ansi)
                 throw new Error(`OpenCode exited while waiting for ${label}`)
             }
             await Bun.sleep(100)
         }
     }
 
-    return { start, stop, keys, type, screen }
+    return { start, stop, keys, type, screen, cursor, click }
 }
