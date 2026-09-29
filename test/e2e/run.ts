@@ -5,7 +5,7 @@ import { runWithFixture, type Fixture, type FixtureSetup } from "./support/fixtu
 import { installOpenCode } from "./support/opencode"
 import { copySourcePlugin, packPlugin } from "./support/plugin"
 import { agentSwitching } from "./scenarios/agent-switching"
-import { dialogFocus, dialogMappings, dialogScope, promptDialog } from "./scenarios/dialog-focus"
+import { dialogFocus, dialogMappings, dialogModeInheritance, dialogScope, promptDialog } from "./scenarios/dialog-focus"
 import { tabSwitching } from "./scenarios/tab-switching"
 import { messageReader, readerLayout } from "./scenarios/message-reader"
 import { transcriptGrouped, transcriptLowDetail, transcriptUngrouped, transcriptRunning, transcriptHistory } from "./scenarios/transcript"
@@ -37,21 +37,22 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
         stream: "history response", vim: { keymaps: { normal: { Q: "command:prompt.history.next" } } },
     } },
     { name: "tab-switching", run: tabSwitching },
-    { name: "dialog-focus", run: dialogFocus },
-    { name: "dialog-focus-normal", run: dialogFocus, setup: { vim: { defaultMode: "normal" } } },
+    { name: "dialog-focus", run: dialogFocus, setup: { probe: true } },
+    { name: "dialog-focus-normal", run: dialogModeInheritance, setup: { vim: { defaultMode: "normal" } } },
     { name: "prompt-dialog", run: promptDialog },
     { name: "dialog-mappings", run: dialogMappings, setup: { probe: true, vim: { keymaps: { normal: { j: "x" } } } } },
-    { name: "dialog-multikey-mappings", run: (fixture) => dialogMappings(fixture, "jj"), setup: { probe: true, vim: { keymaps: { normal: { jj: "x" } } } } },
+    { name: "dialog-multikey-mappings", run: (fixture) => dialogMappings(fixture, "jj"), setup: {
+        probe: true, vim: { keymaps: { normal: { jj: "x" }, insert: { kj: "normal" } } },
+    } },
     { name: "dialog-scope", run: dialogScope, setup: { probe: true, cli: { keybinds: { "dialog.select.next": ["down", "tab"], "dialog.select.prev": ["up", "shift+tab"] } } } },
     { name: "agent-switching", run: agentSwitching },
-    { name: "agent-switching-tab-mapping", run: agentSwitching, setup: { vim: { keymaps: { normal: { "<Tab>": "x" } } } } },
+    { name: "agent-switching-tab-mapping", run: (fixture) => agentSwitching(fixture, true), setup: { vim: { keymaps: { normal: { "<Tab>": "x" } } } } },
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
     { name: "reader-layout", run: readerLayout, setup: { messages: longReaderMessages } },
     { name: "session-empty", run: emptySession },
     { name: "session-lifecycle", run: sessionLifecycle, setup: { messages: readerMessages,
         vim: { keymaps: { normal: { Q: "command:opencode-vim.toggle" } } } } },
     { name: "session-copy", run: sessionCopy, setup: { messages: copyMessages, probe: true } },
-    { name: "session-key-invalid", run: sessionControls(), setup: { messages: readerMessages, vim: { sessionKey: "gs" } } },
     { name: "shell-reader", run: shellReader, setup: { messages: shellMessages } },
     { name: "shell-reader-low-detail", run: shellReader, setup: { messages: shellMessages, cli: { session: { verbosity: "low" } } } },
     { name: "background-shell", run: backgroundShell, setup: { messages: backgroundShellMessages } },

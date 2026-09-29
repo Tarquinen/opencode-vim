@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import type { Fixture } from "../support/fixture"
 
-export async function agentSwitching({ terminal }: Fixture) {
+export async function agentSwitching({ terminal }: Fixture, mapped = false) {
     const { keys, type, screen } = terminal
     const draft = "agent switching draft"
     let agent = ""
@@ -13,9 +13,18 @@ export async function agentSwitching({ terminal }: Fixture) {
     await keys("Escape")
     await screen("initial-normal", (text) => text.includes("NORMAL"))
 
-    for (const [mode, sequence] of [
+    if (mapped) {
+        await type("0")
+        await keys("Tab")
+        await screen("mapped-tab", (text) => text.includes("gent switching draft") && !text.includes(draft)
+            && text.includes(`${agent} ·`) && text.includes("NORMAL"))
+        await type("u")
+        await screen("mapped-tab-undo", (text) => text.includes(draft) && text.includes("NORMAL"))
+    }
+    const modes = mapped ? [["NORMAL", ""]] : [
         ["INSERT", "i"], ["NORMAL", ""], ["VISUAL", "0vl"], ["VISUAL LINE", "V"], ["SESSION", "s"],
-    ]) {
+    ]
+    for (const [mode, sequence] of modes) {
         for (let cycle = 1; cycle <= 2; cycle++) {
             const label = `${mode.toLowerCase().replaceAll(" ", "-")}-${cycle}`
             if (sequence) await type(sequence)

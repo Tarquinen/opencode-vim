@@ -22,13 +22,19 @@
 ## Plugin coverage map
 
 Host-dependent assertions live in real OpenCode scenarios; component assertions
-stay local:
+stay local.
+
+Configuration variants cover their distinct host behavior rather than replaying
+every reader or editing assertion. The default session key, dialog startup mode,
+agent bindings and diff view run the full flows; alternate configurations check
+key routing, mode inheritance, initial views and focus restoration. Invalid
+configuration fallback stays in unit tests.
 
 | Behavior | Local coverage | Real OpenCode coverage |
 | --- | --- | --- |
 | Prompt focus, mode/status/theme, mappings, native key passthrough, cleanup | | `prompt-input`, `runtime-*`, `tab-switching`, `agent-switching*` |
 | Clipboard Unicode/CRLF/counts, undo/redo, registers, async ordering, fallback, adapter cancellation | `integration/clipboard.test.ts` | `prompt-clipboard`, `session-copy`, `clipboard-cancel-*` (late response and queued keys across focus/route/toggle/unload) |
-| Dialog query changes and command selection | | `dialog-focus`, `dialog-focus-normal`, `dialog-mappings`, `dialog-multikey-mappings`, `dialog-scope`, `prompt-dialog` (mode inheritance, undo isolation, mapping-prefix priority, native navigation, pending motions and unrelated extension input) |
+| Dialog query changes and command selection | | `dialog-focus`, `dialog-focus-normal`, `dialog-mappings`, `dialog-multikey-mappings`, `dialog-scope`, `prompt-dialog` (mode inheritance, filtered results after edit/undo/redo, insert/normal mappings, undo isolation, mapping-prefix priority, native navigation, pending motions and unrelated extension input) |
 | Native prompt history, exit on movement, Unicode edits and mapped-command cursor preservation | | `prompt-history`, `prompt-command-cursor` |
 | Session entry/exit, toggle key scope, mappings, control chords, narrow status layout | `unit/session-keymaps.test.ts` | `session-key-*`, `session-empty`, `session-keymaps`, `session-agent-binding` |
 | Session and reader lifecycle, route changes, replacement dialogs and disable | `integration/readers/text.test.ts` | `session-lifecycle`, `runtime-*`, `message-reader` (including delayed host refocus) |

@@ -25,8 +25,10 @@ export function diffReader(initial: DiffView = "after", remapped = false) {
         }
         await keys("Enter")
         const views: DiffView[] = ["after", "before", "diff"]
+        // The default view owns the full reader flow; variants check their wiring.
+        const full = initial === "after"
         let view = initial
-        for (let step = 0; step < 3; step++) {
+        for (let step = 0; step < (full ? 3 : 1); step++) {
             await screen(`view-${view}`, (text, ansi) => {
                 const modal = reader(text)
                 if (!modal) return false
@@ -57,33 +59,33 @@ export function diffReader(initial: DiffView = "after", remapped = false) {
             await switchView()
             view = views[(views.indexOf(view) + 1) % views.length]
         }
-        await screen("initial-view-restored", (text) => readerContains(text, description(initial)))
-        const clicked = initial === "before" ? "after" : "before"
-        let target = { x: 0, y: 0 }
-        await screen("click-target", (text) => {
-            const rows = text.split("\n")
-            const y = rows.findIndex((row) => /View.*After.*Before.*Diff/.test(row))
-            if (y < 0) return false
-            target = { x: rows[y].indexOf(label(clicked)), y }
-            return target.x >= 0
-        })
-        await click(target.x, target.y)
-        await screen("clicked-view", (text) => readerContains(text, description(clicked))
-            && readerContains(text, clicked === "after" ? "new first" : "old first"))
-        await type("G")
-        await screen("last-change", (text) => /20\s+const last/.test(reader(text)?.content ?? "")
-            && text.split("\n")[terminal.cursor().y]?.includes("last") === true)
-        await type("Vy")
-        await screen("last-change-copied", (text) => text.includes("Copied"))
-        await type("gg")
-        await screen("first-change", (text) => text.split("\n")[terminal.cursor().y]?.includes("first") === true)
-        terminal.resize(44, 20)
-        await screen("narrow-change-reader", (text) => {
-            const frame = reader(text)
-            return !!frame && frame.top >= 0 && frame.bottom < 20 && frame.content.includes(description(clicked))
-        })
-        terminal.resize(120, 38)
-        await screen("wide-change-reader", (text) => readerContains(text, description(clicked)))
+        await screen("cycled-view", (text) => readerContains(text, description(view)))
+        if (full) {
+            let target = { x: 0, y: 0 }
+            await screen("click-target", (text) => {
+                const rows = text.split("\n")
+                const y = rows.findIndex((row) => /View.*After.*Before.*Diff/.test(row))
+                if (y < 0) return false
+                target = { x: rows[y].indexOf("Before"), y }
+                return target.x >= 0
+            })
+            await click(target.x, target.y)
+            await screen("clicked-view", (text) => readerContains(text, description("before")) && readerContains(text, "old first"))
+            await type("G")
+            await screen("last-change", (text) => /20\s+const last/.test(reader(text)?.content ?? "")
+                && text.split("\n")[terminal.cursor().y]?.includes("last") === true)
+            await type("Vy")
+            await screen("last-change-copied", (text) => text.includes("Copied"))
+            await type("gg")
+            await screen("first-change", (text) => text.split("\n")[terminal.cursor().y]?.includes("first") === true)
+            terminal.resize(44, 20)
+            await screen("narrow-change-reader", (text) => {
+                const frame = reader(text)
+                return !!frame && frame.top >= 0 && frame.bottom < 20 && frame.content.includes(description("before"))
+            })
+            terminal.resize(120, 38)
+            await screen("wide-change-reader", (text) => readerContains(text, description("before")))
+        }
         await type("s")
         await screen("prompt-restored", (text) => text.includes("diff draft") && text.includes("NORMAL") && !text.includes("SESSION"))
         await type("A restored")
@@ -95,10 +97,6 @@ export function diffReader(initial: DiffView = "after", remapped = false) {
             await type("w")
         }
     }
-}
-
-function label(view: DiffView) {
-    return view === "after" ? "After" : view === "before" ? "Before" : "Diff"
 }
 
 function description(view: DiffView) {

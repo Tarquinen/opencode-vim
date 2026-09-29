@@ -7,7 +7,12 @@ export async function dialogMappings({ terminal, probe }: Fixture, mapping = "j"
     await keys("Escape", "C-p")
     await screen("mapped-dialog", (text) => text.includes("Commands") && text.includes("NORMAL"))
     await type("ijOpen settings")
-    await keys("Escape")
+    if (mapping === "jj") {
+        await type("kj")
+        await screen("insert-mapping-normal", async (text) => text.includes("NORMAL") && (await probe()).editor.text === "jOpen settings")
+    } else {
+        await keys("Escape")
+    }
     // A multi-key prefix must reach Vim instead of navigating the host's list.
     await type("0" + mapping)
     // Inspect the input so a matching command-list label cannot satisfy the check.
@@ -72,7 +77,7 @@ export async function dialogScope({ terminal, probe }: Fixture) {
     assert.equal((await probe()).editor.text, "prompt draft")
 }
 
-export async function dialogFocus({ terminal }: Fixture) {
+export async function dialogModeInheritance({ terminal }: Fixture) {
     const { keys, type, screen } = terminal
     await keys("Escape")
     await type("i")
@@ -92,12 +97,6 @@ export async function dialogFocus({ terminal }: Fixture) {
         await screen(`${label}-filtered`, (text) => text.includes("Open settings") && !text.includes("New session"))
         await keys("Escape")
         await screen(`${label}-normal`, (text) => text.includes("Commands") && text.includes("NORMAL"))
-        await type("0dw")
-        await screen(`${label}-edited`, (text) => /^\s+settings\s*$/m.test(text) && text.includes("Open settings"))
-        await type("u")
-        await screen(`${label}-undo`, (text) => /^\s+Open settings\s*$/m.test(text))
-        await keys("C-r")
-        await screen(`${label}-redo`, (text) => /^\s+settings\s*$/m.test(text))
         await keys("Escape")
         await screen(`${label}-closed`, (text) => !text.includes("Commands") && text.includes("original draft") && text.includes(mode))
         if (mode === "NORMAL") {
@@ -106,16 +105,15 @@ export async function dialogFocus({ terminal }: Fixture) {
         }
         await type(" restored")
         await screen(`${label}-restored`, (text) => text.includes("original draft restored"))
-        await keys("Escape")
-        await screen(`${label}-prompt-normal`, (text) => text.includes("NORMAL"))
-        await type("0dw")
-        await screen(`${label}-prompt-edited`, (text) => text.includes("draft restored") && !text.includes("original"))
-        await type("i")
-        await screen(`${label}-prompt-insert`, (text) => text.includes("INSERT"))
         await keys("C-c")
-        await screen(`${label}-cleared`, (text) => !text.includes("draft restored"))
+        await screen(`${label}-cleared`, (text) => !text.includes("original draft restored"))
     }
+}
 
+export async function dialogFocus(fixture: Fixture) {
+    await dialogModeInheritance(fixture)
+    const { terminal, probe } = fixture
+    const { keys, type, screen } = terminal
     await keys("C-p")
     await screen("dialog-navigation-opened", (text) => text.includes("Commands") && text.includes("INSERT"))
     await keys("Escape")
@@ -128,6 +126,15 @@ export async function dialogFocus({ terminal }: Fixture) {
     await screen("dialog-submit-filter", (text) => text.includes("Open settings") && !text.includes("Switch session"))
     await keys("Escape")
     await screen("dialog-submit-normal", (text) => text.includes("Commands") && text.includes("NORMAL"))
+    // Clearing the query must update the results, not just the editor's text.
+    await type("0d$")
+    await screen("dialog-query-cleared", async (text) => (await probe()).editor.text === "" && text.includes("Switch session"))
+    await type("u")
+    await screen("dialog-query-undo", async (text) => (await probe()).editor.text === "Open settings" && !text.includes("Switch session"))
+    await keys("C-r")
+    await screen("dialog-query-redo", async (text) => (await probe()).editor.text === "" && text.includes("Switch session"))
+    await type("u")
+    await screen("dialog-query-restored", async (text) => (await probe()).editor.text === "Open settings" && !text.includes("Switch session"))
     await keys("Enter")
     await screen("dialog-submitted", (text) => text.includes("Settings") && !text.includes("Commands") && text.includes("INSERT"))
     await keys("Escape")
