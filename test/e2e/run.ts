@@ -28,6 +28,7 @@ import { promptClipboard, promptCommandCursor, promptHistory, promptInput } from
 import { permissionMessages } from "./data/permission"
 import { permissionTools } from "./scenarios/permission-tools"
 import { clipboardCancellation } from "./scenarios/clipboard-cancel"
+import { questionForms } from "./scenarios/question-forms"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; source?: boolean; setup?: FixtureSetup }> = [
     { name: "prompt-input", run: promptInput, setup: { vim: { defaultMode: "normal", keymaps: { insert: { kj: "normal" }, normal: { "<Tab>": "x" } } } } },
@@ -45,6 +46,9 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
         probe: true, vim: { keymaps: { normal: { jj: "x" }, insert: { kj: "normal" } } },
     } },
     { name: "dialog-scope", run: dialogScope, setup: { probe: true, cli: { keybinds: { "dialog.select.next": ["down", "tab"], "dialog.select.prev": ["up", "shift+tab"] } } } },
+    { name: "question-forms", run: questionForms() },
+    { name: "question-forms-kj", run: questionForms("kj"), setup: { vim: { keymaps: { insert: { kj: "normal", "<C-s>": "submit" } } } } },
+    { name: "question-forms-zz", run: questionForms("zz"), setup: { vim: { keymaps: { insert: { zz: "<Esc>", "<C-s>": "submit" } } } } },
     { name: "agent-switching", run: agentSwitching },
     { name: "agent-switching-tab-mapping", run: (fixture) => agentSwitching(fixture, true), setup: { vim: { keymaps: { normal: { "<Tab>": "x" } } } } },
     { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
