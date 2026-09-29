@@ -1,5 +1,5 @@
 import type { Context } from "@opencode/plugin/tui/context"
-import type { VimConfig } from "../modules/vim/config"
+import type { VimConfig } from "../vim/config"
 import type { TranscriptItem } from "../transcript-items"
 
 export type ReaderProps = {

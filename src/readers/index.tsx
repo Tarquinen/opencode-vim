@@ -10,8 +10,11 @@ import type { ReaderProps } from "./types"
 export function Reader(props: ReaderProps) {
   props.context.ui.dialog.set({ size: "large", centered: true })
   const source = props.message.source
-  if (source?.type === "shell" || (source?.type === "tool" && source.name === "shell") ||
-    (source?.type === "synthetic" && source.metadata?.source === "shell")) {
+  if (
+    source?.type === "shell" ||
+    (source?.type === "tool" && source.name === "shell") ||
+    (source?.type === "synthetic" && source.metadata?.source === "shell")
+  ) {
     return <ShellReader {...props} source={source} />
   }
   if (source?.type === "tool" && source.name === "read") {

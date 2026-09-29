@@ -1,5 +1,5 @@
 import type { SyntaxStyle, TextareaRenderable, WidthMethod } from "@opentui/core"
-import { displayWidth } from "../../modules/vim/map"
+import { displayWidth } from "../../vim/map"
 
 export function highlightDiff(input: TextareaRenderable, style: SyntaxStyle, widthMethod: WidthMethod) {
   const text = input.plainText

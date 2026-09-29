@@ -1,21 +1,20 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
+import type { Context } from "@opencode/plugin/tui/context"
 import { InputRenderable, KeyEvent, PasteEvent, type CursorStyleOptions } from "@opentui/core"
 import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
-import { applyVimCursorStyle, focusedInput } from "./modules/vim/actions"
-import { createVimConfig } from "./modules/vim/config"
-import { editInput } from "./modules/vim/edit"
-import { keyNotation } from "./modules/vim/keys"
-import { createVimLog } from "./modules/vim/log"
-import { displayToChar } from "./modules/vim/map"
-import { createVimState } from "./modules/vim/state"
-import { createVimeeAdapter } from "./modules/vim/vimee"
-import { VimStatus } from "./modules/vim/status"
+import type { EditorContext } from "./vim/editor"
+import { createVimConfig } from "./vim/config"
+import { editInput } from "./vim/edit"
+import { keyNotation } from "./vim/keys"
+import { createVimLog } from "./vim/log"
+import { displayToChar } from "./vim/map"
+import { createVimState, type VimMode } from "./vim/state"
+import { createVimeeAdapter } from "./vim/vimee"
+import { VimStatus } from "./vim/status"
 import { SESSION_MODE, createSessionMode } from "./session"
 import { createVimClipboard } from "./clipboard"
 import { createFormMode } from "./form"
-
-type Context = Parameters<Parameters<typeof Plugin.define>[0]["setup"]>[0]
 
 export default Plugin.define({
   id: "opencode-vim",
@@ -29,7 +28,12 @@ function VimHost(props: { context: Context }) {
   const normalMappings = Object.keys(config.keymaps.normal ?? {})
   const log = createVimLog(config)
   const clipboard = createVimClipboard(props.context.renderer)
-  const clipboardOptions = { onYank: (text: string) => { void clipboard.write(text) }, readClipboard: clipboard.read }
+  const clipboardOptions = {
+    onYank: (text: string) => {
+      void clipboard.write(text)
+    },
+    readClipboard: clipboard.read,
+  }
   const state = createVimState(config.defaultMode, log)
   const vimee = createVimeeAdapter(state, config, log, clipboardOptions)
   const dialogState = createVimState(config.defaultMode, log)
@@ -41,7 +45,7 @@ function VimHost(props: { context: Context }) {
   const [saved, setSaved] = props.context.storage.store("state", { initial: { enabled: true } })
   const enabled = () => saved.enabled
   const form = createFormMode(props.context, config, log, enabled)
-  const ctx = createCompatContext(props.context)
+  const editorContext = createEditorContext(props.context)
   let cursorMode = ""
   let cursorInput: typeof props.context.renderer.currentFocusedEditor = null
   let originalCursorStyle: CursorStyleOptions | undefined
@@ -50,14 +54,24 @@ function VimHost(props: { context: Context }) {
 
   const removeStatus = props.context.ui.slot({
     prepend: "prompt.footer",
-    render: (footer) =>
-      footer.mode === "normal" ? session.active() && !dialogFocused() ? <session.Status /> : (
+    render: (footer) => {
+      if (footer.mode !== "normal") return null
+      if (session.active() && !dialogFocused()) return <session.Status />
+      return (
         <VimStatus
-          mode={() => dialogFocused() ? dialogState.mode() : state.mode()}
+          mode={() => (dialogFocused() ? dialogState.mode() : state.mode())}
           enabled={enabled}
-          theme={compatTheme(props.context)}
+          theme={{
+            get success() {
+              return props.context.theme.text.feedback.success.base
+            },
+            get warning() {
+              return props.context.theme.text.feedback.warning.base
+            },
+          }}
         />
-      ) : null,
+      )
+    },
   })
 
   props.context.keymap.layer(() => ({
@@ -102,7 +116,7 @@ function VimHost(props: { context: Context }) {
     if (!kind) return
     if (props.context.keymap.pending().length) return
     const { state, vimee } = kind === "dialog" ? dialogVim : promptVim
-    const key = keyNotation(event as never)
+    const key = keyNotation(event)
     if (!key) return
     const mapped = normalMappings.some((sequence) => sequence.startsWith(key))
     if (kind === "prompt" && key === config.sessionKey && !mapped && state.mode() === "normal" && !vimee.isPending()) {
@@ -134,28 +148,30 @@ function VimHost(props: { context: Context }) {
     const before = state.mode()
     let consumed = false
     try {
-      const result = vimee.handle(event as never, key, ctx as never)
+      const result = vimee.handle(event, key, editorContext)
       if (typeof result === "boolean") consumed = result
       else {
         consumed = true
         const queued: Array<KeyEvent | PasteEvent> = []
         pendingKeys = queued
         const input = props.context.renderer.currentFocusedEditor
-        void result.then((handled) => {
-          if (pendingKeys !== queued) return
-          pendingKeys = undefined
-          if (!handled) return
-          syncCursor(true)
-          // Replay through the host too: a queued i may be followed by native typing.
-          for (const event of queued) {
-            if (!enabled() || props.context.renderer.currentFocusedEditor !== input) break
-            if (event instanceof PasteEvent) props.context.renderer.keyInput.emit("paste", event)
-            else props.context.renderer.keyInput.emit("keypress", event)
-          }
-        }).catch((error) => {
-          if (pendingKeys === queued) pendingKeys = undefined
-          log("vim.clipboard.paste.error", { error: String(error) })
-        })
+        void result
+          .then((handled) => {
+            if (pendingKeys !== queued) return
+            pendingKeys = undefined
+            if (!handled) return
+            syncCursor(true)
+            // Replay through the host too: a queued i may be followed by native typing.
+            for (const event of queued) {
+              if (!enabled() || props.context.renderer.currentFocusedEditor !== input) break
+              if (event instanceof PasteEvent) props.context.renderer.keyInput.emit("paste", event)
+              else props.context.renderer.keyInput.emit("keypress", event)
+            }
+          })
+          .catch((error) => {
+            if (pendingKeys === queued) pendingKeys = undefined
+            log("vim.clipboard.paste.error", { error: String(error) })
+          })
       }
     } finally {
       if (consumed || state.mode() !== before) {
@@ -168,13 +184,14 @@ function VimHost(props: { context: Context }) {
 
   // Focus events can fire inside the host's prompt effects. Do not subscribe
   // those effects to Vim state or the keymap registry while syncing the editor.
-  const onFocus = () => untrack(() => {
-    pendingKeys = undefined
-    vimee.suspend()
-    dialogVimee.suspend()
-    syncCursor()
-    form.focus()
-  })
+  const onFocus = () =>
+    untrack(() => {
+      pendingKeys = undefined
+      vimee.suspend()
+      dialogVimee.suspend()
+      syncCursor()
+      form.focus()
+    })
   const onPaste = (event: PasteEvent) => {
     if (event.defaultPrevented) return
     if (!pendingKeys) {
@@ -225,7 +242,7 @@ function VimHost(props: { context: Context }) {
       dialogState.setMode(promptVim.state.mode())
     }
     const mode = state.mode()
-    vimee.attach(ctx)
+    vimee.attach(editorContext)
     const inputChanged = cursorInput !== input
     if (inputChanged) {
       restoreCursor()
@@ -233,10 +250,9 @@ function VimHost(props: { context: Context }) {
       originalCursorStyle = input.cursorStyle
     }
     if (!force && !inputChanged && cursorMode === mode) return
-    if (applyVimCursorStyle(ctx as never, config.cursorStyles[mode])) {
-      cursorMode = mode
-      props.context.renderer.requestRender()
-    }
+    input.cursorStyle = config.cursorStyles[mode]
+    cursorMode = mode
+    props.context.renderer.requestRender()
   }
 
   function restoreCursor() {
@@ -246,18 +262,23 @@ function VimHost(props: { context: Context }) {
   }
 }
 
-function createCompatContext(context: Context) {
-  const prompt = {
-    get current() {
-      return { input: focusedInputValue(context), mode: "normal", parts: [] }
+function createEditorContext(context: Context): EditorContext {
+  return {
+    input: () => (inputKind(context) ? (context.renderer.currentFocusedEditor ?? undefined) : undefined),
+    get widthMethod() {
+      return context.renderer.widthMethod
     },
-    get focused() {
-      return inputKind(context) !== undefined
+    get colors() {
+      return {
+        selection: context.theme.text.feedback.warning.base,
+        yank: context.theme.text.feedback.info.base,
+        background: context.theme.background.base,
+      }
     },
-    set(value: { input: string }) {
+    setText(text) {
       const input = context.renderer.currentFocusedEditor
-      if (input instanceof InputRenderable) input.value = value.input
-      else if (input) editInput(input, value.input, context.renderer.widthMethod)
+      if (input instanceof InputRenderable) input.value = text
+      else if (input) editInput(input, text, context.renderer.widthMethod)
     },
     submit() {
       if (inputKind(context) === "dialog") {
@@ -272,22 +293,11 @@ function createCompatContext(context: Context) {
     blur() {
       context.renderer.currentFocusedEditor?.blur()
     },
-  }
-
-  return {
-    api: {
-      renderer: context.renderer,
-      keymap: {
-        dispatchCommand(command: string) {
-          const ok = context.keymap.commands().some((item) => item.id === command)
-          if (ok) context.keymap.dispatch(command)
-          return { ok }
-        },
-      },
-      theme: { current: compatTheme(context) },
+    dispatchCommand(command) {
+      const ok = context.keymap.commands().some((item) => item.id === command)
+      if (ok) context.keymap.dispatch(command)
+      return { ok }
     },
-    kind: context.ui.router.current().type === "session" ? "session" : "home",
-    prompt: () => (inputKind(context) ? prompt : undefined),
     requestRender: () => context.renderer.requestRender(),
   }
 }
@@ -297,30 +307,20 @@ function inputKind(context: Context): "prompt" | "dialog" | undefined {
   if (!context.renderer.currentFocusedEditor) return
   const commands = context.keymap.commands()
   if (context.keymap.mode.current() === "modal") {
-    if (commands.some((item) => item.id === "dialog.select.submit" || item.id === "dialog.prompt.submit")) return "dialog"
+    if (commands.some((item) => item.id === "dialog.select.submit" || item.id === "dialog.prompt.submit"))
+      return "dialog"
     return
   }
-  if (commands.some(
-    (item) =>
-      item.id === "prompt.submit" || item.id === "prompt.autocomplete.next" || item.id === "prompt.history.previous",
-  )) return "prompt"
+  if (
+    commands.some(
+      (item) =>
+        item.id === "prompt.submit" || item.id === "prompt.autocomplete.next" || item.id === "prompt.history.previous",
+    )
+  )
+    return "prompt"
 }
 
-function focusedInputValue(context: Context) {
-  return context.renderer.currentFocusedEditor?.plainText ?? ""
-}
-
-function compatTheme(context: Context) {
-  return {
-    get background() { return context.theme.background.base },
-    get info() { return context.theme.text.feedback.info.base },
-    get success() { return context.theme.text.feedback.success.base },
-    get warning() { return context.theme.text.feedback.warning.base },
-    get textMuted() { return context.theme.text.muted },
-  }
-}
-
-function passThroughKey(event: KeyEvent, key: string, mode: string, pending: boolean, mapped: boolean) {
+function passThroughKey(event: KeyEvent, key: string, mode: VimMode, pending: boolean, mapped: boolean) {
   if (key === "<Tab>" && event.shift) return true
   if (mode !== "normal") return false
   if (mapped) return false
@@ -328,10 +328,11 @@ function passThroughKey(event: KeyEvent, key: string, mode: string, pending: boo
   return event.super === true || event.meta === true || (isArrowKey(key) && !pending)
 }
 
-function sendCompletionKey(event: KeyEvent, context: Context, key: string, mode: string) {
+function sendCompletionKey(event: KeyEvent, context: Context, key: string, mode: VimMode) {
   if (mode !== "normal") return false
   const command = key === "j" ? "prompt.autocomplete.next" : key === "k" ? "prompt.autocomplete.prev" : undefined
-  if (!command || !isCompletionToken(context) || !context.keymap.commands().some((item) => item.id === command)) return false
+  if (!command || !isCompletionToken(context) || !context.keymap.commands().some((item) => item.id === command))
+    return false
   event.preventDefault()
   event.stopPropagation()
   context.keymap.dispatch(command)

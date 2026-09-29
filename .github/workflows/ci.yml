@@ -43,6 +43,9 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Check formatting
+        run: bun run format:check
+
       - name: Test units and components
         run: bun run test
 

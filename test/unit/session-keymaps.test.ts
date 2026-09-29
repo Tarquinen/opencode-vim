@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test"
-import { createVimConfig } from "../../src/modules/vim/config"
+import { createVimConfig } from "../../src/vim/config"
 import { createSessionKeymaps } from "../../src/session-keys"
 
 test("session toggle accepts a single normal key or control chord, not a sequence", () => {
@@ -8,10 +8,12 @@ test("session toggle accepts a single normal key or control chord, not a sequenc
 })
 
 test("session bindings replace defaults without changing prompt mappings", () => {
-  const config = createVimConfig({ keymaps: {
-    normal: { "<Tab>": "x" },
-    session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" },
-  } })
+  const config = createVimConfig({
+    keymaps: {
+      normal: { "<Tab>": "x" },
+      session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" },
+    },
+  })
   const keys = createSessionKeymaps(config, true)
   expect(config.keymaps.normal).toEqual({ "<Tab>": "x" })
   expect(keys.hint).toBe("<C-w>w")
@@ -41,10 +43,18 @@ test("session sequences expire and cancel without consuming later motions", () =
 })
 
 test("session bindings ignore invalid entries and omit unavailable panel actions", () => {
-  const config = createVimConfig({ keymaps: { session: {
-    "<Tab>": "passthrough", "<C-W>": "switch-panel", "": "switch-panel",
-    "xy": "passthrough", z: "insert", "<C-w>w": "switch-panel",
-  } } })
+  const config = createVimConfig({
+    keymaps: {
+      session: {
+        "<Tab>": "passthrough",
+        "<C-W>": "switch-panel",
+        "": "switch-panel",
+        xy: "passthrough",
+        z: "insert",
+        "<C-w>w": "switch-panel",
+      },
+    },
+  })
   const keys = createSessionKeymaps(config, true)
   expect(keys.hint).toBe("<C-w>w")
   expect(keys.accepts("x")).toBe(false)

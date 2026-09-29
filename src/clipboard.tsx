@@ -1,5 +1,10 @@
 // .tsx lets OpenCode's runtime loader supply its shared OpenTUI imports.
-import { createClipboard, createHostClipboard, createRendererClipboardAdapter, type RendererClipboardBoundary } from "@opentui/core"
+import {
+  createClipboard,
+  createHostClipboard,
+  createRendererClipboardAdapter,
+  type RendererClipboardBoundary,
+} from "@opentui/core"
 
 export type VimClipboard = ReturnType<typeof createVimClipboard>
 
@@ -22,7 +27,9 @@ export function createVimClipboard(renderer: RendererClipboardBoundary) {
         try {
           const result = await clipboard.writeText(text, { destination: "all-available", selection: "clipboard" })
           return result.host.status === "written" || result.terminal.status === "attempted"
-        } catch { return false }
+        } catch {
+          return false
+        }
       })
       writes = result.then(() => {})
       return result
