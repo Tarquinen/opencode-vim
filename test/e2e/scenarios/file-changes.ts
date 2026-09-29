@@ -26,8 +26,10 @@ export async function fileChanges({ terminal }: Fixture) {
         await screen(`file-${index}-selected`, (text) => selectionIs(text, name))
         await keys("Enter")
         await screen(`file-${index}-reader`, (text) => {
-            const content = reader(text)?.content
-            if (!content?.includes(name)) return false
+            const modal = reader(text)
+            if (!modal) return false
+            const content = text.split("\n").slice(modal.top, modal.bottom).map((row) => row.slice(modal.left, modal.right)).join("\n")
+            if (!content.includes(name)) return false
             for (const other of names) {
                 if (other !== name && content.includes(other)) return false
             }

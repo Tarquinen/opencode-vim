@@ -2,7 +2,7 @@ import type { Message } from "../fixture"
 
 const files = [
     { file: "first.ts", status: "modified", additions: 2, deletions: 2,
-        patch: "--- first.ts\n+++ first.ts\n@@ -1,1 +1,1 @@\n-old first\n+new first\n@@ -20,1 +20,1 @@\n-old last\n+new last\n" },
+        patch: '--- first.ts\n+++ first.ts\n@@ -1,1 +1,1 @@\n-const first = "old first";\n+const first = "new first";\n@@ -20,1 +20,1 @@\n-const last = "old last";\n+const last = "new last";\n' },
     { file: "added.ts", status: "added", additions: 1, deletions: 0,
         patch: "--- /dev/null\n+++ added.ts\n@@ -0,0 +1,1 @@\n+added content\n" },
     { file: "deleted.ts", status: "deleted", additions: 0, deletions: 1,

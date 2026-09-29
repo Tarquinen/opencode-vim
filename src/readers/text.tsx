@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/solid */
-import { LineNumberRenderable, type KeyEvent, type TextareaRenderable } from "@opentui/core"
+import { LineNumberRenderable, type KeyEvent, type LineNumberOptions, type TextareaRenderable } from "@opentui/core"
 import { useTerminalDimensions, type JSX } from "@opentui/solid"
 import { createEffect, onCleanup, onMount, Show, untrack } from "solid-js"
 import type { PromptContext } from "../modules/vim/actions"
@@ -12,15 +12,19 @@ import type { ReaderProps } from "./types"
 export function TextReader(props: ReaderProps & {
   title: string; text: string; status?: string; details?: JSX.Element
   label?: string; maxHeight?: number; highlight?: (input: TextareaRenderable) => void
+  switchLabel?: string
   leading?: () => TextareaRenderable
   firstLine?: number
+  gutter?: Pick<LineNumberOptions, "lineNumbers" | "lineSigns" | "hideLineNumbers" | "lineColors">
+  change?: { run: () => void; controls: () => JSX.Element }
 }) {
   const context = props.context
   const dimensions = useTerminalDimensions()
   const theme = () => context.theme.surface("dialog")
   const background = () => props.label ? theme().background.base : theme().background.raised.high
+  const editorBackground = () => props.gutter?.lineColors ? "transparent" : background()
   const state = createVimState("normal")
-  const mappings = createSessionKeymaps(props.config, !!props.leading)
+  const mappings = createSessionKeymaps(props.config, !!props.leading || !!props.change)
   let input!: TextareaRenderable
   let output!: TextareaRenderable
   const adapter = createVimeeAdapter(state, props.config, () => {}, { readOnly: true, onYank: props.copy })
@@ -53,9 +57,14 @@ export function TextReader(props: ReaderProps & {
     event.preventDefault()
     event.stopPropagation()
     if (action === "pending") return
-    if (action === "switch-section") {
-      const next = input === output ? props.leading!() : output
-      next.focus()
+    if (action === "switch-panel") {
+      if (props.change) {
+        adapter.suspend()
+        props.change.run()
+      } else {
+        const next = input === output ? props.leading!() : output
+        next.focus()
+      }
       return
     }
     if (key === props.config.sessionKey && state.mode() === "normal" && !adapter.isPending()) { props.close(); return }
@@ -108,26 +117,30 @@ export function TextReader(props: ReaderProps & {
     output.handleKeyPress = () => true
     output.handlePaste = () => {}
   }} initialValue={props.text} minHeight={1} maxHeight={height()}
-    flexGrow={props.firstLine === undefined ? undefined : 1} minWidth={0}
+    flexGrow={props.firstLine === undefined && !props.gutter ? undefined : 1} minWidth={0}
     wrapMode="word" showCursor cursorStyle={props.config.cursorStyles.normal} textColor={theme().text.base}
-    backgroundColor={background()} focusedBackgroundColor={background()} focusedTextColor={theme().text.base} />
+    backgroundColor={editorBackground()} focusedBackgroundColor={editorBackground()} focusedTextColor={theme().text.base} />
   let body = editor
-  if (props.firstLine !== undefined) {
+  if (props.firstLine !== undefined || props.gutter) {
+    let lastLine = (props.firstLine ?? 1) + props.text.split("\n").length - 1
+    for (const line of props.gutter?.lineNumbers?.values() ?? []) lastLine = Math.max(lastLine, line)
     const gutter = new LineNumberRenderable(context.renderer, {
-      id: "vim-file-lines", lineNumberOffset: props.firstLine - 1,
-      minWidth: String(props.firstLine + props.text.split("\n").length - 1).length + 2,
+      id: "vim-file-lines", lineNumberOffset: (props.firstLine ?? 1) - 1,
+      minWidth: String(lastLine).length + 2, ...props.gutter,
     })
     gutter.add(output)
     createEffect(() => {
       gutter.fg = theme().text.muted
       gutter.bg = background()
       gutter.maxHeight = height()
+      if (props.gutter?.lineColors) gutter.setLineColors(props.gutter.lineColors)
     })
     body = gutter as unknown as JSX.Element
   }
   return (
     <box id="vim-message-reader" gap={1}>
       <ReaderHeader context={context} title={props.title} back={props.back} />
+      {props.change?.controls()}
       {props.details}
       <box paddingLeft={2} paddingRight={2} paddingTop={props.label ? 0 : 1} paddingBottom={props.label ? 0 : 1} backgroundColor={background()}>
         <Show when={props.label}>
@@ -143,7 +156,7 @@ export function TextReader(props: ReaderProps & {
           <text fg={theme().text.muted}>{modeLabel()}</text>
         </Show>
         <text fg={theme().text.muted}>
-          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : `v select${mappings.hint ? ` · ${mappings.hint} switch` : ""} · ${props.config.sessionKey} prompt`)}
+          {props.notice() || (state.mode() !== "normal" ? "y copy · Esc cancel" : `v select${mappings.hint && props.switchLabel ? ` · ${mappings.hint} ${props.switchLabel}` : ""} · ${props.config.sessionKey} prompt`)}
         </text>
       </box>
     </box>

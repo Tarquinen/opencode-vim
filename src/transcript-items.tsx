@@ -6,7 +6,7 @@ import { MarkdownRenderable, TextBufferRenderable, type Renderable } from "@open
 type Message = ReturnType<Context["data"]["session"]["message"]["list"]>[number]
 type GroupKind = "reasoning" | "exploration" | "activity" | "instructions"
 export type TranscriptSource = Message | Extract<Message, { type: "assistant" }>["content"][number]
-export type TranscriptItem = { id: string; author: string; text: string; source?: TranscriptSource }
+export type TranscriptItem = { id: string; author: string; text: string; source?: TranscriptSource; fileIndex?: number }
 export type TranscriptRange = TranscriptItem & {
   node: Renderable
   top: number
@@ -107,13 +107,13 @@ export function transcriptItems(rows: Renderable[], messages: Message[], pending
     if (source?.source?.type === "tool" && source.source.name === "patch") {
       const files = patchFiles(node)
       if (files.length > 1) {
-        for (const [index, file] of files.entries()) add(file, { ...source, id: `${source.id}:file:${index}` }, parentID)
+        for (const [index, file] of files.entries()) add(file, { ...source, id: `${source.id}:file:${index}`, fileIndex: index }, parentID)
         return
       }
     }
     const text = source?.text || textOf(node)
     if (!text.trim()) return
-    ranges.push({ id: source?.id ?? node.id, author: source?.author ?? "Tool", text, source: source?.source, node,
+    ranges.push({ id: source?.id ?? node.id, author: source?.author ?? "Tool", text, source: source?.source, fileIndex: source?.fileIndex, node,
       top: node.y, bottom: node.y + node.height, parentID })
   }
 

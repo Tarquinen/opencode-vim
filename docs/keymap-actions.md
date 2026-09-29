@@ -18,7 +18,7 @@ Each entry maps a key sequence to an action in one Vim mode. Put `keymaps` insid
     },
     "session": {
       "<Tab>": "passthrough",
-      "<C-w>w": "switch-section"
+      "<C-w>w": "switch-panel"
     }
   }
 }
@@ -37,7 +37,7 @@ and its message/tool modals; use `sessionKey` to change the session toggle.
 | `submit` | Submit the prompt or confirm the search dialog |
 | `command:<id>` | Dispatch an active OpenCode command |
 | Vim key sequence, such as `y$` | Run those Vim keys |
-| `switch-section` | Session only: focus the other section and clear visual selection |
+| `switch-panel` | Session only: switch between available panels |
 | `passthrough` | Session only: leave a single key to OpenCode without consuming it |
 
 Insert-mode mappings support only `normal`, `submit`, `command:<id>`, or Escape
@@ -46,8 +46,8 @@ Insert-mode mappings support only `normal`, `submit`, `command:<id>`, or Escape
 Mapping sequences are literal: mapping `j` to `j` uses an actual line, while
 mapping it to `gj` uses a wrapped row.
 
-Session mappings override defaults: `<Tab>` switches sections where available.
-The example above releases Tab to OpenCode and uses Ctrl+W then w instead.
+Session mappings override defaults: `<Tab>` switches panels where available.
+The example above releases Tab to OpenCode and uses Ctrl+W then w to switch panels.
 Native commands still depend on the current UI context.
 
 ## Key notation

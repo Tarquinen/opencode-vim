@@ -30,6 +30,7 @@ test.each(["source", "npm"])("%s plugin shares the host's runtime", async (kind)
         await mkdir(modules)
         await cp(path.join(root, "node_modules/solid-js"), path.join(modules, "solid-js"), { recursive: true })
         await symlink(path.join(root, "node_modules/@vimee"), path.join(modules, "@vimee"))
+        await symlink(path.join(root, "node_modules/diff"), path.join(modules, "diff"))
 
         // A fresh process installs OpenCode's runtime loader before importing the
         // plugin; it must not reuse modules preloaded by the ordinary test suite.

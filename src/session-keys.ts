@@ -21,21 +21,23 @@ export function pageCommand(key: string) {
 
 type SessionBinding = KeybindDefinition & { action: SessionAction }
 
-export function createSessionKeymaps(config: VimConfig, sections: boolean) {
+export function createSessionKeymaps(config: VimConfig, panels: boolean) {
   const map = createKeybindMap()
   const prefixes = new Set<string>()
   let deadline = 0
   let hint = ""
-  const bindings: Record<string, SessionAction> = { "<Tab>": "switch-section", ...config.keymaps.session }
+  const bindings: Record<string, SessionAction> = {
+    "<Tab>": "switch-panel", ...config.keymaps.session,
+  }
   for (const [keys, action] of Object.entries(bindings)) {
-    if (action === "switch-section" && !sections) continue
+    if (action === "switch-panel" && !panels) continue
     try {
       const tokens = parseKeySequence(keys)
       if (action === "passthrough" && tokens.length !== 1) continue
       const binding: SessionBinding = { keys, action }
       map.addKeybind("normal", keys, binding)
       prefixes.add(tokens[0]!)
-      if (action === "switch-section" && !hint) hint = keys === "<Tab>" ? "tab" : keys
+      if (action === "switch-panel" && !hint) hint = keys === "<Tab>" ? "tab" : keys
     } catch {}
   }
 

@@ -106,6 +106,7 @@ for (const grouped of [false, true]) {
             for (const [index, node] of [first, added, deleted].entries()) {
                 const range = ranges[index]
                 expect(range.source).toBe(patch)
+                expect(range.fileIndex).toBe(index)
                 expect(range.node).toBe(node)
                 expect(range.top).toBe(node.y)
                 expect(range.bottom).toBe(node.y + node.height)

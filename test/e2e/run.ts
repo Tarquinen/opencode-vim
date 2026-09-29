@@ -17,6 +17,7 @@ import { readMessages } from "./data/read"
 import { readReader } from "./scenarios/read-reader"
 import { fileChangeMessages } from "./data/file-changes"
 import { fileChanges } from "./scenarios/file-changes"
+import { diffReader } from "./scenarios/diff-reader"
 
 const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>; setup?: FixtureSetup }> = [
     { name: "tab-switching", run: tabSwitching },
@@ -29,13 +30,19 @@ const scenarios: Array<{ name: string; run: (fixture: Fixture) => Promise<void>;
     { name: "read-reader-low-detail", run: readReader, setup: { messages: readMessages, cli: { session: { verbosity: "low" } } } },
     { name: "file-changes", run: fileChanges, setup: { messages: fileChangeMessages, cli: { diffs: { view: "unified" } } } },
     { name: "file-changes-low-detail", run: fileChanges, setup: { messages: fileChangeMessages, cli: { session: { verbosity: "low" }, diffs: { view: "split" } } } },
+    { name: "diff-reader", run: diffReader(), setup: { messages: fileChangeMessages } },
+    { name: "diff-reader-before", run: diffReader("before", true), setup: { messages: fileChangeMessages, vim: {
+        diffView: "before", keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } },
+    } } },
+    { name: "diff-reader-low-detail", run: diffReader("diff"), setup: { messages: fileChangeMessages,
+        cli: { session: { verbosity: "low" }, diffs: { view: "split" } }, vim: { diffView: "diff" } } },
     { name: "session-keymaps", run: sessionKeymaps, setup: {
         messages: shellMessages, cli: { keybinds: { "session.new": "tab" } },
-        vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-section" } } },
+        vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } },
     } },
     { name: "session-agent-binding", run: sessionAgentBinding, setup: {
         messages: shellMessages, cli: { keybinds: { "agent.cycle": "tab", "dialog.select.next": "tab" } },
-        vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-section" } } },
+        vim: { keymaps: { session: { "<Tab>": "passthrough", "<C-w>w": "switch-panel" } } },
     } },
 ]
 for (const animations of [true, false]) {

@@ -28,7 +28,7 @@ export function ShellReader(props: ReaderProps & { source: ShellSource }) {
     </box>
   }>{(data) => <TextReader {...props} title="Shell output" status={data().status}
     text={data().output ? data().output.replace(/\n$/, "") : "No captured output."}
-    label="Output" leading={() => command} highlight={(input) => highlightDiff(input, syntax, props.context.renderer.widthMethod)}
+    label="Output" switchLabel="switch section" leading={() => command} highlight={(input) => highlightDiff(input, syntax, props.context.renderer.widthMethod)}
     maxHeight={Math.max(1, Math.min(30, dimensions().height - commandHeight() - (data().notice ? 12 : 10)))}
     details={<box paddingLeft={2} paddingRight={2}>
       <box flexDirection="row" gap={2}>
