@@ -35,6 +35,7 @@ import { permissionMessages } from "./data/permission"
 import { permissionTools } from "./scenarios/permission-tools"
 import { clipboardCancellation } from "./scenarios/clipboard-cancel"
 import { questionForms } from "./scenarios/question-forms"
+import { composerNavigation } from "./scenarios/composer-navigation"
 
 const scenarios: Array<{
   name: string
@@ -79,6 +80,11 @@ const scenarios: Array<{
     },
   },
   { name: "question-forms", run: questionForms() },
+  {
+    name: "composer-navigation",
+    run: composerNavigation,
+    setup: { probe: true, cli: { session: { terminal: true } } },
+  },
   {
     name: "question-forms-kj",
     run: questionForms("kj"),

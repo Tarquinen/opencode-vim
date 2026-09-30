@@ -82,6 +82,17 @@ The footer follows the active editor's mode. Closing the dialog restores the
 prompt's mode or the session footer. Prompt and dialog edits have separate undo
 histories.
 
+## Subagents, Shell, and Terminals
+
+The panel opened with Down uses Vim navigation regardless of the prompt's mode.
+Use `h`/`l` to switch tabs and `j`/`k` to move between entries. Enter selects an
+entry; `Esc` or `Ctrl+[` closes the panel. Arrow keys and existing shortcuts such
+as `Ctrl+a` to show inactive subagents still work.
+
+Navigation follows OpenCode's behavior, including wrapping and returning to the
+prompt when moving up from the first subagent or shell entry. Closing the panel
+preserves your prompt text and Vim mode.
+
 ## Questions
 
 Questions start in normal mode. `j`/`k` move between every answer, including away

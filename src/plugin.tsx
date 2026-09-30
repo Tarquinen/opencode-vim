@@ -15,6 +15,7 @@ import { VimStatus } from "./vim/status"
 import { SESSION_MODE, createSessionMode } from "./ui/session"
 import { createVimClipboard } from "./clipboard"
 import { createFormMode } from "./ui/form"
+import { handleComposerKey } from "./ui/composer"
 
 export default Plugin.define({
   id: "opencode-vim",
@@ -105,6 +106,7 @@ function VimHost(props: { context: Context }) {
   const onKey = (event: KeyEvent) => {
     if (!enabled() || event.defaultPrevented) return
     if (form.handle(event)) return
+    if (handleComposerKey(props.context, event)) return
     if (pendingKeys) {
       pendingKeys.push(new KeyEvent(event))
       event.preventDefault()
