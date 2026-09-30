@@ -1,14 +1,15 @@
 import type { Context } from "@opencode/plugin/tui/context"
 import { KeyEvent, PasteEvent, type CursorStyleOptions } from "@opentui/core"
 import { createEffect, onCleanup, Show, untrack } from "solid-js"
-import type { EditorContext } from "./vim/editor"
-import type { VimConfig } from "./vim/config"
-import { editInput } from "./vim/edit"
-import { keyNotation } from "./vim/keys"
-import type { VimLog } from "./vim/log"
-import { createVimState } from "./vim/state"
-import { createVimeeAdapter } from "./vim/vimee"
-import { VimStatus } from "./vim/status"
+import type { EditorContext } from "../vim/editor"
+import type { VimConfig } from "../vim/config"
+import { editInput } from "../vim/edit"
+import { keyNotation } from "../vim/keys"
+import type { VimLog } from "../vim/log"
+import { createVimState } from "../vim/state"
+import { createVimeeAdapter } from "../vim/vimee"
+import { VimStatus } from "../vim/status"
+import { sendNativeKey, vimArrowKeys } from "./native-keys"
 
 export function createFormMode(context: Context, config: VimConfig, log: VimLog, enabled: () => boolean) {
   const state = createVimState("normal", log)
@@ -100,24 +101,10 @@ export function createFormMode(context: Context, config: VimConfig, log: VimLog,
   }
 
   function sendKey(name: string, sequence: string) {
-    // Form actions are inline host bindings, without dispatchable command IDs.
+    // Forwarded numeric shortcuts must bypass the form's key handler.
     forwarding = true
     try {
-      context.renderer.keyInput.emit(
-        "keypress",
-        new KeyEvent({
-          name,
-          sequence,
-          raw: sequence,
-          ctrl: false,
-          meta: false,
-          shift: false,
-          option: false,
-          number: false,
-          eventType: "press",
-          source: "raw",
-        }),
-      )
+      sendNativeKey(context, name, sequence)
     } finally {
       forwarding = false
     }
@@ -195,13 +182,7 @@ export function createFormMode(context: Context, config: VimConfig, log: VimLog,
       }
       return true
     }
-    const arrows: Record<string, [string, string]> = {
-      h: ["left", "\x1b[D"],
-      j: ["down", "\x1b[B"],
-      k: ["up", "\x1b[A"],
-      l: ["right", "\x1b[C"],
-    }
-    const arrow = arrows[key]
+    const arrow = vimArrowKeys[key]
     if (arrow) {
       consume(event)
       sendKey(...arrow)

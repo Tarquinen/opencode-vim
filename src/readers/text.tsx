@@ -6,7 +6,7 @@ import type { EditorContext } from "../vim/editor"
 import { displayWidth } from "../vim/map"
 import { createVimState } from "../vim/state"
 import { createVimeeAdapter } from "../vim/vimee"
-import { createSessionKeymaps, pageCommand, sessionModeKey } from "../session-keys"
+import { createSessionKeymaps, pageCommand, sessionModeKey } from "../ui/session-keys"
 import type { ReaderProps } from "./types"
 
 export function TextReader(

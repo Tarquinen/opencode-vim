@@ -12,9 +12,9 @@ import { displayToChar } from "./vim/map"
 import { createVimState, type VimMode } from "./vim/state"
 import { createVimeeAdapter } from "./vim/vimee"
 import { VimStatus } from "./vim/status"
-import { SESSION_MODE, createSessionMode } from "./session"
+import { SESSION_MODE, createSessionMode } from "./ui/session"
 import { createVimClipboard } from "./clipboard"
-import { createFormMode } from "./form"
+import { createFormMode } from "./ui/form"
 
 export default Plugin.define({
   id: "opencode-vim",

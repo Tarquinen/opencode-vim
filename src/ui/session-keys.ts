@@ -1,8 +1,8 @@
 import type { Context } from "@opencode/plugin/tui/context"
 import type { KeyEvent } from "@opentui/core"
 import { createKeybindMap, parseKeySequence, type KeybindDefinition } from "@vimee/core"
-import type { SessionAction, VimConfig } from "./vim/config"
-import { keyNotation } from "./vim/keys"
+import type { SessionAction, VimConfig } from "../vim/config"
+import { keyNotation } from "../vim/keys"
 
 export function sessionModeKey(
   context: Context,
