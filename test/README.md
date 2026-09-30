@@ -37,6 +37,8 @@ configuration fallback stays in unit tests.
 | Dialog query changes and command selection | | `dialog-focus`, `dialog-focus-normal`, `dialog-mappings`, `dialog-multikey-mappings`, `dialog-scope`, `prompt-dialog` (mode inheritance, filtered results after edit/undo/redo, insert/normal mappings, undo isolation, mapping-prefix priority, native navigation, pending motions and unrelated extension input) |
 | Question form navigation, custom answers, insert mappings, submission/cancellation and prompt restoration | | `question-forms`, `question-forms-kj`, `question-forms-zz` |
 | Subagent/shell/terminal panel Vim navigation, native shortcuts, disabled-plugin passthrough and prompt restoration | | `composer-navigation` |
+| Real PTY passthrough, focus isolation, route/removal/disable/unload and nested Neovim | | `terminal-focus`, `terminal-application` |
+| Ctrl+/ terminal creation/focus/hide, Alt+h/l pane focus, modern/legacy encodings, prompt modes/cursor styles and child input isolation | | `terminal-toggle`, `terminal-application` |
 | Native prompt history, exit on movement, Unicode edits and mapped-command cursor preservation | | `prompt-history`, `prompt-command-cursor` |
 | Session entry/exit, toggle key scope, mappings, control chords, narrow status layout | `unit/session-keymaps.test.ts` | `session-key-*`, `session-empty`, `session-keymaps`, `session-agent-binding` |
 | Session and reader lifecycle, route changes, replacement dialogs and disable | `integration/readers/text.test.ts` | `session-lifecycle`, `runtime-*`, `message-reader` (including delayed host refocus) |

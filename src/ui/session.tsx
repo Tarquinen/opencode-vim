@@ -48,7 +48,7 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     context.renderer.requestRender()
   }
 
-  function close() {
+  function close(restoreFocus = true) {
     if (!active()) return
     clearYankFlash()
     if (reading()) context.ui.dialog.clear()
@@ -61,6 +61,7 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     transcript = undefined
     const route = context.ui.router.current()
     if (
+      restoreFocus &&
       context.keymap.mode.current() === "base" &&
       route.type === "session" &&
       route.sessionID === sessionID &&
@@ -197,12 +198,31 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     const route = context.ui.router.current()
     if (active() && (route.type !== "session" || route.sessionID !== sessionID)) untrack(close)
   })
-  onMount(() => context.renderer.keyInput.prependListener("keypress", onKey))
+  const onFocus = () =>
+    untrack(() => {
+      const focused = context.renderer.currentFocusedRenderable
+      // Dialog disposal briefly focuses the saved prompt before restoring our
+      // target. Both belong to the session pane, so neither is a pane switch.
+      if (
+        active() &&
+        !reading() &&
+        context.keymap.mode.current() === SESSION_MODE &&
+        focused &&
+        focused !== focusTarget &&
+        focused !== prompt
+      )
+        close(false)
+    })
+  onMount(() => {
+    context.renderer.keyInput.prependListener("keypress", onKey)
+    context.renderer.on("focused_renderable", onFocus)
+  })
   onCleanup(() => {
     disposed = true
     close()
     if (noticeTimer) clearTimeout(noticeTimer)
     context.renderer.keyInput.off("keypress", onKey)
+    context.renderer.off("focused_renderable", onFocus)
   })
 
   return {

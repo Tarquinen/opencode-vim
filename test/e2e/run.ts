@@ -36,6 +36,7 @@ import { permissionTools } from "./scenarios/permission-tools"
 import { clipboardCancellation } from "./scenarios/clipboard-cancel"
 import { questionForms } from "./scenarios/question-forms"
 import { composerNavigation } from "./scenarios/composer-navigation"
+import { terminalFocus, terminalApplication, terminalToggle } from "./scenarios/terminal"
 
 const scenarios: Array<{
   name: string
@@ -84,6 +85,13 @@ const scenarios: Array<{
     name: "composer-navigation",
     run: composerNavigation,
     setup: { probe: true, cli: { session: { terminal: true } } },
+  },
+  { name: "terminal-focus", run: terminalFocus, setup: { probe: true, cli: { session: { terminal: true } } } },
+  { name: "terminal-toggle", run: terminalToggle, setup: { probe: true, cli: { session: { terminal: true } } } },
+  {
+    name: "terminal-application",
+    run: terminalApplication,
+    setup: { probe: true, cli: { session: { terminal: true } }, vim: { keymaps: { insert: { kj: "normal" } } } },
   },
   {
     name: "question-forms-kj",

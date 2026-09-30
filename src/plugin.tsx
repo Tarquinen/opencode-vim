@@ -16,6 +16,7 @@ import { SESSION_MODE, createSessionMode } from "./ui/session"
 import { createVimClipboard } from "./clipboard"
 import { createFormMode } from "./ui/form"
 import { handleComposerKey } from "./ui/composer"
+import { createTerminalControls } from "./ui/terminal"
 
 export default Plugin.define({
   id: "opencode-vim",
@@ -51,11 +52,18 @@ function VimHost(props: { context: Context }) {
   let cursorInput: typeof props.context.renderer.currentFocusedEditor = null
   let originalCursorStyle: CursorStyleOptions | undefined
   const session = createSessionMode(props.context, config, clipboard)
+  const terminal = createTerminalControls(
+    props.context,
+    enabled,
+    () => session.active() || (state.mode() === "normal" && props.context.keymap.mode.current() === "base"),
+  )
   let pendingKeys: Array<KeyEvent | PasteEvent> | undefined
+  let disposed = false
 
   const removeStatus = props.context.ui.slot({
     prepend: "prompt.footer",
     render: (footer) => {
+      if (enabled() && terminal.focused()) return <terminal.Status />
       if (footer.mode !== "normal") return null
       if (session.active() && !dialogFocused()) return <session.Status />
       return (
@@ -105,6 +113,7 @@ function VimHost(props: { context: Context }) {
 
   const onKey = (event: KeyEvent) => {
     if (!enabled() || event.defaultPrevented) return
+    if (terminal.handle(event)) return
     if (form.handle(event)) return
     if (handleComposerKey(props.context, event)) return
     if (pendingKeys) {
@@ -193,6 +202,11 @@ function VimHost(props: { context: Context }) {
       dialogVimee.suspend()
       syncCursor()
       form.focus()
+      // Host focus effects can reset the cursor after this event. Reapply the
+      // Vim style once those effects have settled, without changing the mode.
+      queueMicrotask(() => {
+        if (!disposed) untrack(() => syncCursor(true))
+      })
     })
   const onPaste = (event: PasteEvent) => {
     if (event.defaultPrevented) return
@@ -215,6 +229,7 @@ function VimHost(props: { context: Context }) {
     route = next
   })
   onCleanup(() => {
+    disposed = true
     pendingKeys = undefined
     removeStatus()
     session.close()
