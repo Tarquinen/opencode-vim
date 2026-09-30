@@ -1,3 +1,4 @@
+// .tsx lets source plugins share the host's OpenTUI runtime.
 import type { Context } from "@opencode/plugin/tui/context"
 import { KeyEvent } from "@opentui/core"
 
