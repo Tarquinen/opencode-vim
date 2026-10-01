@@ -38,6 +38,8 @@ export async function dialogScope({ terminal, probe }: Fixture) {
   const { keys, type, screen } = terminal
   await type("prompt draft")
   await keys("Escape")
+  // tmux queues keys; wait for Escape before opening a dialog over HTTP.
+  await screen("prompt-normal", (text) => text.includes("prompt draft") && text.includes("NORMAL"))
   // Use OpenCode's actual select dialog with multiple known choices. Submit
   // after a pending Vim motion so accidental host navigation is observable.
   for (const motion of ["fj", "fk", "dj", "dk"]) {
