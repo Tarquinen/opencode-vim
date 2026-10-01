@@ -1,5 +1,5 @@
 import { Plugin } from "@opencode/plugin/tui"
-import { InputRenderable, rgbToHex } from "@opentui/core"
+import { EmbeddedTerminalRenderable, InputRenderable, rgbToHex, type Renderable } from "@opentui/core"
 
 // Runs inside real OpenCode. This is a driver/inspector, not a host substitute:
 // all focus, modes, dialogs, routes, commands and plugin disposal belong to it.
@@ -37,6 +37,13 @@ export default Plugin.define({
         // Observe after Solid/focus callbacks and clipboard continuations.
         await new Promise<void>((resolve) => setImmediate(resolve))
         const editor = context.renderer.currentFocusedEditor
+        const terminals: Array<{ id: string; focused: boolean; text: string }> = []
+        function inspectTerminals(node: Renderable) {
+          if (node instanceof EmbeddedTerminalRenderable)
+            terminals.push({ id: node.id, focused: node.focused, text: node.screen().text })
+          for (const child of node.getChildren()) inspectTerminals(child)
+        }
+        inspectTerminals(context.renderer.root)
         function inspect(input: typeof editor) {
           if (!input) return null
           if (input.isDestroyed) return { destroyed: true }
@@ -44,6 +51,7 @@ export default Plugin.define({
             destroyed: false,
             text: input instanceof InputRenderable ? input.value : input.plainText,
             cursor: input.cursorOffset,
+            cursorStyle: input.cursorStyle,
             selected: input.hasSelection(),
             id: input.id,
           }
@@ -55,6 +63,7 @@ export default Plugin.define({
           mode: context.keymap.mode.current(),
           route: context.ui.router.current(),
           listeners: context.renderer.keyInput.listenerCount("keypress"),
+          terminals,
           colors: {
             foreground: rgbToHex(context.theme.background.base),
             background: rgbToHex(context.theme.text.feedback.info.base),

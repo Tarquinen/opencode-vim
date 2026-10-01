@@ -93,6 +93,41 @@ Navigation follows OpenCode's behavior, including wrapping and returning to the
 prompt when moving up from the first subagent or shell entry. Closing the panel
 preserves your prompt text and Vim mode.
 
+## Live side terminals
+
+From prompt normal mode or transcript browsing, `Ctrl+/` opens or focuses the
+side terminal. In live terminal input, it hides the pane and
+returns to the prompt without terminating the process. If no terminal exists,
+OpenCode creates one. While the terminal has focus, a single footer below the
+prompt shows `TERMINAL · Alt+h/l swap · Ctrl+/ hide`, styled like the session footer.
+
+`Alt+h` focuses OpenCode and `Alt+l` focuses the visible right pane, including
+while typing in the prompt. These switch focus without hiding or creating a
+terminal. They are reserved from the child; shell Backspace and `Ctrl+l`
+clear-screen remain native.
+
+`Ctrl+_` is accepted too because legacy terminals encode `Ctrl+/` that way. This
+chord is reserved rather than sent to the child, where it commonly means undo.
+Disabling Vim restores native behavior.
+
+Remap or disable these defaults through `keymaps.panes`; see
+[Pane controls](./configuration.md#pane-controls). Both live input interception
+and the footer follow those mappings. Existing editor `command:` mappings can
+also call `opencode-vim.terminal.toggle`.
+
+The live terminal sends input directly to its shell or application. Ordinary
+Vim keys, Escape, and prompt mappings are not intercepted: Neovim, shell history,
+and interactive tools keep their own bindings.
+
+There is no plugin-specific history or copy mode. Use OpenCode's native mouse-wheel
+scrollback and selection, or the shell/application's own commands. `Ctrl+\ Ctrl+n`
+is not intercepted. Prompt text and Vim mode remain separate from terminal input.
+
+OpenCode's native leader shortcuts still manage the live panes: `Ctrl+x` followed
+by Left/Right changes focus, Down opens the terminal picker, and Up hides the
+terminal without terminating its process. Leaving transcript browsing for another
+pane ends session mode so it cannot swallow terminal input.
+
 ## Questions
 
 Questions start in normal mode. `j`/`k` move between every answer, including away

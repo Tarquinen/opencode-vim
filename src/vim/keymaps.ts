@@ -57,10 +57,17 @@ export function insertHostAction(definition: KeybindDefinition): HostKeybindActi
   return undefined
 }
 
-function keybindAction(action: string): HostKeybindDefinition {
+export function mappedCommand(action: string): string | undefined {
   if (action.startsWith("command:")) {
     const command = action.slice(8).trim()
     if (!command) throw new Error("Command name is required")
+    return command
+  }
+}
+
+function keybindAction(action: string): HostKeybindDefinition {
+  const command = mappedCommand(action)
+  if (command) {
     return {
       execute: () => [{ type: "command", command } as unknown as VimAction],
       hostAction: "command",
