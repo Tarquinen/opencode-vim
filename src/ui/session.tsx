@@ -2,13 +2,13 @@
 import type { Context } from "@opencode/plugin/tui/context"
 import { BoxRenderable, type KeyEvent } from "@opentui/core"
 import { createEffect, createSignal, onCleanup, onMount, untrack } from "solid-js"
-import type { VimConfig } from "./modules/vim/config"
-import { YANK_FLASH_MS } from "./modules/vim/vimee"
-import { Reader } from "./readers"
+import type { VimConfig } from "../vim/config"
+import { YANK_FLASH_MS } from "../vim/vimee"
+import { Reader } from "../readers"
 import { createSessionKeymaps, pageCommand, sessionModeKey } from "./session-keys"
-import { createTranscriptSelection } from "./transcript"
-import type { TranscriptItem } from "./transcript-items"
-import type { VimClipboard } from "./clipboard"
+import { createTranscriptSelection } from "../transcript"
+import type { TranscriptItem } from "../transcript-items"
+import type { VimClipboard } from "../clipboard"
 
 export const SESSION_MODE = "opencode-vim.session"
 
@@ -48,7 +48,7 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     context.renderer.requestRender()
   }
 
-  function close() {
+  function close(restoreFocus = true) {
     if (!active()) return
     clearYankFlash()
     if (reading()) context.ui.dialog.clear()
@@ -60,8 +60,15 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     focusTarget = undefined
     transcript = undefined
     const route = context.ui.router.current()
-    if (context.keymap.mode.current() === "base" && route.type === "session"
-      && route.sessionID === sessionID && prompt && !prompt.isDestroyed) prompt.focus()
+    if (
+      restoreFocus &&
+      context.keymap.mode.current() === "base" &&
+      route.type === "session" &&
+      route.sessionID === sessionID &&
+      prompt &&
+      !prompt.isDestroyed
+    )
+      prompt.focus()
     prompt = null
     context.renderer.requestRender()
   }
@@ -83,7 +90,11 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     // Dialogs remember their previous focus, even after they close. Own that
     // target so destroying it on exit prevents a later refocus from stealing input.
     focusTarget = new BoxRenderable(context.renderer, {
-      id: "vim-session-focus", position: "absolute", width: 0, height: 0, focusable: true,
+      id: "vim-session-focus",
+      position: "absolute",
+      width: 0,
+      height: 0,
+      focusable: true,
     })
     context.renderer.root.add(focusTarget)
     focusTarget.focus()
@@ -108,14 +119,26 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
   function openMessage(message: TranscriptItem) {
     focusTarget?.focus()
     setReading(message)
-    context.ui.dialog.show(() => (
-      <Reader context={context} config={config} sessionID={sessionID} message={message} offset={positions.get(message.id) ?? 0}
-        copy={copy} notice={notice} remember={(offset) => positions.set(message.id, offset)}
-        back={() => context.ui.dialog.clear()} close={close} />
-    ), () => {
-      setReading(undefined)
-      setNotice("")
-    })
+    context.ui.dialog.show(
+      () => (
+        <Reader
+          context={context}
+          config={config}
+          sessionID={sessionID}
+          message={message}
+          offset={positions.get(message.id) ?? 0}
+          copy={copy}
+          notice={notice}
+          remember={(offset) => positions.set(message.id, offset)}
+          back={() => context.ui.dialog.clear()}
+          close={close}
+        />
+      ),
+      () => {
+        setReading(undefined)
+        setNotice("")
+      },
+    )
   }
 
   const onKey = (event: KeyEvent) => {
@@ -127,17 +150,29 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     event.stopPropagation()
     clearYankFlash()
     setNotice("")
-    if (key === config.sessionKey || key === "<Esc>" || key === "<C-[>") { close(); return }
-    if (/^[0-9]$/.test(key) && (count || key !== "0")) { count = (count + key).slice(0, 6); return }
+    if (key === config.sessionKey || key === "<Esc>" || key === "<C-[>") {
+      close()
+      return
+    }
+    if (/^[0-9]$/.test(key) && (count || key !== "0")) {
+      count = (count + key).slice(0, 6)
+      return
+    }
     const amount = Number(count) || 1
     count = ""
     const previous = prefix
     prefix = ""
     let command = pageCommand(key)
-    if (key === "j" || key === "<Down>") { transcript?.move("next", amount); return }
-    else if (key === "k" || key === "<Up>") { transcript?.move("previous", amount); return }
-    else if (key === "G") { transcript?.latest(); return }
-    else if (key === "g" && previous === "g") command = "session.first"
+    if (key === "j" || key === "<Down>") {
+      transcript?.move("next", amount)
+      return
+    } else if (key === "k" || key === "<Up>") {
+      transcript?.move("previous", amount)
+      return
+    } else if (key === "G") {
+      transcript?.latest()
+      return
+    } else if (key === "g" && previous === "g") command = "session.first"
     else if (key === "y" && previous === "y") {
       const message = selected()
       if (message) {
@@ -163,20 +198,43 @@ export function createSessionMode(context: Context, config: VimConfig, clipboard
     const route = context.ui.router.current()
     if (active() && (route.type !== "session" || route.sessionID !== sessionID)) untrack(close)
   })
-  onMount(() => context.renderer.keyInput.prependListener("keypress", onKey))
+  const onFocus = () =>
+    untrack(() => {
+      const focused = context.renderer.currentFocusedRenderable
+      // Dialog disposal briefly focuses the saved prompt before restoring our
+      // target. Both belong to the session pane, so neither is a pane switch.
+      if (
+        active() &&
+        !reading() &&
+        context.keymap.mode.current() === SESSION_MODE &&
+        focused &&
+        focused !== focusTarget &&
+        focused !== prompt
+      )
+        close(false)
+    })
+  onMount(() => {
+    context.renderer.keyInput.prependListener("keypress", onKey)
+    context.renderer.on("focused_renderable", onFocus)
+  })
   onCleanup(() => {
     disposed = true
     close()
     if (noticeTimer) clearTimeout(noticeTimer)
     context.renderer.keyInput.off("keypress", onKey)
+    context.renderer.off("focused_renderable", onFocus)
   })
 
   return {
-    active, enter, close,
+    active,
+    enter,
+    close,
     Status() {
-      return <text fg={context.theme.text.feedback.info.base} flexShrink={0} wrapMode="none">
-        {notice() || `SESSION · Enter open · yy copy · ${config.sessionKey} prompt`}
-      </text>
+      return (
+        <text fg={context.theme.text.feedback.info.base} flexShrink={0} wrapMode="none">
+          {notice() || `SESSION · Enter open · yy copy · ${config.sessionKey} prompt`}
+        </text>
+      )
     },
   }
 }

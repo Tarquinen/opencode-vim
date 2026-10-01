@@ -20,22 +20,32 @@ export function shellSnapshot(source: ShellSource): ShellSnapshot {
     const command = source.description ?? ""
     const shellID = typeof metadata.shellID === "string" ? metadata.shellID : undefined
     const prefix = `<shell id="${metadata.jobID ?? shellID}" state="${metadata.state}" command="${command}">\n`
-    const output = source.text.startsWith(prefix) && source.text.endsWith("\n</shell>")
-      ? source.text.slice(prefix.length, -"\n</shell>".length) : source.text
+    const output =
+      source.text.startsWith(prefix) && source.text.endsWith("\n</shell>")
+        ? source.text.slice(prefix.length, -"\n</shell>".length)
+        : source.text
     let status = "Completed"
     if (metadata.state === "error") status = "Failed"
     else if (metadata.state === "cancelled") status = "Cancelled"
     else if (metadata.timeout === true) status = "Timed out"
     else if (typeof metadata.signal === "string") status = `Killed · ${metadata.signal}`
     else if (typeof metadata.exit === "number") status = shellStatus("exited", metadata.exit)
-    return { command, shellID, status, output: cleanOutput(output), notice: metadata.truncated === true ? "Saved output is truncated" : "" }
+    return {
+      command,
+      shellID,
+      status,
+      output: cleanOutput(output),
+      notice: metadata.truncated === true ? "Saved output is truncated" : "",
+    }
   }
-  if (source.type === "shell") return {
-    command: source.command, shellID: source.shellID,
-    status: shellStatus(source.status, source.exit),
-    output: cleanOutput(source.output?.output ?? ""),
-    notice: source.output?.truncated ? "Saved output is truncated" : "",
-  }
+  if (source.type === "shell")
+    return {
+      command: source.command,
+      shellID: source.shellID,
+      status: shellStatus(source.status, source.exit),
+      output: cleanOutput(source.output?.output ?? ""),
+      notice: source.output?.truncated ? "Saved output is truncated" : "",
+    }
   const state = source.state
   if (state.status === "streaming") return { command: "", status: "Receiving command…", output: "", notice: "" }
   const metadata = state.metadata ?? {}
@@ -59,7 +69,9 @@ export function shellSnapshot(source: ShellSource): ShellSnapshot {
     command: typeof state.input.command === "string" ? state.input.command : "",
     workdir: typeof state.input.workdir === "string" ? state.input.workdir : undefined,
     shellID: typeof metadata.shellID === "string" ? metadata.shellID : undefined,
-    status, output: cleanOutput(output), notice: metadata.truncated === true ? "Saved output is truncated" : "",
+    status,
+    output: cleanOutput(output),
+    notice: metadata.truncated === true ? "Saved output is truncated" : "",
   }
 }
 
@@ -87,7 +99,10 @@ export async function loadShell(context: Context, sessionID: string, source: She
     const info = shell.data
     const page = output.data
     return {
-      ...snapshot, command: info.command, workdir: info.cwd, status: shellStatus(info.status, info.exit),
+      ...snapshot,
+      command: info.command,
+      workdir: info.cwd,
+      status: shellStatus(info.status, info.exit),
       output: cleanOutput(page.output),
       notice: page.cursor < page.size ? "Output truncated · showing first 1 MiB" : "",
     }

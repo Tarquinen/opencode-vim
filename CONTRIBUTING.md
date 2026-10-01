@@ -50,6 +50,18 @@ resolve the latest OpenCode release. Downloaded binaries are cached under
 
 Use `bun run build` to build the plugin into `dist/`.
 
+Run `bun run format` to format the code, or `bun run format:check` to check it.
+
+## Code layout
+
+- `tui.tsx` re-exports the plugin entry point from `src/plugin.tsx`.
+- `src/vim/` contains the editing adapter, editor interface, keymaps, and text objects.
+- `src/ui/` contains UI-specific Vim handling: composer tabs, question forms,
+  transcript navigation, and live terminal controls. Shared native-key
+  forwarding lives in `native-keys.tsx`.
+- `src/plugin.tsx` wires the handlers together and routes keyboard events.
+- `src/readers/` contains the message and tool-output readers.
+
 ## Adding tests
 
 Put unit tests in `test/unit/`, integration tests in `test/integration/`, and
