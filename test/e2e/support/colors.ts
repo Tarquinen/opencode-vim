@@ -84,7 +84,17 @@ export function yankFlashMatches(before: string, after: string, colors: { foregr
           .includes("SESSION")
       )
         continue
-      if (JSON.stringify(trim(row)) !== JSON.stringify(trim(actual))) return false
+      const expected = trim(row)
+      const observed = trim(actual)
+      if (expected.length !== observed.length) return false
+      // The composer's border/agent foreground also animates independently.
+      const composer = row.some((cell) => cell.text === "┃" || cell.text === "╹")
+      for (let x = 0; x < expected.length; x++) {
+        const before = expected[x]
+        const after = observed[x]
+        if (before.text !== after.text || before.background !== after.background) return false
+        if (!composer && before.foreground !== after.foreground) return false
+      }
     }
   }
   return painted

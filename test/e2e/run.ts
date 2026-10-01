@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
+import { availableParallelism } from "node:os"
 import path from "node:path"
-import { runWithFixture, type Fixture, type FixtureSetup } from "./support/fixture"
+import { runWithFixture, type Fixture, type FixtureSetup, type FixtureTimings } from "./support/fixture"
 import { installOpenCode } from "./support/opencode"
 import { copySourcePlugin, packPlugin } from "./support/plugin"
 import { agentSwitching } from "./scenarios/agent-switching"
@@ -342,6 +343,9 @@ const requested = Bun.argv.slice(2)
 for (const name of requested) {
   if (!scenarios.some((scenario) => scenario.name === name)) throw new Error(`Unknown E2E scenario: ${name}`)
 }
+const workers = Number(process.env.E2E_WORKERS ?? Math.min(4, availableParallelism()))
+if (!Number.isSafeInteger(workers) || workers < 1) throw new Error("E2E_WORKERS must be a positive integer")
+const selected = scenarios.filter((scenario) => !requested.length || requested.includes(scenario.name))
 if (!Bun.which("tmux")) throw new Error("E2E tests require tmux. Install it, then run bun run test:e2e.")
 
 const root = path.resolve(import.meta.dir, "../..")
@@ -350,40 +354,69 @@ await mkdir(output, { recursive: true })
 const artifacts = await mkdtemp(path.join(output, "run-"))
 await mkdir("/tmp/opencode", { recursive: true })
 const temporary = await mkdtemp("/tmp/opencode/vim-e2e-")
-const results: Array<{ name: string; status: "passed" | "failed"; milliseconds: number; error?: string }> = []
+const results: Array<{
+  name: string
+  status: "passed" | "failed"
+  milliseconds: number
+  timings: FixtureTimings
+  error?: string
+}> = []
 let version: string | undefined
 let setupFailure: string | undefined
+const started = Date.now()
+let setupMilliseconds = 0
+let executionMilliseconds = 0
 
 console.log(`E2E artifacts: ${artifacts}`)
+console.log(`E2E workers: ${Math.min(workers, selected.length)}`)
 try {
   const opencode = await installOpenCode()
   version = opencode.version
   const plugin = await packPlugin(root, temporary, artifacts)
   const sourcePlugin = await copySourcePlugin(root, temporary)
   const clipboardPlugin = await copySourcePlugin(root, temporary, true)
+  setupMilliseconds = Date.now() - started
 
-  for (const scenario of scenarios) {
-    if (requested.length && !requested.includes(scenario.name)) continue
-    const started = Date.now()
-    try {
-      await runWithFixture(
-        {
-          ...scenario.setup,
-          opencode,
-          plugin: scenario.setup?.delayedClipboard ? clipboardPlugin : scenario.source ? sourcePlugin : plugin,
-          directory: path.join(temporary, scenario.name),
-          artifacts: path.join(artifacts, scenario.name),
-        },
-        scenario.run,
-      )
-      results.push({ name: scenario.name, status: "passed", milliseconds: Date.now() - started })
-      console.log(`PASS: ${scenario.name}`)
-    } catch (error) {
-      results.push({ name: scenario.name, status: "failed", milliseconds: Date.now() - started, error: String(error) })
-      console.error(`FAIL: ${scenario.name}`, error)
-      process.exitCode = 1
+  let next = 0
+  async function worker() {
+    while (next < selected.length) {
+      // Claim a scenario before awaiting; each worker owns a separate fixture.
+      const index = next++
+      const scenario = selected[index]!
+      const started = Date.now()
+      const timings: FixtureTimings = {}
+      try {
+        await runWithFixture(
+          {
+            ...scenario.setup,
+            opencode,
+            plugin: scenario.setup?.delayedClipboard ? clipboardPlugin : scenario.source ? sourcePlugin : plugin,
+            directory: path.join(temporary, scenario.name),
+            artifacts: path.join(artifacts, scenario.name),
+            timings,
+          },
+          scenario.run,
+        )
+        results[index] = { name: scenario.name, status: "passed", milliseconds: Date.now() - started, timings }
+        console.log(`PASS: ${scenario.name}`)
+      } catch (error) {
+        results[index] = {
+          name: scenario.name,
+          status: "failed",
+          milliseconds: Date.now() - started,
+          timings,
+          error: String(error),
+        }
+        console.error(`FAIL: ${scenario.name}`, error)
+        process.exitCode = 1
+      }
     }
   }
+  const running: Promise<void>[] = []
+  const executionStarted = Date.now()
+  for (let i = 0; i < Math.min(workers, selected.length); i++) running.push(worker())
+  await Promise.all(running)
+  executionMilliseconds = Date.now() - executionStarted
 } catch (error) {
   setupFailure = String(error)
   console.error("FAIL: setup", error)
@@ -396,6 +429,10 @@ try {
         opencode: version,
         bun: Bun.version,
         tmux: execFileSync("tmux", ["-V"], { encoding: "utf8" }).trim(),
+        workers: Math.min(workers, selected.length),
+        milliseconds: Date.now() - started,
+        setupMilliseconds,
+        executionMilliseconds,
         scenarios: results,
         setupFailure,
       },
@@ -404,4 +441,5 @@ try {
     ),
   )
   await rm(temporary, { recursive: true, force: true })
+  console.log(`E2E completed in ${((Date.now() - started) / 1000).toFixed(1)}s`)
 }

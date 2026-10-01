@@ -1,6 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { appendFile } from "node:fs/promises"
 import path from "node:path"
 import { stripVTControlCharacters } from "node:util"
@@ -16,11 +16,15 @@ export function createTerminal(socket: string, artifacts: string) {
   }
 
   function start(command: string[], workspace: string) {
+    const config = path.join(path.dirname(socket), "tmux.conf")
+    // Detached tmux has no client colors. Explicit colors let it answer OSC
+    // queries, rather than making OpenCode wait for theme detection to time out.
+    writeFileSync(config, 'set -g window-style "fg=#ffffff,bg=#000000"\n')
     pid = Number(
       tmux(
         "-u",
         "-f",
-        "/dev/null",
+        config,
         "new-session",
         "-d",
         "-s",
@@ -125,7 +129,7 @@ export function createTerminal(socket: string, artifacts: string) {
         await Bun.write(path.join(artifacts, `${label}.ansi`), ansi)
         throw new Error(`OpenCode exited while waiting for ${label}`)
       }
-      await Bun.sleep(100)
+      await Bun.sleep(50)
     }
   }
 

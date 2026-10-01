@@ -33,12 +33,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.x"
+          cache: npm
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Cache Neovim reference binary
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/neovim
+          key: neovim-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('test/helpers/neovim.ts') }}
 
       - name: Typecheck
         run: bun run typecheck
@@ -63,6 +70,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.x"
+          cache: npm
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -75,8 +83,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Cache E2E binaries
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules/.cache/opencode
+            node_modules/.cache/neovim
+          key: e2e-binaries-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('test/e2e/support/opencode.ts', 'test/helpers/neovim.ts') }}-${{ github.sha }}
+          restore-keys: |
+            e2e-binaries-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('test/e2e/support/opencode.ts', 'test/helpers/neovim.ts') }}-
+
       - name: Test source and npm package in OpenCode
+        env:
+          E2E_WORKERS: "2"
         run: bun run test:e2e
+
+      - name: Upload timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-timings
+          path: test-results/e2e/*/result.json
+          retention-days: 7
 
       - name: Upload failure diagnostics
         if: failure()
