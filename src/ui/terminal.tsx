@@ -2,9 +2,20 @@
 import type { Context } from "@opencode/plugin/tui/context"
 import { EmbeddedTerminalRenderable, type KeyEvent } from "@opentui/core"
 import { createSignal, onCleanup, untrack } from "solid-js"
-import { keyNotation } from "../vim/keys"
+import { paneEventKey } from "../vim/keys"
+import type { VimConfig } from "../vim/config"
+import type { VimLog } from "../vim/log"
+import { createPaneKeymaps, TERMINAL_TOGGLE } from "./pane-keys"
+import { SESSION_MODE } from "./session"
 
-export function createTerminalControls(context: Context, enabled: () => boolean, normal: () => boolean) {
+export function createTerminalControls(
+  context: Context,
+  config: VimConfig,
+  log: VimLog,
+  enabled: () => boolean,
+  normal: () => boolean,
+) {
+  const mappings = createPaneKeymaps(config, log)
   const [focused, setFocused] = createSignal(false)
   let terminal: EmbeddedTerminalRenderable | undefined
   let sessionID = ""
@@ -20,28 +31,20 @@ export function createTerminalControls(context: Context, enabled: () => boolean,
     return true
   }
 
-  function focusPane(direction: "left" | "right") {
-    const command = `pane.focus.${direction}`
-    if (!context.keymap.commands().some((item) => item.id === command)) return false
-    context.keymap.dispatch(command)
-    return true
-  }
-
   function handle(event: KeyEvent) {
-    if (!(context.renderer.currentFocusedRenderable instanceof EmbeddedTerminalRenderable)) return false
-    if (context.keymap.pending().length || event.super || event.hyper) return false
-    const key = keyNotation(event)
-    let handled = false
-    if (!event.ctrl && !event.shift && (key === "<M-h>" || key === "<M-l>")) {
-      handled = focusPane(key === "<M-h>" ? "left" : "right")
-    } else if (!event.meta && !event.option && (key === "<C-/>" || key === "<C-_>")) {
-      handled = toggle()
-    }
-    // Native terminal input bypasses ordinary keymaps. Reserve only pane controls;
-    // leave all other keys, including Escape and Ctrl+\ Ctrl+n, to the child.
-    if (!handled) return false
+    const mode = context.keymap.mode.current()
+    if ((mode !== "base" && mode !== SESSION_MODE) || context.keymap.pending().length) return false
+    const key = paneEventKey(event)
+    const command = key ? mappings.command(key) : undefined
+    if (!command) return false
+    const available = context.keymap.commands()
+    if (!available.some((item) => item.id === command)) return false
+    if (command === TERMINAL_TOGGLE && !available.some((item) => item.id === "terminal.toggle")) return false
+    // The same command mappings run in the prompt and raw terminal. Unmapped
+    // keys still belong to Vim editing or the child application respectively.
     event.preventDefault()
     event.stopPropagation()
+    context.keymap.dispatch(command)
     return true
   }
 
@@ -62,25 +65,12 @@ export function createTerminalControls(context: Context, enabled: () => boolean,
     enabled,
     commands: [
       {
+        id: TERMINAL_TOGGLE,
         title: "Toggle terminal (Vim)",
-        bind: "ctrl+/,ctrl+_",
+        palette: true,
         enabled: () => focused() || normal(),
         run: () => {
           if (!toggle()) return false
-        },
-      },
-      {
-        title: "Focus OpenCode pane (Vim)",
-        bind: "alt+h",
-        run: () => {
-          if (!focusPane("left")) return false
-        },
-      },
-      {
-        title: "Focus right pane (Vim)",
-        bind: "alt+l",
-        run: () => {
-          if (!focusPane("right")) return false
         },
       },
     ],
@@ -94,7 +84,7 @@ export function createTerminalControls(context: Context, enabled: () => boolean,
   function Status() {
     return (
       <text fg={context.theme.text.feedback.info.base} flexShrink={0} wrapMode="none">
-        TERMINAL · Alt+h/l swap · Ctrl+/ hide
+        {mappings.hint}
       </text>
     )
   }

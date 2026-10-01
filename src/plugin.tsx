@@ -54,6 +54,8 @@ function VimHost(props: { context: Context }) {
   const session = createSessionMode(props.context, config, clipboard)
   const terminal = createTerminalControls(
     props.context,
+    config,
+    log,
     enabled,
     () => session.active() || (state.mode() === "normal" && props.context.keymap.mode.current() === "base"),
   )

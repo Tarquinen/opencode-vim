@@ -110,6 +110,11 @@ clear-screen remain native.
 chord is reserved rather than sent to the child, where it commonly means undo.
 Disabling Vim restores native behavior.
 
+Remap or disable these defaults through `keymaps.panes`; see
+[Pane controls](./configuration.md#pane-controls). Both live input interception
+and the footer follow those mappings. Existing editor `command:` mappings can
+also call `opencode-vim.terminal.toggle`.
+
 The live terminal sends input directly to its shell or application. Ordinary
 Vim keys, Escape, and prompt mappings are not intercepted: Neovim, shell history,
 and interactive tools keep their own bindings.

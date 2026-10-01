@@ -26,7 +26,7 @@ export function keyNotation(event: KeyEvent) {
   if (!name) return undefined
 
   if (event.ctrl) return `<C-${ctrlKey(name)}>`
-  if (event.meta) return `<M-${name}>`
+  if (event.meta || event.option) return `<M-${name}>`
   if ([...graphemes.segment(name)].length === 1) return event.shift ? name.toUpperCase() : name
   return NAMED_KEYS[name] ?? `<${name}>`
 }
@@ -62,4 +62,22 @@ export function keyToken(token: string) {
 
 export function tokenCtrl(token: string) {
   return token.startsWith("<C-") && token !== "<C-[>"
+}
+
+// Pane controls use one chord, not editing sequences. This also supports Alt
+// and Ctrl punctuation, which the editing engine's sequence parser omits.
+export function paneMappingKey(key: string) {
+  if (key === "<C-_>") return "<C-/>"
+  if (/^[!-~]$/.test(key) || Object.values(NAMED_KEYS).includes(key)) return key
+  if (/^<[CM]-[!-~]>$/.test(key) && !/^<[CM]-[A-Z]>$/.test(key)) return key
+  throw new Error("Pane mappings require a single key or chord, such as <M-h> or <C-/>")
+}
+
+export function paneEventKey(event: KeyEvent) {
+  if (event.super || event.hyper || (event.ctrl && (event.meta || event.option))) return
+  const key = keyNotation(event)
+  if (!key) return
+  // Shifted letters and named keys must not match their unshifted bindings.
+  if (event.shift && (/^<[CM]-[a-z]>$/.test(key) || Object.values(NAMED_KEYS).includes(key))) return
+  return key === "<C-_>" ? "<C-/>" : key
 }

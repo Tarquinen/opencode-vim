@@ -36,7 +36,14 @@ import { permissionTools } from "./scenarios/permission-tools"
 import { clipboardCancellation } from "./scenarios/clipboard-cancel"
 import { questionForms } from "./scenarios/question-forms"
 import { composerNavigation } from "./scenarios/composer-navigation"
-import { terminalFocus, terminalApplication, terminalToggle } from "./scenarios/terminal"
+import {
+  terminalFocus,
+  terminalApplication,
+  terminalToggle,
+  terminalMappings,
+  terminalBindingsDisabled,
+  terminalBindingOverride,
+} from "./scenarios/terminal"
 
 const scenarios: Array<{
   name: string
@@ -88,6 +95,52 @@ const scenarios: Array<{
   },
   { name: "terminal-focus", run: terminalFocus, setup: { probe: true, cli: { session: { terminal: true } } } },
   { name: "terminal-toggle", run: terminalToggle, setup: { probe: true, cli: { session: { terminal: true } } } },
+  {
+    name: "terminal-mappings",
+    run: terminalMappings,
+    setup: {
+      probe: true,
+      cli: { session: { terminal: true } },
+      vim: {
+        keymaps: {
+          normal: { Q: "command:opencode-vim.terminal.toggle" },
+          panes: {
+            "<C-/>": "passthrough",
+            "<M-h>": "passthrough",
+            "<M-l>": "passthrough",
+            "<M-t>": "command:opencode-vim.terminal.toggle",
+            "<M-a>": "command:pane.focus.left",
+            "<M-d>": "command:pane.focus.right",
+            "<C-g>": "command:terminal.select",
+            "<M-z>": "command:missing.command",
+          },
+        },
+      },
+    },
+  },
+  {
+    name: "terminal-bindings-disabled",
+    run: terminalBindingsDisabled,
+    setup: {
+      probe: true,
+      cli: { session: { terminal: true } },
+      vim: {
+        keymaps: {
+          normal: { Q: "command:opencode-vim.terminal.toggle" },
+          panes: { "<C-/>": "passthrough", "<M-h>": "passthrough", "<M-l>": "passthrough" },
+        },
+      },
+    },
+  },
+  {
+    name: "terminal-binding-override",
+    run: terminalBindingOverride,
+    setup: {
+      probe: true,
+      cli: { session: { terminal: true } },
+      vim: { keymaps: { panes: { "<C-/>": "command:session.child.first" } } },
+    },
+  },
   {
     name: "terminal-application",
     run: terminalApplication,

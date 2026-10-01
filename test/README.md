@@ -39,6 +39,7 @@ configuration fallback stays in unit tests.
 | Subagent/shell/terminal panel Vim navigation, native shortcuts, disabled-plugin passthrough and prompt restoration | | `composer-navigation` |
 | Real PTY passthrough, focus isolation, route/removal/disable/unload and nested Neovim | | `terminal-focus`, `terminal-application` |
 | Ctrl+/ terminal creation/focus/hide, Alt+h/l pane focus, modern/legacy encodings, prompt modes/cursor styles and child input isolation | | `terminal-toggle`, `terminal-application` |
+| Shared pane command mappings, default overrides, disabled/legacy chords, dynamic footer and released child keys | `unit/pane-keymaps.test.ts` | `terminal-mappings`, `terminal-bindings-disabled`, `terminal-binding-override` |
 | Native prompt history, exit on movement, Unicode edits and mapped-command cursor preservation | | `prompt-history`, `prompt-command-cursor` |
 | Session entry/exit, toggle key scope, mappings, control chords, narrow status layout | `unit/session-keymaps.test.ts` | `session-key-*`, `session-empty`, `session-keymaps`, `session-agent-binding` |
 | Session and reader lifecycle, route changes, replacement dialogs and disable | `integration/readers/text.test.ts` | `session-lifecycle`, `runtime-*`, `message-reader` (including delayed host refocus) |

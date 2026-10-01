@@ -32,6 +32,7 @@ export type DiffView = "after" | "before" | "diff"
 export type SessionAction = "switch-panel" | "passthrough"
 export type VimKeymaps = Partial<Record<VimMode, Record<string, VimMappedAction>>> & {
   session?: Record<string, SessionAction>
+  panes?: Record<string, VimMappedAction>
 }
 export type VimMappedAction = string
 
@@ -94,7 +95,7 @@ function readKeymaps(input: unknown): VimKeymaps | undefined {
   const source = input as Record<string, unknown>
   const keymaps: VimKeymaps = {}
 
-  for (const mode of ["insert", "normal", "visual", "visual-line"] as const) {
+  for (const mode of ["insert", "normal", "visual", "visual-line", "panes"] as const) {
     const raw = source[mode]
     if (!raw || typeof raw !== "object") continue
     keymaps[mode] = {}
