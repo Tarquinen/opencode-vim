@@ -110,11 +110,11 @@ export function createFormMode(context: Context, config: VimConfig, log: VimLog,
     }
   }
 
-  function waitForEditor() {
+  function waitForFocus() {
     const queued: Array<KeyEvent | PasteEvent> = []
     opening = queued
-    // OpenCode publishes a newly opened answer editor in a microtask. Keep
-    // burst typing here so its first keys also use the configured mappings.
+    // OpenCode publishes answer editor focus changes in a microtask. Keep
+    // burst typing here until opening or closing the editor has settled.
     queueMicrotask(() =>
       queueMicrotask(() => {
         if (opening !== queued) return
@@ -135,7 +135,7 @@ export function createFormMode(context: Context, config: VimConfig, log: VimLog,
       opening.push(new PasteEvent(event.bytes, event.metadata))
       consume(event)
     } else if (!input) {
-      waitForEditor()
+      waitForFocus()
     }
   }
 
@@ -160,6 +160,7 @@ export function createFormMode(context: Context, config: VimConfig, log: VimLog,
         // Only forward it when the host exposes the close-edit action.
         if (context.keymap.active().some((item) => item.group === "Form" && item.description === "Close answer edit")) {
           sendKey("escape", "\x1b")
+          waitForFocus()
         }
       }
       return true
@@ -188,13 +189,13 @@ export function createFormMode(context: Context, config: VimConfig, log: VimLog,
       sendKey(...arrow)
       return true
     }
-    if (key === "<CR>" && !input) waitForEditor()
+    if (key === "<CR>" && !input) waitForFocus()
     if (/^[1-9]$/.test(key) || key === "<Space>") {
       consume(event)
       // Keep the native selection shortcut, without triggering the
       // custom row's printable-character interceptor.
       sendKey(event.name, "")
-      if (!input) waitForEditor()
+      if (!input) waitForFocus()
     } else if (event.sequence && !/[\p{C}]/u.test(event.sequence) && key !== "<CR>" && key !== "<Tab>") {
       consume(event)
     }

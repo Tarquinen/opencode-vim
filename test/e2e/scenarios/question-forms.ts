@@ -80,7 +80,8 @@ export function questionForms(mapping?: string) {
         `${label}-burst-normal`,
         (text) => text.includes("NORMAL") && text.includes("Type your own answer") && text.includes("esc dismiss"),
       )
-      await type("iresponse")
+      // Reopen in the same burst too, while the previous editor is closing.
+      await type(mapping ? `i${mapping}iresponse` : "i\x1b[27uiresponse")
       await screen(`${label}-typing`, (text) => text.includes("INSERT") && /3\..*response/.test(text))
       await normal()
       await screen(
