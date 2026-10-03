@@ -25,6 +25,9 @@ Press `Esc` to enter normal mode and `i` to type again in insert mode.
 In a session, press `s` from normal mode to browse messages and tools. Use `j`/`k`
 to navigate, `Enter` to open an item, and `s` to return to the prompt.
 
+Subagent entries open the full saved response, with Vim navigation, selection,
+and copying. Background completion entries use the same reader.
+
 Use `/vim` to toggle the plugin on or off.
 
 ## Documentation

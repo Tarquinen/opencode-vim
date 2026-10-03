@@ -9,6 +9,8 @@ import { agentSwitching } from "./scenarios/agent-switching"
 import { dialogFocus, dialogMappings, dialogModeInheritance, dialogScope, promptDialog } from "./scenarios/dialog-focus"
 import { tabSwitching } from "./scenarios/tab-switching"
 import { messageReader, readerLayout } from "./scenarios/message-reader"
+import { subagentReader } from "./scenarios/subagent-reader"
+import { subagentMessages } from "./data/subagent"
 import {
   transcriptGrouped,
   transcriptLowDetail,
@@ -167,6 +169,12 @@ const scenarios: Array<{
   },
   { name: "message-reader", run: messageReader, setup: { messages: readerMessages } },
   { name: "reader-layout", run: readerLayout, setup: { messages: longReaderMessages } },
+  { name: "subagent-reader", run: subagentReader, setup: { messages: subagentMessages } },
+  {
+    name: "subagent-reader-low-detail",
+    run: subagentReader,
+    setup: { messages: subagentMessages, cli: { session: { verbosity: "low" } } },
+  },
   { name: "session-empty", run: emptySession },
   {
     name: "session-lifecycle",
