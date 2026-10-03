@@ -8,6 +8,7 @@ type Input = {
   cursorOffset: number
   setSelection: (start: number, end: number) => void
   insertText: (text: string) => void
+  deleteChar: () => unknown
   clearSelection: () => unknown
 }
 
@@ -49,7 +50,9 @@ export function editInput(input: Input, value: string, widthMethod: WidthMethod)
 
   if (start === end) input.cursorOffset = startOffset
   else input.setSelection(startOffset, startOffset + charToDisplay(before.slice(start, end), end - start, widthMethod))
-  input.insertText(value.slice(start, valueEnd))
+  const inserted = value.slice(start, valueEnd)
+  if (inserted) input.insertText(inserted)
+  else input.deleteChar()
 }
 
 function segmentAt(text: string, segments: Intl.Segments, index: number) {

@@ -37,9 +37,20 @@ type Options = FixtureSetup & {
   plugin: string
   directory: string
   artifacts: string
+  timings: FixtureTimings
 }
 
+export type FixtureTimings = Partial<Record<"preparation" | "server" | "terminal" | "scenario" | "cleanup", number>>
+
 export async function runWithFixture(options: Options, run: (fixture: Fixture) => Promise<void>) {
+  let phase: keyof FixtureTimings = "preparation"
+  let phaseStarted = Date.now()
+  function mark(next: keyof FixtureTimings) {
+    options.timings[phase] = Date.now() - phaseStarted
+    phase = next
+    phaseStarted = Date.now()
+  }
+
   const { opencode, plugin, directory, artifacts } = options
   const workspace = path.join(directory, "workspace")
   const password = crypto.randomUUID()
@@ -67,11 +78,12 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
 
   function interrupt() {
     stop()
-    process.exit(130)
+    // Let the other parallel fixtures stop before exiting.
+    setImmediate(() => process.exit(130))
   }
   function terminate() {
     stop()
-    process.exit(143)
+    setImmediate(() => process.exit(143))
   }
   process.once("SIGINT", interrupt)
   process.once("SIGTERM", terminate)
@@ -98,6 +110,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
       }),
     )
 
+    mark("server")
     const listener = createServer()
     await new Promise<void>((resolve, reject) => {
       listener.once("error", reject)
@@ -140,6 +153,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
       const imported = (await request(`/api/experimental/session/${session.id}/export`)).data
       assert.equal(imported.messages.length, messages.length)
     }
+    mark("terminal")
     const command = ["env", "-i"]
     for (const [key, value] of Object.entries(environment("tui"))) command.push(`${key}=${value}`)
     command.push(opencode.binary, "--server", url, "--session", session.id, workspace)
@@ -147,6 +161,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
     const initialMode = options.vim?.defaultMode === "normal" ? "NORMAL" : "INSERT"
     await terminal.screen("startup", (text) => text.includes(sessionTitle) && text.includes(initialMode), 60_000)
 
+    mark("scenario")
     await run({
       terminal,
       sessionTitle,
@@ -160,6 +175,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
     })
     assert.equal((await request(`/api/session/${session.id}`)).data.id, session.id)
   } finally {
+    mark("cleanup")
     process.off("SIGINT", interrupt)
     process.off("SIGTERM", terminate)
     stop()
@@ -170,6 +186,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
         if (error.code !== "ENOENT") throw error
       })
     }
+    options.timings.cleanup = Date.now() - phaseStarted
   }
 
   function environment(home: string): Record<string, string> {
@@ -187,6 +204,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
       OPENCODE_DISABLE_PROJECT_CONFIG: "true",
       OPENCODE_DISABLE_FILEWATCHER: "true",
       OPENCODE_DISABLE_MODELS_FETCH: "true",
+      OPENCODE_DISABLE_AUTOUPDATE: "true",
       OPENCODE_PASSWORD: password,
       XDG_CONFIG_HOME: path.join(directory, "xdg-config"),
       XDG_DATA_HOME: path.join(directory, "data"),

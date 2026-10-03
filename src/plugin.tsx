@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
-import { InputRenderable, KeyEvent, PasteEvent, type CursorStyleOptions } from "@opentui/core"
+import { KeyEvent, PasteEvent, type CursorStyleOptions } from "@opentui/core"
 import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
 import type { EditorContext } from "./vim/editor"
 import { createVimConfig } from "./vim/config"
@@ -296,8 +296,7 @@ function createEditorContext(context: Context): EditorContext {
     },
     setText(text) {
       const input = context.renderer.currentFocusedEditor
-      if (input instanceof InputRenderable) input.value = text
-      else if (input) editInput(input, text, context.renderer.widthMethod)
+      if (input) editInput(input, text, context.renderer.widthMethod)
     },
     submit() {
       if (inputKind(context) === "dialog") {
