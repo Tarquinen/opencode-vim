@@ -41,6 +41,7 @@ configuration fallback stays in unit tests.
 | Ctrl+/ terminal creation/focus/hide, Alt+h/l pane focus, modern/legacy encodings, prompt modes/cursor styles and child input isolation |                                                                | `terminal-toggle`, `terminal-application`                                                                                                                                                                                                                                                                          |
 | Shared pane command mappings, default overrides, disabled/legacy chords, dynamic footer and released child keys                        | `unit/pane-keymaps.test.ts`                                    | `terminal-mappings`, `terminal-bindings-disabled`, `terminal-binding-override`                                                                                                                                                                                                                                     |
 | Native prompt history, exit on movement, Unicode edits and mapped-command cursor preservation                                          |                                                                | `prompt-history`, `prompt-command-cursor`                                                                                                                                                                                                                                                                          |
+| Native undo/redo, Vim change grouping, mixed native/Vim history, reset/cleanup, rich-item submission                                   | `integration/history.test.ts`, Neovim parity                   | `native-history` (original pasted contents and image/file payloads after insertion undo/redo), `dialog-focus`, `dialog-mappings`                                                                                                                                                                                   |
 | Session entry/exit, toggle key scope, mappings, control chords, narrow status layout                                                   | `unit/session-keymaps.test.ts`                                 | `session-key-*`, `session-empty`, `session-keymaps`, `session-agent-binding`                                                                                                                                                                                                                                       |
 | Session and reader lifecycle, route changes, replacement dialogs and disable                                                           | `integration/readers/text.test.ts`                             | `session-lifecycle`, `runtime-*`, `message-reader` (including delayed host refocus)                                                                                                                                                                                                                                |
 | Message reader motions, exact copy, read-only mappings/paste, streaming snapshot, paging and remembered positions                      | `integration/readers/text.test.ts`                             | `message-reader`, `reader-layout`, `session-copy`                                                                                                                                                                                                                                                                  |
@@ -74,6 +75,23 @@ Other scenarios use the packed published export (or the unmodified source in
 Run `bun run typecheck`, `bun run test`, and `bun run test:e2e`. To work on one
 host regression, pass scenario names, for example:
 `bun run test:e2e message-reader session-lifecycle`.
+
+## Native history contract
+
+OpenTUI restores editor content; the plugin groups native entries into Vim changes
+and records their cursor positions. `src/vim/history.ts` is a compatibility layer
+because the editor has no public undo-group API. It wraps public methods, not
+private attachment state.
+
+The tracker assumes each changed edit adds one native history entry; `replaceText`
+also adds an entry for unchanged text. Native undo/redo move one entry, while
+`setText`, `clear`, and `clearHistory` reset history. Entries predating attachment
+retain native granularity because their Vim boundaries are unknown.
+
+When updating OpenTUI, run the real-component history tests, Neovim parity tests
+(including exact cursor positions), and the real-host `native-history` scenario.
+The host's existing rich-item deletion/undo and highlighting bugs remain separate
+from grouping; registers are still text-only.
 
 ## E2E performance
 

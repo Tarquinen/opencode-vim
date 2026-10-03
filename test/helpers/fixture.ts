@@ -1,4 +1,4 @@
-import { RGBA, TextareaRenderable, type KeyEvent } from "@opentui/core"
+import { InputRenderable, RGBA, TextareaRenderable, type KeyEvent } from "@opentui/core"
 import { createTestRenderer } from "@opentui/core/testing"
 import type { EditorContext } from "../../src/vim/editor"
 import { createVimConfig, type VimOptions } from "../../src/vim/config"
@@ -12,15 +12,17 @@ export async function createFixture(
   options: VimOptions = {},
   width = 80,
   adapterOptions: Parameters<typeof createVimeeAdapter>[3] = {},
+  Input: typeof TextareaRenderable = TextareaRenderable,
 ) {
   const screen = await createTestRenderer({ width, height: 12, kittyKeyboard: true })
-  const input = new TextareaRenderable(screen.renderer, {
+  const input = new Input(screen.renderer, {
     id: "prompt",
     width,
     height: 10,
     initialValue: text,
     wrapMode: "word",
   })
+  if (input instanceof InputRenderable) input.value = text
   screen.renderer.root.add(input)
   input.focus()
   await screen.renderOnce()

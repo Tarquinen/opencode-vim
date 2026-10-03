@@ -11,6 +11,7 @@ import type { CursorPosition, KeybindDefinition, MotionRange, VimAction as Vimee
 import type { EditorInput, EditorContext } from "./editor"
 import type { VimConfig } from "./config"
 import type { VimLog } from "./log"
+import { createNativeHistory, type NativeHistory } from "./history"
 import { createGraphemeCodec } from "./graphemes"
 import { createKeybinds, hasNormalKeyPrefix, insertHostAction, type HostKeybindDefinition } from "./keymaps"
 import { keyForVimee, keyToken, tokenCtrl } from "./keys"
@@ -39,6 +40,11 @@ type VimState = ReturnType<typeof createVimState>
 type HostAction = (VimeeAction & { register?: string }) | { type: "submit" } | { type: "command"; command: string }
 type HostRange = { start: number; end: number }
 
+// Vimee handles motions and operators; the native editor owns undo history.
+class MotionBuffer extends TextBuffer {
+  override saveUndoPoint() {}
+}
+
 export const YANK_FLASH_MS = 250
 
 export type VimeeAdapter = ReturnType<typeof createVimeeAdapter>
@@ -51,7 +57,7 @@ type AdapterOptions = {
 
 export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimLog, options: AdapterOptions = {}) {
   const codec = createGraphemeCodec()
-  let buffer = new TextBuffer("")
+  let buffer = new MotionBuffer("")
   let activeMap = createPromptMap("", codec)
   let vim = createInitialContext({ line: 0, col: 0 })
   const keybinds = options.readOnly ? undefined : createKeybinds(config, log)
@@ -61,7 +67,10 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
   let pendingInsert = ""
   let pendingTarget: { input: EditorInput; offset: number } | undefined
   let pendingContext: EditorContext | undefined
-  let nativeInsertUndoSaved = false
+  let nativeInsertChanged = false
+  const histories = new Map<EditorInput, NativeHistory>()
+  let history: NativeHistory | undefined
+  let historyVersion = 0
   let historyText: string | undefined
   let activeInput: EditorInput | undefined
   let widthMethod: WidthMethod = "unicode"
@@ -84,6 +93,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
       const input = ctx.input()
       if (!input) return false
       attach(ctx)
+      history?.begin()
 
       let vimeeKey = keyForVimee(event, key)
       if (!vimeeKey) return false
@@ -95,6 +105,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
       vimeeKey = codec.encode(vimeeKey)
 
       if (state.mode() === "insert") {
+        const map = mapForHostText(input.plainText)
+        sync(hostPosition(map, input.cursorOffset))
         if (vimeeKey === "Escape") {
           cancelPendingInsert(ctx)
           enterNormal(ctx)
@@ -196,7 +208,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         }
         vim = result.newCtx
         const actions = result.actions as HostAction[]
-        if (resolved?.status !== "matched") applyActions(actions, ctx, map)
+        if (resolved?.status !== "matched") applyActions(actions, ctx, activeMap)
         if (shouldFlashYank) flashYank(ctx, activeMap, yankAction(actions), visualYankRange)
         syncMode(state, vim.mode)
 
@@ -217,7 +229,13 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
         return consumesKey(commandKey, actions, vim, keybindPending)
       }
     },
-    cleanup: suspend,
+    cleanup() {
+      suspend()
+      for (const item of histories.values()) item.cleanup()
+      histories.clear()
+      history = undefined
+      activeInput = undefined
+    },
   }
 
   function needsClipboard(key: string, ctrl: boolean, definition?: KeybindDefinition) {
@@ -239,8 +257,20 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     activeInput = input
     widthMethod = ctx.widthMethod
     activeMap = createPromptMap(input?.plainText ?? "", codec, widthMethod)
-    buffer = new TextBuffer(activeMap.vimText)
-    nativeInsertUndoSaved = false
+    buffer = new MotionBuffer(activeMap.vimText)
+    for (const [editor, item] of histories) {
+      if (!editor.isDestroyed) continue
+      item.cleanup()
+      histories.delete(editor)
+    }
+    history = input && !options.readOnly ? histories.get(input) : undefined
+    if (input && !options.readOnly && !history) {
+      history = createNativeHistory(input)
+      if (history) histories.set(input, history)
+    }
+    historyVersion = history?.version() ?? 0
+    if (state.mode() === "insert") history?.begin()
+    nativeInsertChanged = false
     vim = { ...resetContext(vim), cursor: hostPosition(activeMap, input?.cursorOffset ?? 0), mode: state.mode() }
   }
 
@@ -248,6 +278,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     generation++
     preferredColumn = undefined
     if (pendingContext) cancelPendingInsert(pendingContext)
+    history?.end()
     if (timer) clearTimeout(timer)
     timer = undefined
     keybinds?.cancel()
@@ -266,19 +297,23 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
   }
 
   function mapForHostText(text: string) {
+    if (history && historyVersion !== history.version()) {
+      historyVersion = history.version()
+      activeMap = createPromptMap(text, codec, widthMethod)
+      buffer = new MotionBuffer(activeMap.vimText)
+      vim = { ...resetContext(vim), lastChange: [], pendingChange: [] }
+      nativeInsertChanged = false
+    }
     if (activeMap.hostText === text) return activeMap
     const nextMap = createPromptMap(text, codec, widthMethod)
     if (state.mode() === "insert") recordNativeChange(nextMap)
     activeMap = nextMap
     if (state.mode() === "insert") {
-      if (!nativeInsertUndoSaved) {
-        buffer.saveUndoPoint(vim.cursor)
-        nativeInsertUndoSaved = true
-      }
+      nativeInsertChanged = true
       buffer.replaceContent(activeMap.vimText)
     } else {
-      buffer = new TextBuffer(activeMap.vimText)
-      nativeInsertUndoSaved = false
+      buffer = new MotionBuffer(activeMap.vimText)
+      nativeInsertChanged = false
     }
     return activeMap
   }
@@ -309,6 +344,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     const input = ctx.input()
     let currentMap = map
     if (!input) return
+    history?.begin()
 
     for (const action of actions) {
       switch (action.type) {
@@ -323,7 +359,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
           if (!action.register) options.onYank?.(codec.decode(action.text))
           break
         case "mode-change":
-          nativeInsertUndoSaved = action.mode === "insert" && actions.some((item) => item.type === "content-change")
+          nativeInsertChanged = action.mode === "insert" && actions.some((item) => item.type === "content-change")
           if (action.mode === "insert") {
             cancelYankFlash()
             clearVisualSelection(input)
@@ -345,6 +381,8 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
     // The engine context already has the final cursor; move the editor once.
     setCursor(input, currentMap, vim.cursor)
     syncVisualSelection(input, currentMap, ctx)
+    if (vim.mode === "insert") history?.begin()
+    else history?.end()
   }
 
   function handleInsertKeybind(event: KeyEvent, key: string, ctx: EditorContext): boolean {
@@ -421,7 +459,7 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
       clampNormalCursor(input, map)
     }
 
-    const lastChange = nativeInsertUndoSaved ? [...vim.pendingChange, "Escape"] : vim.lastChange
+    const lastChange = nativeInsertChanged ? [...vim.pendingChange, "Escape"] : vim.lastChange
     vim = {
       ...resetContext(vim),
       cursor: hostPosition(map, input?.cursorOffset ?? 0),
@@ -430,8 +468,9 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
       lastChange,
       pendingChange: [],
     }
-    nativeInsertUndoSaved = false
+    nativeInsertChanged = false
     syncMode(state, "normal")
+    history?.end()
   }
 
   function applyKeybind(definition: KeybindDefinition, ctx: EditorContext, map: PromptMap) {
@@ -475,6 +514,23 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
   }
 
   function processKeyInner(key: string, ctrl: boolean): { newCtx: VimContext; actions: HostAction[] } {
+    if (vim.mode === "normal" && vim.phase === "idle" && ((!ctrl && key === "u") || (ctrl && key === "r"))) {
+      const redo = ctrl
+      let changed = false
+      for (let count = vim.count || 1; count > 0; count--) {
+        if (!(redo ? history?.redo() : history?.undo())) break
+        changed = true
+      }
+      activeMap = createPromptMap(activeInput?.plainText ?? "", codec, widthMethod)
+      buffer = new MotionBuffer(activeMap.vimText)
+      if (activeInput) clampNormalCursor(activeInput, activeMap)
+      const cursor = hostPosition(activeMap, activeInput?.cursorOffset ?? 0)
+      const message = changed ? "" : redo ? "Already at newest change" : "Already at oldest change"
+      return {
+        newCtx: { ...resetContext(vim), cursor, pendingChange: [], statusMessage: message },
+        actions: [{ type: "cursor-move", position: cursor }],
+      }
+    }
     let range = ctrl ? undefined : lineMotion(key)
     if (
       range &&
@@ -511,7 +567,6 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
       // A repeated insert/change is one undo step, including native typing.
       const original = buffer
       const before = buffer.getContent()
-      const cursor = vim.cursor
       const keys = [...vim.lastChange]
       if (vim.count) {
         while (/^[0-9]$/.test(keys[0] ?? "")) keys.shift()
@@ -519,15 +574,14 @@ export function createVimeeAdapter(state: VimState, config: VimConfig, log: VimL
       }
       vim = { ...vim, count: 0 }
       const actions: HostAction[] = []
-      buffer = new TextBuffer(before)
+      buffer = new MotionBuffer(before)
       try {
         for (const token of keys) {
-          const result = processKey(token)
+          const result = processKey(codec.encode(keyToken(token)), tokenCtrl(token))
           vim = result.newCtx
           actions.push(...result.actions)
         }
         if (buffer.getContent() !== before) {
-          original.saveUndoPoint(cursor)
           original.replaceContent(buffer.getContent())
         }
       } finally {

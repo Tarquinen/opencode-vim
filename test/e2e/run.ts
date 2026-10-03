@@ -32,6 +32,7 @@ import { layoutMessages, partialMessages, partMessages, copyMessages, longReader
 import { transcriptLive } from "./scenarios/transcript-live"
 import { pluginLifecycle } from "./scenarios/plugin-lifecycle"
 import { promptClipboard, promptCommandCursor, promptHistory, promptInput } from "./scenarios/prompt-input"
+import { nativeHistory } from "./scenarios/native-history"
 import { permissionMessages } from "./data/permission"
 import { permissionTools } from "./scenarios/permission-tools"
 import { clipboardCancellation } from "./scenarios/clipboard-cancel"
@@ -59,6 +60,7 @@ const scenarios: Array<{
   },
   { name: "prompt-clipboard", run: promptClipboard, setup: { vim: { keymaps: { normal: { Q: "yiw$p" } } } } },
   { name: "prompt-history", run: promptHistory, setup: { stream: "history response" } },
+  { name: "native-history", run: nativeHistory, setup: { probe: true, stream: "native history response" } },
   {
     name: "prompt-command-cursor",
     run: promptCommandCursor,

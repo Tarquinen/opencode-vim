@@ -1,4 +1,4 @@
-import type { LineInfo, RGBA, WidthMethod } from "@opentui/core"
+import type { EditBuffer, LineInfo, RGBA, WidthMethod } from "@opentui/core"
 
 export type EditorContext = {
   input: () => EditorInput | undefined
@@ -15,11 +15,15 @@ export type EditorInput = {
   isDestroyed?: boolean
   cursorOffset: number
   plainText: string
+  editBuffer?: EditBuffer
+  undo?: () => boolean
+  redo?: () => boolean
   visualCursor?: { visualCol: number }
   editorView?: {
     getLogicalLineInfo?: () => LineInfo
     setSelection?: (start: number, end: number, bgColor?: RGBA, fgColor?: RGBA) => void
     resetSelection?: () => void
+    deleteSelectedText?: () => void
   }
   selectionBg?: RGBA
   selectionFg?: RGBA
