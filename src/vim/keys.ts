@@ -25,14 +25,16 @@ export function keyNotation(event: KeyEvent) {
   const name = event.name?.toLowerCase()
   if (!name) return undefined
 
-  if (event.ctrl) return `<C-${ctrlKey(name)}>`
+  if (event.ctrl) return `<C-${ctrlKey(name, event.shift)}>`
   if (event.meta || event.option) return `<M-${name}>`
   if ([...graphemes.segment(name)].length === 1) return event.shift ? name.toUpperCase() : name
   return NAMED_KEYS[name] ?? `<${name}>`
 }
 
-function ctrlKey(name: string) {
+function ctrlKey(name: string, shift: boolean) {
   if (name === "escape" || name === "esc") return "["
+  // Ctrl+Shift+[ is not Escape; keep it free for host bindings like tab switching.
+  if (name === "[" && shift) return "{"
   return name
 }
 
