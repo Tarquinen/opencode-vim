@@ -225,12 +225,13 @@ function VimHost(props: { context: Context }) {
   props.context.renderer.keyInput.prependListener("paste", onPaste)
   props.context.renderer.on("focused_editor", onFocus)
   createEffect(() => syncCursor())
-  let route = props.context.ui.router.current()
+  let route = routeKey(props.context.ui.router.current())
   createEffect(() => {
-    const next = props.context.ui.router.current()
-    if (routeKey(next) !== routeKey(route)) resetMode()
-    if (next !== route && pendingKeys) onFocus()
+    const next = routeKey(props.context.ui.router.current())
+    if (next === route) return
     route = next
+    resetMode()
+    if (pendingKeys) onFocus()
   })
   onCleanup(() => {
     disposed = true

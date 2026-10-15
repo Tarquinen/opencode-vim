@@ -28,8 +28,9 @@ export function clipboardCancellation(action: "focus" | "route" | "toggle" | "un
     assert(state.remembered.destroyed || state.remembered.text === "original draft")
     assert.equal(state.editor.text, action === "focus" || action === "route" ? "" : "original draft")
     // A subsequent real input turn also proves that queued keys didn't leak.
-    if (action === "focus" || action === "route") await type("i")
-    else await keys("C-e")
+    // Changing routes resets the prompt to the default insert mode.
+    if (action === "focus") await type("i")
+    else if (action !== "route") await keys("C-e")
     await type("fresh")
     await screen(
       "fresh-input",
