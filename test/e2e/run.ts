@@ -366,7 +366,13 @@ for (const name of requested) {
 }
 const workers = Number(process.env.E2E_WORKERS ?? Math.min(4, availableParallelism()))
 if (!Number.isSafeInteger(workers) || workers < 1) throw new Error("E2E_WORKERS must be a positive integer")
-const selected = scenarios.filter((scenario) => !requested.length || requested.includes(scenario.name))
+const shard = process.env.E2E_SHARD?.match(/^(\d+)\/(\d+)$/)
+if (process.env.E2E_SHARD && (!shard || Number(shard[1]) < 1 || Number(shard[1]) > Number(shard[2])))
+  throw new Error("E2E_SHARD must look like 1/4")
+// Interleave shards so variants of the same scenario spread across CI jobs.
+const selected = scenarios
+  .filter((scenario) => !requested.length || requested.includes(scenario.name))
+  .filter((_, index) => !shard || index % Number(shard[2]) === Number(shard[1]) - 1)
 if (!Bun.which("tmux")) throw new Error("E2E tests require tmux. Install it, then run bun run test:e2e.")
 
 const root = path.resolve(import.meta.dir, "../..")
