@@ -22,4 +22,8 @@ export async function tabSwitching({ terminal, sessionTitle }: Fixture) {
       (text) => text.includes(sessionTitle) && !text.split("\n")[0].includes("New session"),
     )
   }
+  await keys("Escape")
+  await screen("normal-before-new", (text) => text.includes("NORMAL"))
+  await keys("C-x", "n")
+  await screen("new-default-mode", (text) => text.split("\n")[0].includes("New session") && text.includes("INSERT"))
 }
