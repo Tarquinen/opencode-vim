@@ -53,6 +53,13 @@ describe("real textarea Vim editing", () => {
     expect(fixture.state.mode()).toBe("normal")
   })
 
+  test("Ctrl-Shift-[ passes through in insert mode", async () => {
+    fixture = await createFixture("hello", { defaultMode: "insert", keymaps: { insert: { kj: "normal" } } })
+    fixture.mockInput.pressKey("[", { ctrl: true, shift: true })
+    expect(fixture.settled()).toBe(false)
+    expect(fixture.state.mode()).toBe("insert")
+  })
+
   test("Escape at a line start stays on that line", async () => {
     fixture = await createFixture("one\ntwo", { defaultMode: "insert" })
     fixture.input.cursorOffset = 4
