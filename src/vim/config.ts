@@ -10,6 +10,7 @@ export type VimConfig = {
   defaultMode: VimMode
   diffView: DiffView
   sessionKey: string
+  modeIndicator: ModeIndicator
   keymapTimeout: number
   cursorStyles: Record<VimMode, VimCursorStyle>
   debug: boolean
@@ -21,6 +22,7 @@ export type VimOptions = {
   defaultMode?: VimMode
   diffView?: DiffView
   sessionKey?: string
+  modeIndicator?: ModeIndicator
   keymapTimeout?: number
   cursorStyles?: Partial<Record<VimMode, VimCursorStyle>>
   debug?: boolean
@@ -29,6 +31,7 @@ export type VimOptions = {
 }
 
 export type DiffView = "after" | "before" | "diff"
+export type ModeIndicator = "full" | "none"
 export type SessionAction = "switch-panel" | "passthrough"
 export type VimKeymaps = Partial<Record<VimMode, Record<string, VimMappedAction>>> & {
   session?: Record<string, SessionAction>
@@ -49,6 +52,7 @@ export function createVimConfig(options: unknown): VimConfig {
     defaultMode: input.defaultMode ?? "insert",
     diffView: input.diffView ?? "after",
     sessionKey: input.sessionKey ?? "s",
+    modeIndicator: input.modeIndicator ?? "full",
     keymapTimeout: Math.max(0, input.keymapTimeout ?? 500),
     cursorStyles: {
       insert: { ...DEFAULT_CURSOR_STYLES.insert, ...input.cursorStyles?.insert },
@@ -75,6 +79,8 @@ function readOptions(options: unknown): VimOptions {
         ? source.diffView
         : undefined,
     sessionKey: readSessionKey(source.sessionKey),
+    modeIndicator:
+      source.modeIndicator === "full" || source.modeIndicator === "none" ? source.modeIndicator : undefined,
     keymapTimeout: readNumber(source.keymapTimeout),
     cursorStyles: readCursorStyles(source.cursorStyles),
     debug: typeof source.debug === "boolean" ? source.debug : undefined,

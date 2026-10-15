@@ -68,6 +68,7 @@ function VimHost(props: { context: Context }) {
       if (enabled() && terminal.focused()) return <terminal.Status />
       if (footer.mode !== "normal") return null
       if (session.active() && !dialogFocused()) return <session.Status />
+      if (config.modeIndicator === "none") return null
       return (
         <VimStatus
           mode={() => (dialogFocused() ? dialogState.mode() : state.mode())}
