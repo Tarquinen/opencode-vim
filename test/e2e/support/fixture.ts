@@ -99,7 +99,7 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
       `opencode v${opencode.version}`,
     )
     const plugins: unknown[] = [{ package: plugin, options: { vim: options.vim ?? {} } }]
-    if (options.probe) plugins.push(path.join(import.meta.dir, "probe"))
+    if (options.probe || options.messages) plugins.push(path.join(import.meta.dir, "probe"))
     await Bun.write(
       configFile,
       JSON.stringify({
@@ -160,7 +160,16 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
     terminal.start(command, workspace)
     const initialMode =
       options.vim?.modeIndicator === "none" ? "" : options.vim?.defaultMode === "normal" ? "NORMAL" : "INSERT"
-    await terminal.screen("startup", (text) => text.includes(sessionTitle) && text.includes(initialMode), 60_000)
+    // OpenCode draws the prompt before it has loaded agents or the transcript; until then Enter
+    // and session mode silently do nothing, so scenarios must not start typing yet.
+    await terminal.screen(
+      "startup",
+      (text) => text.includes(sessionTitle) && text.includes(initialMode) && /┃\s+\w+ · /.test(text),
+      60_000,
+    )
+    // Long sessions load one page at a time, so any loaded message means the first page is in.
+    if (options.messages)
+      await terminal.screen("transcript", async () => ((await probe().catch(() => undefined))?.messages ?? 0) > 0)
 
     mark("scenario")
     await run({

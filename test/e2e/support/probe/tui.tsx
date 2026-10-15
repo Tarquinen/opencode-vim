@@ -37,6 +37,7 @@ export default Plugin.define({
         // Observe after Solid/focus callbacks and clipboard continuations.
         await new Promise<void>((resolve) => setImmediate(resolve))
         const editor = context.renderer.currentFocusedEditor
+        const route = context.ui.router.current()
         const terminals: Array<{ id: string; focused: boolean; text: string }> = []
         function inspectTerminals(node: Renderable) {
           if (node instanceof EmbeddedTerminalRenderable)
@@ -61,7 +62,8 @@ export default Plugin.define({
           remembered: inspect(remembered),
           result,
           mode: context.keymap.mode.current(),
-          route: context.ui.router.current(),
+          route,
+          messages: route.type === "session" ? context.data.session.message.list(route.sessionID).length : 0,
           listeners: context.renderer.keyInput.listenerCount("keypress"),
           terminals,
           colors: {

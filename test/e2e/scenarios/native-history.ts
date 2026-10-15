@@ -13,11 +13,15 @@ export async function nativeHistory({ terminal, probe, request, sessionID, strea
     await terminal.screen(`${kind}-insert`, (text) => text.includes("INSERT"))
     if (kind === "file") {
       await terminal.type("@native-history.txt")
-      await terminal.screen("file-autocomplete", (text) => text.includes("native-history.txt"))
+      // The typed text already contains the file name, so look for the popup row without the @.
+      await terminal.screen("file-autocomplete", (text) => suggested(text))
       await terminal.keys("Enter")
     } else await terminal.paste(kind === "paste" ? pasted : `${workspace}/native-history.png`)
     const label = kind === "paste" ? "[Pasted ~4 lines]" : kind === "image" ? "[Image 1]" : "@native-history.txt"
-    await terminal.screen(`${kind}-attached`, async () => (await probe()).editor?.text.includes(label))
+    await terminal.screen(
+      `${kind}-attached`,
+      async (text) => !suggested(text) && (await probe()).editor?.text.includes(label),
+    )
     const original = (await probe()).editor.text
     await terminal.keys("Escape")
     await terminal.screen(`${kind}-normal`, (text) => text.includes("NORMAL"))
@@ -42,4 +46,9 @@ export async function nativeHistory({ terminal, probe, request, sessionID, strea
       else assert.equal(user.files[0].name, "native-history.txt")
     }
   }
+}
+
+// OpenCode will not submit while the file popup is open.
+function suggested(text: string) {
+  return text.split("\n").some((line) => line.includes("native-history.txt") && !line.includes("@"))
 }
