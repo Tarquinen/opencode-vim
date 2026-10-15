@@ -228,6 +228,7 @@ function VimHost(props: { context: Context }) {
   let route = props.context.ui.router.current()
   createEffect(() => {
     const next = props.context.ui.router.current()
+    if (routeKey(next) !== routeKey(route)) resetMode()
     if (next !== route && pendingKeys) onFocus()
     route = next
   })
@@ -246,6 +247,15 @@ function VimHost(props: { context: Context }) {
   })
 
   return null
+
+  function resetMode() {
+    untrack(() => {
+      if (state.mode() === config.defaultMode) return
+      vimee.suspend()
+      state.setMode(config.defaultMode)
+      syncCursor(true)
+    })
+  }
 
   function syncCursor(force = false) {
     const input = props.context.renderer.currentFocusedEditor
@@ -319,6 +329,10 @@ function createEditorContext(context: Context): EditorContext {
     },
     requestRender: () => context.renderer.requestRender(),
   }
+}
+
+function routeKey(route: ReturnType<Context["ui"]["router"]["current"]>) {
+  return route.type === "session" ? `session:${route.sessionID}` : route.type
 }
 
 function inputKind(context: Context): "prompt" | "dialog" | undefined {

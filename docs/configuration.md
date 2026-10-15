@@ -27,7 +27,7 @@ All options below belong inside `options.vim`.
 
 | Option | Default | Purpose |
 | --- | --- | --- |
-| `defaultMode` | `"insert"` | Starting Vim mode; use `"normal"` to start in normal mode |
+| `defaultMode` | `"insert"` | Vim mode on startup and when switching chats; use `"normal"` to start in normal mode |
 | `sessionKey` | `"s"` | Single key to enter and leave session mode |
 | `modeIndicator` | `"full"` | Mode label in the prompt footer: `"full"` (`INSERT`, `NORMAL`, ...) or `"none"` to hide it |
 | `diffView` | `"after"` | Starting edit/patch view: `"after"`, `"before"`, or `"diff"`; added/deleted files use the available side |
