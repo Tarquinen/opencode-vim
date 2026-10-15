@@ -29,6 +29,7 @@ All options below belong inside `options.vim`.
 | --- | --- | --- |
 | `defaultMode` | `"insert"` | Starting Vim mode; use `"normal"` to start in normal mode |
 | `sessionKey` | `"s"` | Single key to enter and leave session mode |
+| `modeIndicator` | `"full"` | Mode label in the prompt footer: `"full"` (`INSERT`, `NORMAL`, ...) or `"none"` to hide it |
 | `diffView` | `"after"` | Starting edit/patch view: `"after"`, `"before"`, or `"diff"`; added/deleted files use the available side |
 | `keymapTimeout` | `500` | Milliseconds to wait for the rest of a custom mapping |
 | `keymaps` | `{}` | Custom mappings, grouped by mode |
