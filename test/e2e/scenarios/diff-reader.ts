@@ -20,7 +20,7 @@ export function diffReader(initial: DiffView = "after", remapped = false) {
     })
     if (grouped) {
       await keys("Enter")
-      await screen("expanded", (text) => text.includes("Edit edited-two.ts"))
+      await screen("expanded", (text) => selected(text, "3 edits") && text.includes("Patched first.ts"))
       await type("j")
     }
     await keys("Enter")

@@ -12,7 +12,10 @@ export async function pluginLifecycle({ terminal, probe, setVimLoaded }: Fixture
   assert.equal(terminal.cursorStyle(), 5)
   await keys("Escape")
   await type("0x")
-  await screen("normal-edit", (text) => text.includes("untime draft") && text.includes("NORMAL"))
+  await screen(
+    "normal-edit",
+    (text) => text.includes("untime draft") && text.includes("NORMAL") && terminal.cursorStyle() === 1,
+  )
   assert.equal(terminal.cursorStyle(), 1)
   await type("u")
   await screen("undo", (text) => text.includes("runtime draft"))
