@@ -1,3 +1,5 @@
+import type { Fixture } from "./fixture"
+
 export function selected(text: string, value: string) {
   for (const line of text.split("\n")) {
     if (line.includes("▎") && line.includes(value)) return true
@@ -22,4 +24,10 @@ export function reader(text: string) {
 
 export function readerContains(text: string, value: string) {
   return reader(text)?.content.includes(value) ?? false
+}
+
+// OpenCode saves the toggle before Vim sees it, so wait for the Vim footer to follow.
+export async function toggleVim({ terminal, probe }: Fixture, label: string, enabled: boolean) {
+  await probe("dispatch", { command: "opencode-vim.toggle" })
+  await terminal.screen(label, (text) => /\b(INSERT|NORMAL|VISUAL|TERMINAL)\b/.test(text) === enabled)
 }

@@ -116,6 +116,7 @@ export async function transcriptPartial({ terminal, probe }: Fixture) {
 
 export async function transcriptParts({ terminal }: Fixture) {
   const { keys, type, screen } = terminal
+  await screen("parts-rendered", (text) => text.includes("Still thinking"))
   await keys("Escape")
   // No frame wait between entry and open: the latest reasoning row must be
   // available immediately, including when it has no following text response.

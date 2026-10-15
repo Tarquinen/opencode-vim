@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import path from "node:path"
 import type { Fixture } from "../support/fixture"
+import { toggleVim } from "../support/screens"
 import { createTerminalRecorder } from "../support/terminal-recorder"
 
 export async function terminalMappings(fixture: Fixture) {
@@ -74,7 +75,7 @@ export async function terminalMappings(fixture: Fixture) {
     await keys("-l", "\x1bt")
     await focused("mapped-toggle-legacy-reopens")
     assert.equal(await recorder.bytes(), before, "Mapped command keys must not reach the child")
-    await probe("dispatch", { command: "opencode-vim.toggle" })
+    await toggleVim(fixture, "mapped-vim-disabled", false)
     await recorder.input(
       "mapped-disabled-keys-are-native",
       () => keys("-l", "\x1b[97;3u\x1b[100;3u\x1b[116;3u"),
@@ -237,7 +238,7 @@ export async function terminalToggle(fixture: Fixture) {
     await shortcut()
     await visible("toggle-from-transcript")
     assert.equal((await probe()).mode, "base")
-    await probe("dispatch", { command: "opencode-vim.toggle" })
+    await toggleVim(fixture, "toggle-vim-disabled", false)
     await recorder.input("toggle-disabled-is-native", shortcut, "1f")
     await recorder.input("pane-disabled-is-native", () => keys("-l", "\x1b[104;3u\x1b[108;3u"), "1b681b6c")
   } finally {
@@ -277,9 +278,9 @@ export async function terminalFocus(fixture: Fixture) {
     await keys("Escape")
     await screen("terminal-picker-returns-prompt", async () => !!(await probe()).editor)
     await keys("C-x", "Right")
-    await probe("dispatch", { command: "opencode-vim.toggle" })
+    await toggleVim(fixture, "terminal-vim-disabled", false)
     await recorder.input("terminal-disabled-toggle-is-native", () => keys("-l", "\x1b[47;5u"), "1f")
-    await probe("dispatch", { command: "opencode-vim.toggle" })
+    await toggleVim(fixture, "terminal-vim-enabled", true)
 
     const other = (
       await request("/api/session", {

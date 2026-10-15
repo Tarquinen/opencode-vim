@@ -158,7 +158,8 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
     for (const [key, value] of Object.entries(environment("tui"))) command.push(`${key}=${value}`)
     command.push(opencode.binary, "--server", url, "--session", session.id, workspace)
     terminal.start(command, workspace)
-    const initialMode = options.vim?.defaultMode === "normal" ? "NORMAL" : "INSERT"
+    const initialMode =
+      options.vim?.modeIndicator === "none" ? "" : options.vim?.defaultMode === "normal" ? "NORMAL" : "INSERT"
     await terminal.screen("startup", (text) => text.includes(sessionTitle) && text.includes(initialMode), 60_000)
 
     mark("scenario")

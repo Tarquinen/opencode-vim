@@ -33,7 +33,13 @@ import { transcriptLayout, transcriptPartial, transcriptParts, sessionCopy } fro
 import { layoutMessages, partialMessages, partMessages, copyMessages, longReaderMessages } from "./data/navigation"
 import { transcriptLive } from "./scenarios/transcript-live"
 import { pluginLifecycle } from "./scenarios/plugin-lifecycle"
-import { promptClipboard, promptCommandCursor, promptHistory, promptInput } from "./scenarios/prompt-input"
+import {
+  promptClipboard,
+  promptCommandCursor,
+  promptHiddenMode,
+  promptHistory,
+  promptInput,
+} from "./scenarios/prompt-input"
 import { nativeHistory } from "./scenarios/native-history"
 import { permissionMessages } from "./data/permission"
 import { permissionTools } from "./scenarios/permission-tools"
@@ -70,6 +76,11 @@ const scenarios: Array<{
       stream: "history response",
       vim: { keymaps: { normal: { Q: "command:prompt.history.next" } } },
     },
+  },
+  {
+    name: "prompt-hidden-mode",
+    run: promptHiddenMode,
+    setup: { vim: { modeIndicator: "none", cursorStyles: { insert: { style: "underline", blinking: false } } } },
   },
   { name: "tab-switching", run: tabSwitching },
   { name: "dialog-focus", run: dialogFocus, setup: { probe: true } },

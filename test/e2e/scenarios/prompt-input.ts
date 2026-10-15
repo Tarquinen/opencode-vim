@@ -136,6 +136,28 @@ export async function promptCommandCursor(fixture: Fixture) {
   )
 }
 
+export async function promptHiddenMode({ terminal }: Fixture) {
+  const { keys, type, screen } = terminal
+  // With the label hidden, the configured cursor styles are the only mode cue.
+  const hidden = (text: string, style: number) =>
+    !text.includes("INSERT") && !text.includes("NORMAL") && cursorStyle(terminal) === style
+  await type("hidden mode")
+  await screen("hidden-insert", (text) => promptLine(text, terminal.cursor().y) === "hidden mode" && hidden(text, 4))
+  await keys("Escape")
+  await type("0x")
+  await screen("hidden-normal", (text) => promptLine(text, terminal.cursor().y) === "idden mode" && hidden(text, 1))
+  await type("i")
+  await screen("hidden-insert-again", (text) => hidden(text, 4))
+}
+
+function cursorStyle(terminal: Fixture["terminal"]) {
+  try {
+    return terminal.cursorStyle()
+  } catch {
+    return undefined
+  }
+}
+
 async function seedHistory({ terminal, stream }: Fixture) {
   assert(stream)
   const { keys, type, screen } = terminal
