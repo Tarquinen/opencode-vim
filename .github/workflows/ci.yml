@@ -58,7 +58,7 @@ jobs:
         run: bun run test
 
   e2e:
-    name: E2E tests
+    name: E2E shard ${{ matrix.shard }}
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -119,3 +119,14 @@ jobs:
           name: e2e-diagnostics-${{ matrix.shard }}
           path: test-results/e2e/
           retention-days: 7
+
+  # Branch protection requires one "E2E tests" check, whatever the shard count.
+  e2e-result:
+    name: E2E tests
+    if: ${{ !cancelled() && github.event.pull_request.draft == false }}
+    needs: e2e
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check E2E shards
+        run: test "${{ needs.e2e.result }}" = success
