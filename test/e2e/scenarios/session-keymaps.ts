@@ -14,7 +14,8 @@ export async function sessionKeymaps({ terminal }: Fixture) {
     (text) => !!text.split("\n")[0]?.includes("New session") && !text.includes("SESSION"),
   )
   await keys("C-x", "1")
-  await screen("browsing-draft-restored", (text) => text.includes("keymap draft") && text.includes("NORMAL"))
+  await screen("browsing-draft-restored", (text) => text.includes("keymap draft") && text.includes("INSERT"))
+  await keys("Escape")
   await type("s")
   await screen("session-again", (text) => text.includes("SESSION"))
   await keys("Enter")

@@ -18,10 +18,7 @@ describe("editInput", () => {
 
     editInput(fixture.input, "中 [Image 1] ac", "unicode")
 
-    expect(fixture.calls).toEqual([
-      ["selection", 14, 15],
-      ["insert", ""],
-    ])
+    expect(fixture.calls).toEqual([["selection", 14, 15], ["delete"]])
   })
 
   test("does not split graphemes", () => {
@@ -38,10 +35,7 @@ describe("editInput", () => {
   test("uses the terminal width method when deleting or inserting after a joined emoji", () => {
     const deletion = createFixture("a👩‍💻b")
     editInput(deletion.input, "ab", "wcwidth")
-    expect(deletion.calls).toEqual([
-      ["selection", 1, 5],
-      ["insert", ""],
-    ])
+    expect(deletion.calls).toEqual([["selection", 1, 5], ["delete"]])
 
     const insertion = createFixture("a👩‍💻b")
     editInput(insertion.input, "a👩‍💻xb", "wcwidth")
@@ -70,7 +64,7 @@ describe("editInput", () => {
 })
 
 function createFixture(plainText: string) {
-  const calls: Array<["cursor", number] | ["selection", number, number] | ["insert", string]> = []
+  const calls: Array<["cursor", number] | ["selection", number, number] | ["insert", string] | ["delete"]> = []
   let cursorOffset = 0
   const input = {
     plainText,
@@ -87,6 +81,9 @@ function createFixture(plainText: string) {
     },
     insertText(text: string) {
       calls.push(["insert", text])
+    },
+    deleteChar() {
+      calls.push(["delete"])
     },
   }
   return { input, calls }

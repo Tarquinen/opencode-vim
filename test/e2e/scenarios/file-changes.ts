@@ -42,7 +42,7 @@ export async function fileChanges({ terminal }: Fixture) {
   })
   if (grouped) {
     await keys("Enter")
-    await screen("changes-expanded", (text) => text.includes("Edit edited-two.ts"))
+    await screen("changes-expanded", (text) => selected(text, "3 edits") && text.includes("Patched first.ts"))
     await type("j")
   }
   for (const [index, name] of names.entries()) {

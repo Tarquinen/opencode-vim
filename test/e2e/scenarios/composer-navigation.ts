@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
 import type { Fixture } from "../support/fixture"
+import { toggleVim } from "../support/screens"
 
-export async function composerNavigation({ terminal, request, sessionID, workspace, probe }: Fixture) {
+export async function composerNavigation(fixture: Fixture) {
+  const { terminal, request, sessionID, workspace, probe } = fixture
   const { keys, type, screen } = terminal
   const parent = (await request(`/api/session/${sessionID}`)).data
   const children: { id: string }[] = []
@@ -54,6 +56,9 @@ export async function composerNavigation({ terminal, request, sessionID, workspa
   await screen("previous-subagent", (_text, ansi) => row(ansi, "Composer child one") === secondUnselected)
   await keys("Down")
   await screen("native-down", (_text, ansi) => row(ansi, "Composer child one") === secondSelected)
+  // OpenCode keeps the activity filter across navigation, so restore it for the checks below.
+  await keys("C-a")
+  await screen("active-subagents", (text) => text.includes("No active subagents"))
   await keys("Escape")
   await screen(
     "prompt-restored",
@@ -117,7 +122,7 @@ export async function composerNavigation({ terminal, request, sessionID, workspa
   await type("A restored")
   await screen("draft-editable", (text) => text.includes("composer draft restored") && text.includes("INSERT"))
 
-  await probe("dispatch", { command: "opencode-vim.toggle" })
+  await toggleVim(fixture, "vim-disabled", false)
   await keys("Down")
   await screen("disabled-panel", (text) => text.includes("No active subagents"))
   await type("l")
@@ -127,7 +132,7 @@ export async function composerNavigation({ terminal, request, sessionID, workspa
   await keys("Escape")
   assert.equal((await probe()).mode, "base")
 
-  await probe("dispatch", { command: "opencode-vim.toggle" })
+  await toggleVim(fixture, "vim-enabled", true)
   await keys("Down", "C-a")
   await screen("subagent-selection", (text) => text.includes("Composer child one"))
   await type("j")

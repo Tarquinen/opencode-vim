@@ -73,13 +73,21 @@ export async function readerLayout({ terminal }: Fixture) {
   await type("s")
   await keys("Enter")
   await screen("long-reader", (text) => readerContains(text, "Reader line 001"))
-  await keys("C-d", "C-f")
-  let remembered = ""
-  await screen("reader-paged", (text) => {
-    const line = text.split("\n")[terminal.cursor().y] ?? ""
-    remembered = /Reader line \d+/.exec(line)?.[0] ?? ""
-    return !!remembered && remembered !== "Reader line 001"
-  })
+  let remembered = "Reader line 001"
+  // The terminal cursor jumps around while OpenCode redraws, so wait after each page key and only
+  // trust a line that stays under the cursor for two polls in a row.
+  for (const [index, key] of ["C-d", "C-f"].entries()) {
+    const previous = remembered
+    let seen = ""
+    await keys(key)
+    await screen(`reader-paged-${index}`, (text) => {
+      const line = /Reader line \d+/.exec(text.split("\n")[terminal.cursor().y] ?? "")?.[0] ?? ""
+      const stable = line === seen
+      seen = line
+      return stable && !!line && line !== previous
+    })
+    remembered = seen
+  }
   terminal.resize(44, 20)
   await screen("reader-resized", (text) => {
     const frame = reader(text)

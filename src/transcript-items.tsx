@@ -51,17 +51,25 @@ function parts(messages: Message[]) {
       ) {
         result.push({ id: `footer:${message.id}`, messageID: message.id, kind: "footer", author: "", text: "" })
       }
-    } else if (message.type === "synthetic" && message.metadata?.source === "shell" && message.description?.trim()) {
+    } else if (
+      message.type === "synthetic" &&
+      (message.metadata?.source === "shell" || message.metadata?.source === "subagent") &&
+      message.description?.trim()
+    ) {
       const state = message.metadata.state
       const status = state === "completed" ? "finished" : state === "error" ? "failed" : (state ?? "finished")
+      const shell = message.metadata.source === "shell"
+      const agent = typeof message.metadata.agent === "string" ? message.metadata.agent : "Subagent"
+      const actor = shell ? "Shell" : agent.replace(/\b\w/g, (letter) => letter.toUpperCase())
+      const description = shell ? message.description.replace(/\s+/g, " ").trim() : message.description
       result.push({
         id: message.id,
         messageID: message.id,
         kind: "message",
-        author: "Shell",
+        author: actor,
         text: message.text,
         source: message,
-        label: `${state === "completed" ? "↳" : "!"} Shell ${status} · ${message.description.replace(/\s+/g, " ").trim()}`,
+        label: `${state === "completed" ? "↳" : "!"} ${actor} ${status} · ${description}`,
       })
     } else {
       result.push({

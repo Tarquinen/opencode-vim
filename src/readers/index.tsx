@@ -5,11 +5,18 @@ import { ReadReader } from "./read"
 import { readSnapshot } from "./read/data"
 import { DiffReader } from "./diff"
 import { diffSnapshot } from "./diff/data"
+import { SubagentReader } from "./subagent"
 import type { ReaderProps } from "./types"
 
 export function Reader(props: ReaderProps) {
   props.context.ui.dialog.set({ size: "large", centered: true })
   const source = props.message.source
+  if (
+    (source?.type === "tool" && source.name === "subagent") ||
+    (source?.type === "synthetic" && source.metadata?.source === "subagent")
+  ) {
+    return <SubagentReader {...props} source={source} />
+  }
   if (
     source?.type === "shell" ||
     (source?.type === "tool" && source.name === "shell") ||

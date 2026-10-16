@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/solid */
 import { Plugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
-import { InputRenderable, KeyEvent, PasteEvent, type CursorStyleOptions } from "@opentui/core"
+import { KeyEvent, PasteEvent, type CursorStyleOptions } from "@opentui/core"
 import { createEffect, createSignal, onCleanup, untrack } from "solid-js"
 import type { EditorContext } from "./vim/editor"
 import { createVimConfig } from "./vim/config"
@@ -68,6 +68,7 @@ function VimHost(props: { context: Context }) {
       if (enabled() && terminal.focused()) return <terminal.Status />
       if (footer.mode !== "normal") return null
       if (session.active() && !dialogFocused()) return <session.Status />
+      if (config.modeIndicator === "none") return null
       return (
         <VimStatus
           mode={() => (dialogFocused() ? dialogState.mode() : state.mode())}
@@ -224,11 +225,13 @@ function VimHost(props: { context: Context }) {
   props.context.renderer.keyInput.prependListener("paste", onPaste)
   props.context.renderer.on("focused_editor", onFocus)
   createEffect(() => syncCursor())
-  let route = props.context.ui.router.current()
+  let route = routeKey(props.context.ui.router.current())
   createEffect(() => {
-    const next = props.context.ui.router.current()
-    if (next !== route && pendingKeys) onFocus()
+    const next = routeKey(props.context.ui.router.current())
+    if (next === route) return
     route = next
+    resetMode()
+    if (pendingKeys) onFocus()
   })
   onCleanup(() => {
     disposed = true
@@ -245,6 +248,15 @@ function VimHost(props: { context: Context }) {
   })
 
   return null
+
+  function resetMode() {
+    untrack(() => {
+      if (state.mode() === config.defaultMode) return
+      vimee.suspend()
+      state.setMode(config.defaultMode)
+      syncCursor(true)
+    })
+  }
 
   function syncCursor(force = false) {
     const input = props.context.renderer.currentFocusedEditor
@@ -296,8 +308,7 @@ function createEditorContext(context: Context): EditorContext {
     },
     setText(text) {
       const input = context.renderer.currentFocusedEditor
-      if (input instanceof InputRenderable) input.value = text
-      else if (input) editInput(input, text, context.renderer.widthMethod)
+      if (input) editInput(input, text, context.renderer.widthMethod)
     },
     submit() {
       if (inputKind(context) === "dialog") {
@@ -319,6 +330,10 @@ function createEditorContext(context: Context): EditorContext {
     },
     requestRender: () => context.renderer.requestRender(),
   }
+}
+
+function routeKey(route: ReturnType<Context["ui"]["router"]["current"]>) {
+  return route.type === "session" ? `session:${route.sessionID}` : route.type
 }
 
 function inputKind(context: Context): "prompt" | "dialog" | undefined {
