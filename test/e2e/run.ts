@@ -226,16 +226,20 @@ const scenarios: Array<{
     run: fileChanges,
     setup: { messages: fileChangeMessages, cli: { session: { grouping: "none" } } },
   },
-  { name: "patch-running", run: pendingPatch, setup: { messages: pendingChangeMessages } },
+  {
+    name: "patch-running",
+    run: pendingPatch,
+    setup: { messages: pendingChangeMessages, cli: { session: { verbosity: "medium" } } },
+  },
   {
     name: "permission-tools",
     run: permissionTools(true),
-    setup: { messages: permissionMessages, cli: { session: { grouping: "auto" } } },
+    setup: { messages: permissionMessages, cli: { session: { verbosity: "medium", grouping: "auto" } } },
   },
   {
     name: "permission-tools-ungrouped",
     run: permissionTools(false),
-    setup: { messages: permissionMessages, cli: { session: { grouping: "none" } } },
+    setup: { messages: permissionMessages, cli: { session: { verbosity: "medium", grouping: "none" } } },
   },
   { name: "diff-reader", run: diffReader(), setup: { messages: fileChangeMessages } },
   {
@@ -354,7 +358,7 @@ for (const animations of [true, false]) {
       setup: {
         messages,
         probe: name === "partial",
-        cli: { animations, session: { grouping: "none", thinking: "show" } },
+        cli: { animations, session: { verbosity: "medium", grouping: "none", thinking: "show" } },
       },
     })
   }

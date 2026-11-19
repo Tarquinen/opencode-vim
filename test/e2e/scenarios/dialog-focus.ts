@@ -146,9 +146,10 @@ export async function dialogFocus(fixture: Fixture) {
     (text) => text.includes("Commands") && text.includes("Switch session") && text.includes("NORMAL"),
   )
   await type("j".repeat(30))
-  await screen("dialog-scrolled-down", (text) => text.includes("Commands") && !text.includes("Switch session"))
+  // "Switch session" is listed again further down, so watch the first group's heading instead.
+  await screen("dialog-scrolled-down", (text) => text.includes("Commands") && !text.includes("Suggested"))
   await type("k".repeat(30))
-  await screen("dialog-scrolled-up", (text) => text.includes("Commands") && text.includes("Switch session"))
+  await screen("dialog-scrolled-up", (text) => text.includes("Commands") && text.includes("Suggested"))
   await type("iOpen settings")
   await screen("dialog-submit-filter", (text) => text.includes("Open settings") && !text.includes("Switch session"))
   await keys("Escape")

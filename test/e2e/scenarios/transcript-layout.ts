@@ -160,9 +160,10 @@ export async function sessionCopy({ terminal, probe }: Fixture) {
   await screen("markdown-copied", (text) => text.includes("Copied"))
   assert.equal(terminal.clipboard(), "# Heading\n\n```ts\nconst 中 = '👍🏽'\n```")
   await type("s$p")
+  // Some tmux versions drop the skin tone from captures. The clipboard check above covers it.
   await screen(
     "markdown-pasted",
-    (text) => text.includes("draft# Heading") && text.includes("```ts") && /const 中 = '👍🏽\s*'/.test(text),
+    (text) => text.includes("draft# Heading") && text.includes("```ts") && /const 中 = '👍(🏽)?\s*'/u.test(text),
   )
   await type("i")
   await keys("C-c", "Escape")
