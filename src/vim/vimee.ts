@@ -1073,16 +1073,11 @@ function clampNormalCursor(input: EditorInput, map: PromptMap) {
 function dispatchCommand(command: string, ctx: EditorContext) {
   const input = ctx.input()
   if (command === "prompt.history.previous" && input) input.cursorOffset = 0
-  if (command === "prompt.history.next" && input) input.cursorOffset = input.plainText.length
+  // The host only moves through history when the cursor is at the end of the
+  // text, measured in display width.
+  if (command === "prompt.history.next" && input) input.cursorOffset = displayWidth(input.plainText, ctx.widthMethod)
 
-  const result = ctx.dispatchCommand(command)
-
-  // The host currently checks history-next using character length, then leaves
-  // the cursor in that unit. Restore the display-width offset after dispatch.
-  if (command !== "prompt.history.next" || !result.ok) return result
-  const nextInput = ctx.input()
-  if (nextInput) nextInput.cursorOffset = displayWidth(nextInput.plainText, ctx.widthMethod)
-  return result
+  return ctx.dispatchCommand(command)
 }
 
 function defaultHistoryCommand(
