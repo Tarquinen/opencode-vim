@@ -16,7 +16,7 @@ export function createTranscriptSelection(
         from: string | undefined
         offset: number
         latest?: boolean
-        loading?: { key: string; frame: number; up: boolean; height: number }
+        loading?: { key: string; frame: number }
       }
     | undefined
 
@@ -57,15 +57,10 @@ export function createTranscriptSelection(
     }
     const target = navigation.latest ? ranges.length - 1 : from + navigation.offset
     const loading = navigation.loading
-    // OpenCode compensates for prepended rows after two animation frames.
+    // Give OpenCode two frames to finish a load before asking for the next one.
     if (loading && context.renderer.frameId < loading.frame) {
       context.renderer.requestRender()
       return
-    }
-    if (view && loading?.up && view.scroll.scrollHeight > loading.height) {
-      const maximum = Math.max(0, view.scroll.scrollHeight - view.scroll.viewport.height)
-      const compensated = Math.max(0, Math.min(maximum, view.scroll.scrollHeight - loading.height - 1))
-      if (view.scroll.scrollTop < compensated) return
     }
     if (view && target >= 0 && target < ranges.length && (!navigation.latest || view.hasLatest)) {
       navigation = undefined
@@ -76,7 +71,7 @@ export function createTranscriptSelection(
     const messages = context.data.session.message.list(sessionID)
     const key = `${messages[0]?.id}:${messages.length}:${ranges[0]?.id}:${ranges.at(-1)?.id}:${view?.scroll.scrollHeight}`
     if (loading?.key === key) return
-    navigation.loading = { key, frame: context.renderer.frameId + 2, up, height: view?.scroll.scrollHeight ?? 0 }
+    navigation.loading = { key, frame: context.renderer.frameId + 2 }
     view?.scroll.scrollTo(up ? 0 : view.scroll.scrollHeight)
     context.keymap.dispatch(up ? "session.line.up" : "session.line.down")
     context.renderer.requestRender()
