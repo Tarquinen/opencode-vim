@@ -10,7 +10,7 @@ import { createEffect, onCleanup } from "solid-js"
 import { createPromptMap, hostPosition } from "../vim/map"
 
 export function createReaderSyntax(context: Context) {
-  const style = SyntaxStyle.create()
+  const style = SyntaxStyle.create(context.renderer.nativeScene)
   createEffect(() => {
     const theme = context.theme.surface("dialog")
     const tokens: Record<string, StyleDefinitionInput> = { default: { fg: theme.text.base } }

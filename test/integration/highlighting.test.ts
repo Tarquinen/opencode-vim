@@ -16,16 +16,19 @@ import { highlightCode } from "../../src/readers/syntax"
 
 test("multiline reader colors match native code rendering with the real TypeScript parser", async () => {
   const screen = await createTestRenderer({ width: 70, height: 32 })
-  const syntax = SyntaxStyle.fromStyles({
-    default: { fg: "#eeeeee" },
-    keyword: { fg: "#ff0000" },
-    string: { fg: "#00ff00" },
-    comment: { fg: "#888888" },
-    number: { fg: "#00ffff" },
-    variable: { fg: "#ffff00" },
-    operator: { fg: "#ff00ff" },
-    punctuation: { fg: "#ffffff" },
-  })
+  const syntax = SyntaxStyle.fromStyles(
+    {
+      default: { fg: "#eeeeee" },
+      keyword: { fg: "#ff0000" },
+      string: { fg: "#00ff00" },
+      comment: { fg: "#888888" },
+      number: { fg: "#00ffff" },
+      variable: { fg: "#ffff00" },
+      operator: { fg: "#ff00ff" },
+      punctuation: { fg: "#ffffff" },
+    },
+    screen.renderer.nativeScene,
+  )
   const text = [
     "",
     'const greeting = "你好 👩‍💻";',
@@ -80,16 +83,19 @@ test("multiline reader colors match native code rendering with the real TypeScri
 
 test("diff code colors and change backgrounds match native unified diff rendering", async () => {
   const screen = await createTestRenderer({ width: 70, height: 36 })
-  const syntax = SyntaxStyle.fromStyles({
-    default: { fg: "#eeeeee" },
-    keyword: { fg: "#ff0000" },
-    string: { fg: "#00ff00" },
-    comment: { fg: "#888888" },
-    number: { fg: "#00ffff" },
-    variable: { fg: "#ffff00" },
-    operator: { fg: "#ff00ff" },
-    punctuation: { fg: "#ffffff" },
-  })
+  const syntax = SyntaxStyle.fromStyles(
+    {
+      default: { fg: "#eeeeee" },
+      keyword: { fg: "#ff0000" },
+      string: { fg: "#00ff00" },
+      comment: { fg: "#888888" },
+      number: { fg: "#00ffff" },
+      variable: { fg: "#ffff00" },
+      operator: { fg: "#ff00ff" },
+      punctuation: { fg: "#ffffff" },
+    },
+    screen.renderer.nativeScene,
+  )
   const patch =
     [
       "--- example.ts",

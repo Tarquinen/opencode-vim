@@ -212,7 +212,8 @@ export async function runWithFixture(options: Options, run: (fixture: Fixture) =
       OPENCODE_CONFIG_DIR: path.join(directory, "config"),
       OPENCODE_CONFIG_CONTENT: JSON.stringify(stream?.config ?? {}),
       OPENCODE_DISABLE_PROJECT_CONFIG: "true",
-      OPENCODE_DISABLE_FILEWATCHER: "true",
+      // The TUI needs its watcher to reload cli.json when a scenario unloads Vim.
+      ...(home === "server" ? { OPENCODE_DISABLE_FILEWATCHER: "true" } : {}),
       OPENCODE_DISABLE_MODELS_FETCH: "true",
       OPENCODE_DISABLE_AUTOUPDATE: "true",
       OPENCODE_PASSWORD: password,
